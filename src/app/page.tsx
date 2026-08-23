@@ -57,22 +57,22 @@ export default async function DashboardPage() {
         <div className="grid w-full gap-4 sm:h-[42vh] sm:grid-cols-2 lg:grid-cols-5">
           <NavCard
             href="/leagues"
-            title="Mes prédictions"
+            title="Mes prédictions 🔮"
             description="Buteur, passeur, top 3, flop 3, équipe surprise et équipe flop, par championnat."
           />
           <NavCard
             href="/calendar"
-            title="Pronostics"
+            title="Pronostics 🎯"
             description="Calendrier des matchs : score et buteur, championnat par championnat."
           />
           <NavCard
             href="/standings"
-            title="Classements & buteurs"
+            title="Classements & buteurs 🏆"
             description="Le classement réel de chaque championnat, mis à jour après chaque match, plus les buteurs et passeurs."
           />
           <NavCard
             href="/leaderboard"
-            title="Classement général"
+            title="Classement général 🏅"
             description="Le total des points de chacun entre potes, et le détail par championnat."
           />
           <NavCard
