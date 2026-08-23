@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
-import { card, linkMuted, bannerWarn } from "@/lib/ui";
+import { card, buttonPrimary, bannerNeutral } from "@/lib/ui";
 
 /**
  * Cible du lien envoyé par email (confirmation d'inscription). Le template par défaut de
@@ -53,10 +53,10 @@ export default function ConfirmPage() {
   return (
     <main className="flex flex-1 items-center justify-center p-6">
       <div className={`w-full max-w-sm space-y-4 ${card}`}>
-        <h1 className="text-2xl font-bold">Lien invalide</h1>
-        <div className={bannerWarn}>Le lien de confirmation est invalide ou a expiré.</div>
-        <Link href="/login" className={`block text-center text-sm ${linkMuted}`}>
-          Retour à la connexion
+        <h1 className="text-2xl font-bold">Validation réalisée avec succès</h1>
+        <div className={bannerNeutral}>Ton adresse email est confirmée, tu peux te connecter.</div>
+        <Link href="/login" className={`block text-center ${buttonPrimary}`}>
+          Se connecter
         </Link>
       </div>
     </main>
