@@ -21,11 +21,11 @@ export default async function DashboardPage() {
         <h1 className="text-3xl font-bold">Boot Room</h1>
         <div className="flex items-center gap-4">
           <Link href="/profile" className="flex items-center gap-2">
-            <span className="h-9 w-9 overflow-hidden rounded-full border-2 border-line bg-cream">
+            <span className="h-16 w-16 shrink-0 overflow-hidden rounded-full border-2 border-line bg-cream">
               {profile?.avatar_url ? (
                 <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" />
               ) : (
-                <span className="flex h-full w-full items-center justify-center text-sm font-bold text-mute">
+                <span className="flex h-full w-full items-center justify-center text-2xl font-bold text-mute">
                   {(profile?.username ?? "?").slice(0, 1).toUpperCase()}
                 </span>
               )}
