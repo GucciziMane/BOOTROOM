@@ -24,6 +24,7 @@ export interface Database {
           avatar_url: string | null;
           is_admin: boolean;
           created_at: string;
+          chat_last_read_at: string | null;
         };
         Insert: Partial<Database["public"]["Tables"]["profiles"]["Row"]> & { id: string; username: string };
         Update: Partial<Database["public"]["Tables"]["profiles"]["Row"]>;
@@ -236,6 +237,20 @@ export interface Database {
           points: number;
         };
         Update: Partial<Database["public"]["Tables"]["points_ledger"]["Row"]>;
+        Relationships: [];
+      };
+      chat_messages: {
+        Row: {
+          id: number;
+          user_id: string;
+          content: string;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["chat_messages"]["Row"]> & {
+          user_id: string;
+          content: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["chat_messages"]["Row"]>;
         Relationships: [];
       };
       reminder_log: {

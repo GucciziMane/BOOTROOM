@@ -12,9 +12,15 @@ export default async function DashboardPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("username, avatar_url, is_admin")
+    .select("username, avatar_url, is_admin, chat_last_read_at")
     .eq("id", user!.id)
     .single();
+
+  const { count: unreadChatCount } = await supabase
+    .from("chat_messages")
+    .select("id", { count: "exact", head: true })
+    .neq("user_id", user!.id)
+    .gt("created_at", profile?.chat_last_read_at ?? "1970-01-01");
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-1 flex-col p-6">
@@ -48,7 +54,7 @@ export default async function DashboardPage() {
       <p className="mt-3 text-lg text-mute">Salut {profile?.username ?? user?.email}.</p>
 
       <div className="flex flex-1 items-center justify-center">
-        <div className="grid w-full gap-4 sm:h-[42vh] sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid w-full gap-4 sm:h-[42vh] sm:grid-cols-2 lg:grid-cols-5">
           <NavCard
             href="/leagues"
             title="Mes prédictions"
@@ -69,18 +75,34 @@ export default async function DashboardPage() {
             title="Classement général"
             description="Le total des points de chacun entre potes, et le détail par championnat."
           />
+          <NavCard href="/chat" title="Chat" description="La discussion entre tous les membres." badgeCount={unreadChatCount ?? 0} />
         </div>
       </div>
     </main>
   );
 }
 
-function NavCard({ href, title, description }: { href: string; title: string; description: string }) {
+function NavCard({
+  href,
+  title,
+  description,
+  badgeCount,
+}: {
+  href: string;
+  title: string;
+  description: string;
+  badgeCount?: number;
+}) {
   return (
     <Link
       href={href}
-      className="flex min-h-[100px] flex-col items-center justify-center rounded-2xl border-2 border-line bg-paper p-8 text-center shadow-sm transition-colors hover:border-ink hover:bg-cream"
+      className="relative flex min-h-[100px] flex-col items-center justify-center rounded-2xl border-2 border-line bg-paper p-8 text-center shadow-sm transition-colors hover:border-ink hover:bg-cream"
     >
+      {!!badgeCount && (
+        <span className="absolute right-4 top-4 flex h-6 min-w-6 items-center justify-center rounded-full bg-accent px-1.5 text-xs font-bold text-paper">
+          {badgeCount}
+        </span>
+      )}
       <span className="text-3xl font-bold">{title}</span>
       <span className="mt-3 text-base text-mute">{description}</span>
     </Link>
