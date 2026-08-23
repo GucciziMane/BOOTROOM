@@ -77,7 +77,7 @@ export default async function DashboardPage() {
           />
           <NavCard
             href="/chat"
-            title="3ème mi-temps"
+            title="3ème mi-temps 🍻"
             description="La discussion entre tous les membres."
             badgeCount={unreadChatCount ?? 0}
           />
