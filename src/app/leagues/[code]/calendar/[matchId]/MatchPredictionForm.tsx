@@ -35,8 +35,8 @@ export function MatchPredictionForm({
   initial,
 }: Props) {
   const [state, formAction, isPending] = useActionState(saveMatchPrediction, initialState);
-  const [homeScore, setHomeScore] = useState(initial.predictedHomeScore ?? 0);
-  const [awayScore, setAwayScore] = useState(initial.predictedAwayScore ?? 0);
+  const [homeScore, setHomeScore] = useState(initial.predictedHomeScore != null ? String(initial.predictedHomeScore) : "");
+  const [awayScore, setAwayScore] = useState(initial.predictedAwayScore != null ? String(initial.predictedAwayScore) : "");
 
   return (
     <form action={formAction} className={`space-y-6 ${card}`}>
@@ -50,8 +50,9 @@ export function MatchPredictionForm({
             type="number"
             name="predicted_home_score"
             min={0}
+            placeholder="0"
             value={homeScore}
-            onChange={(e) => setHomeScore(Number(e.target.value))}
+            onChange={(e) => setHomeScore(e.target.value)}
             className={`w-20 text-center text-xl font-bold ${input}`}
           />
         </div>
@@ -62,8 +63,9 @@ export function MatchPredictionForm({
             type="number"
             name="predicted_away_score"
             min={0}
+            placeholder="0"
             value={awayScore}
-            onChange={(e) => setAwayScore(Number(e.target.value))}
+            onChange={(e) => setAwayScore(e.target.value)}
             className={`w-20 text-center text-xl font-bold ${input}`}
           />
         </div>
