@@ -1,0 +1,82 @@
+import Link from "next/link";
+import { createClient } from "@/lib/supabase/server";
+import { signOut } from "@/app/login/actions";
+import { linkMuted } from "@/lib/ui";
+
+export default async function DashboardPage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("username, avatar_url")
+    .eq("id", user!.id)
+    .single();
+
+  return (
+    <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-1 flex-col p-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Boot Room</h1>
+        <div className="flex items-center gap-4">
+          <Link href="/profile" className="flex items-center gap-2">
+            <span className="h-9 w-9 overflow-hidden rounded-full border-2 border-line bg-cream">
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <span className="flex h-full w-full items-center justify-center text-sm font-bold text-mute">
+                  {(profile?.username ?? "?").slice(0, 1).toUpperCase()}
+                </span>
+              )}
+            </span>
+          </Link>
+          <form action={signOut}>
+            <button type="submit" className={`text-sm ${linkMuted}`}>
+              Déconnexion
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <p className="mt-3 text-lg text-mute">Salut {profile?.username ?? user?.email}.</p>
+
+      <div className="flex flex-1 items-center justify-center">
+        <div className="grid w-full gap-4 sm:h-[42vh] sm:grid-cols-2 lg:grid-cols-4">
+          <NavCard
+            href="/leagues"
+            title="Mes prédictions"
+            description="Buteur, passeur, top 3, flop 3, équipe surprise et équipe flop, par championnat."
+          />
+          <NavCard
+            href="/calendar"
+            title="Pronostics"
+            description="Calendrier des matchs : score et buteur, championnat par championnat."
+          />
+          <NavCard
+            href="/standings"
+            title="Classements & buteurs"
+            description="Le classement réel de chaque championnat, mis à jour après chaque match, plus les buteurs et passeurs."
+          />
+          <NavCard
+            href="/leaderboard"
+            title="Classement général"
+            description="Le total des points de chacun entre potes, et le détail par championnat."
+          />
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function NavCard({ href, title, description }: { href: string; title: string; description: string }) {
+  return (
+    <Link
+      href={href}
+      className="flex min-h-[100px] flex-col items-center justify-center rounded-2xl border-2 border-line bg-paper p-8 text-center shadow-sm transition-colors hover:border-ink hover:bg-cream"
+    >
+      <span className="text-3xl font-bold">{title}</span>
+      <span className="mt-3 text-base text-mute">{description}</span>
+    </Link>
+  );
+}
