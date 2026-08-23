@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatParisDateTime } from "@/lib/format-date";
 import { bannerWarn, bannerNeutral, card, linkMuted } from "@/lib/ui";
+import { FALLBACK_SCORER_TIER } from "@/lib/scoring/points";
 import { MatchPredictionForm } from "./MatchPredictionForm";
 
 export default async function MatchPage({ params }: PageProps<"/leagues/[code]/calendar/[matchId]">) {
@@ -17,14 +18,22 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
     supabase.auth.getUser(),
     supabase
       .from("matches")
-      .select("id, home_team_id, away_team_id, kickoff_at, status, home_score, away_score")
+      .select("id, season_id, home_team_id, away_team_id, kickoff_at, status, home_score, away_score")
       .eq("id", Number(matchId))
       .maybeSingle(),
   ]);
 
   if (!match) notFound();
 
-  const [{ data: teams }, { data: players }, { data: setting }, { data: existing }] = await Promise.all([
+  const [
+    { data: teams },
+    { data: players },
+    { data: setting },
+    { data: existing },
+    { data: pointConfigRows },
+    { data: scorerTierPointsRows },
+    { data: playerTierRows },
+  ] = await Promise.all([
     supabase.from("teams").select("id, name").in("id", [match.home_team_id, match.away_team_id]),
     supabase
       .from("players")
@@ -42,6 +51,12 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
       .eq("user_id", user!.id)
       .eq("match_id", match.id)
       .maybeSingle(),
+    supabase
+      .from("point_config")
+      .select("key, points")
+      .in("key", ["match_exact_score", "match_correct_result_no_score"]),
+    supabase.from("match_scorer_tier_points").select("tier, points"),
+    supabase.from("player_scoring_tier").select("player_id, tier").eq("season_id", match.season_id),
   ]);
   const homeTeam = teams?.find((t) => t.id === match.home_team_id);
   const awayTeam = teams?.find((t) => t.id === match.away_team_id);
@@ -50,6 +65,18 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
   const lockHours = Number(setting?.value ?? 1);
   const lockAt = new Date(new Date(match.kickoff_at).getTime() - lockHours * 3600_000);
   const locked = lockAt <= new Date();
+
+  const pointConfigMap = new Map((pointConfigRows ?? []).map((r) => [r.key, r.points]));
+  const scorerTierPoints = new Map((scorerTierPointsRows ?? []).map((r) => [r.tier, r.points]));
+  const playerTierById = new Map((playerTierRows ?? []).map((r) => [r.player_id, r.tier]));
+  const scoring = {
+    matchExactScore: pointConfigMap.get("match_exact_score") ?? 30,
+    matchCorrectResultNoScore: pointConfigMap.get("match_correct_result_no_score") ?? 10,
+    scorerTierPoints: Object.fromEntries(scorerTierPoints),
+    playerTier: Object.fromEntries(
+      [...homePlayers, ...awayPlayers].map((p) => [p.id, playerTierById.get(p.id) ?? FALLBACK_SCORER_TIER])
+    ),
+  };
 
   return (
     <main className="mx-auto w-full max-w-lg flex-1 p-6">
@@ -90,6 +117,7 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
           awayTeamName={awayTeam?.name ?? "?"}
           homePlayers={homePlayers}
           awayPlayers={awayPlayers}
+          scoring={scoring}
           initial={{
             predictedHomeScore: existing?.predicted_home_score ?? null,
             predictedAwayScore: existing?.predicted_away_score ?? null,

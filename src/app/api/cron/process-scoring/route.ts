@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
-import { computeMatchScorePoints, computeSeasonPositionPoints, type PointConfig } from "@/lib/scoring/points";
+import {
+  computeMatchScorePoints,
+  computeSeasonPositionPoints,
+  resolveScorerTierPoints,
+  FALLBACK_SCORER_TIER,
+  type PointConfig,
+} from "@/lib/scoring/points";
 import { computeStandings } from "@/lib/scoring/standings";
 import type { PointsSourceType } from "@/types/database";
 
 const MAX_MATCHES_PER_RUN = 100;
-const FALLBACK_TIER = 3 as const; // utilisé si aucun tier n'a encore été calculé pour un joueur
 
 type ServiceClient = ReturnType<typeof createServiceRoleClient>;
 
@@ -81,8 +86,7 @@ async function processFinishedMatches(supabase: ServiceClient, config: PointConf
           .eq("player_id", pred.predicted_scorer_player_id)
           .eq("season_id", match.season_id)
           .maybeSingle();
-        const tier = tierRow?.tier ?? FALLBACK_TIER;
-        scorerPoints = tierPointsMap.get(tier) ?? 40;
+        scorerPoints = resolveScorerTierPoints(tierRow?.tier, tierPointsMap);
       }
 
       if (scorePoints > 0) {
@@ -272,5 +276,5 @@ async function getPlayerTier(
     .eq("player_id", playerId)
     .eq("season_id", seasonId)
     .maybeSingle();
-  return data?.tier ?? FALLBACK_TIER;
+  return data?.tier ?? FALLBACK_SCORER_TIER;
 }

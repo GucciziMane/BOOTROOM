@@ -32,3 +32,12 @@ export function computeSeasonPositionPoints(
   if (actualTrioTeamIds[predictedRank - 1] === predictedTeamId) return config.seasonPositionExact;
   return actualTrioTeamIds.includes(predictedTeamId) ? config.seasonPositionPresence : 0;
 }
+
+/** Tier utilisé quand aucun tier n'a encore été calculé pour un joueur (3 = probabilité moyenne). */
+export const FALLBACK_SCORER_TIER = 3;
+const FALLBACK_SCORER_TIER_POINTS = 40;
+
+/** Points buteur si le joueur pronostiqué marque, selon son tier (repli sur le tier moyen si non calculé). */
+export function resolveScorerTierPoints(tier: number | null | undefined, tierPointsMap: Map<number, number>): number {
+  return tierPointsMap.get(tier ?? FALLBACK_SCORER_TIER) ?? FALLBACK_SCORER_TIER_POINTS;
+}
