@@ -44,18 +44,18 @@ export default async function LeaderboardPage() {
       <ul className={`mb-8 ${listCard}`}>
         {ranked.map((p, i) => (
           <li key={p.id} className="flex items-center justify-between p-4">
-            <span className="flex items-center gap-3">
+            <span className="flex items-center gap-4">
               <span className="w-6 text-mute">{i + 1}</span>
-              <span className="h-9 w-9 overflow-hidden rounded-full border-2 border-line bg-cream">
+              <span className="h-16 w-16 shrink-0 overflow-hidden rounded-full border-2 border-line bg-cream">
                 {p.avatar_url ? (
                   <img src={p.avatar_url} alt="" className="h-full w-full object-cover" />
                 ) : (
-                  <span className="flex h-full w-full items-center justify-center text-sm font-bold text-mute">
+                  <span className="flex h-full w-full items-center justify-center text-2xl font-bold text-mute">
                     {p.username.slice(0, 1).toUpperCase()}
                   </span>
                 )}
               </span>
-              <span className="font-bold">{p.username}</span>
+              <span className="text-lg font-bold">{p.username}</span>
             </span>
             <span className="font-bold">{p.total} pts</span>
           </li>
