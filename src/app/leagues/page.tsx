@@ -10,18 +10,15 @@ export default async function LeaguesPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { data: leagues } = await supabase
-    .from("leagues")
-    .select("id, name, country, football_data_code, logo_url")
-    .eq("active", true)
-    .order("name");
-
-  const { data: seasons } = await supabase.from("seasons").select("id, league_id, predictions_lock_at, status");
-
-  const { data: predictions } = await supabase
-    .from("season_predictions")
-    .select("season_id")
-    .eq("user_id", user!.id);
+  const [{ data: leagues }, { data: seasons }, { data: predictions }] = await Promise.all([
+    supabase
+      .from("leagues")
+      .select("id, name, country, football_data_code, logo_url")
+      .eq("active", true)
+      .order("name"),
+    supabase.from("seasons").select("id, league_id, predictions_lock_at, status"),
+    supabase.from("season_predictions").select("season_id").eq("user_id", user!.id),
+  ]);
   const predictedSeasonIds = new Set((predictions ?? []).map((p) => p.season_id));
   const nextLockAt = (seasons ?? [])
     .map((s) => s.predictions_lock_at)

@@ -8,6 +8,11 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "4mb",
     },
   },
+  images: {
+    // Photos de profil stockées dans Supabase Storage : on laisse next/image les
+    // redimensionner/compresser à la volée plutôt que de servir le fichier original.
+    remotePatterns: [{ protocol: "https", hostname: "**.supabase.co", pathname: "/storage/v1/object/public/**" }],
+  },
 };
 
 export default nextConfig;

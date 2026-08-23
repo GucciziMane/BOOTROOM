@@ -1,21 +1,17 @@
 import Link from "next/link";
+import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import { linkMuted, listCard } from "@/lib/ui";
 
 export default async function LeaderboardPage() {
   const supabase = await createClient();
 
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("id, username, avatar_url")
-    .order("username");
-  const { data: leagues } = await supabase
-    .from("leagues")
-    .select("id, name")
-    .eq("active", true)
-    .order("name");
+  const [{ data: profiles }, { data: leagues }, { data: ledgerAll }] = await Promise.all([
+    supabase.from("profiles").select("id, username, avatar_url").order("username"),
+    supabase.from("leagues").select("id, name").eq("active", true).order("name"),
+    supabase.from("points_ledger").select("user_id, league_id, points"),
+  ]);
   const activeLeagueIds = new Set((leagues ?? []).map((l) => l.id));
-  const { data: ledgerAll } = await supabase.from("points_ledger").select("user_id, league_id, points");
   const ledger = (ledgerAll ?? []).filter((row) => !row.league_id || activeLeagueIds.has(row.league_id));
 
   const totalByUser = new Map<string, number>();
@@ -46,9 +42,9 @@ export default async function LeaderboardPage() {
           <li key={p.id} className="flex items-center justify-between p-4">
             <span className="flex items-center gap-4">
               <span className="w-6 text-mute">{i + 1}</span>
-              <span className="h-16 w-16 shrink-0 overflow-hidden rounded-full border-2 border-line bg-cream">
+              <span className="relative h-16 w-16 shrink-0 overflow-hidden rounded-full border-2 border-line bg-cream">
                 {p.avatar_url ? (
-                  <img src={p.avatar_url} alt="" className="h-full w-full object-cover" />
+                  <Image src={p.avatar_url} alt="" fill sizes="64px" className="object-cover" />
                 ) : (
                   <span className="flex h-full w-full items-center justify-center text-2xl font-bold text-mute">
                     {p.username.slice(0, 1).toUpperCase()}

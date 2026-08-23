@@ -18,13 +18,13 @@ export default async function StandingsPage({ params }: PageProps<"/standings/[c
 
   if (!league || !league.active) notFound();
 
-  const { data: seasons } = await supabase
-    .from("seasons")
-    .select("id")
-    .eq("league_id", league.id)
-    .order("year", { ascending: false })
-    .limit(1);
+  const [{ data: seasons }, { data: teamsData }] = await Promise.all([
+    supabase.from("seasons").select("id").eq("league_id", league.id).order("year", { ascending: false }).limit(1),
+    supabase.from("teams").select("id, name, logo_url").eq("league_id", league.id),
+  ]);
   const season = seasons?.[0];
+  const teams = teamsData ?? [];
+  const teamById = new Map(teams.map((t) => [t.id, t]));
 
   if (!season) {
     return (
@@ -35,18 +35,25 @@ export default async function StandingsPage({ params }: PageProps<"/standings/[c
     );
   }
 
-  const { data: teamsData } = await supabase.from("teams").select("id, name, logo_url").eq("league_id", league.id);
-  const teams = teamsData ?? [];
-  const teamById = new Map(teams.map((t) => [t.id, t]));
+  const [{ data: matches }, { data: playersData }] = await Promise.all([
+    supabase
+      .from("matches")
+      .select("id, home_team_id, away_team_id, home_score, away_score, status")
+      .eq("season_id", season.id),
+    supabase
+      .from("players")
+      .select("id, name, team_id")
+      .in(
+        "team_id",
+        teams.map((t) => t.id)
+      ),
+  ]);
+  const playerById = new Map((playersData ?? []).map((p) => [p.id, p]));
 
-  const { data: matches } = await supabase
-    .from("matches")
-    .select("id, home_team_id, away_team_id, home_score, away_score")
-    .eq("season_id", season.id)
-    .eq("status", "finished");
+  const seasonMatchIds = (matches ?? []).map((m) => m.id);
 
   const matchResults = (matches ?? [])
-    .filter((m) => m.home_score !== null && m.away_score !== null)
+    .filter((m) => m.status === "finished" && m.home_score !== null && m.away_score !== null)
     .map((m) => ({
       homeTeamId: m.home_team_id,
       awayTeamId: m.away_team_id,
@@ -58,18 +65,6 @@ export default async function StandingsPage({ params }: PageProps<"/standings/[c
     matchResults,
     teams.map((t) => t.id)
   );
-
-  const { data: seasonMatches } = await supabase.from("matches").select("id").eq("season_id", season.id);
-  const seasonMatchIds = (seasonMatches ?? []).map((m) => m.id);
-
-  const { data: playersData } = await supabase
-    .from("players")
-    .select("id, name, team_id")
-    .in(
-      "team_id",
-      teams.map((t) => t.id)
-    );
-  const playerById = new Map((playersData ?? []).map((p) => [p.id, p]));
 
   const goalsByPlayer = new Map<number, number>();
   const assistsByPlayer = new Map<number, number>();

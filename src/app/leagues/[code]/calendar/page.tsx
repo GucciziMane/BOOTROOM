@@ -7,25 +7,24 @@ import { linkMuted, listCard } from "@/lib/ui";
 export default async function CalendarPage({ params }: PageProps<"/leagues/[code]/calendar">) {
   const { code } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const { data: league } = await supabase
-    .from("leagues")
-    .select("id, name, football_data_code, active")
-    .eq("football_data_code", code)
-    .maybeSingle();
+  const [
+    {
+      data: { user },
+    },
+    { data: league },
+  ] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase.from("leagues").select("id, name, football_data_code, active").eq("football_data_code", code).maybeSingle(),
+  ]);
 
   if (!league || !league.active) notFound();
 
-  const { data: seasons } = await supabase
-    .from("seasons")
-    .select("id")
-    .eq("league_id", league.id)
-    .order("year", { ascending: false })
-    .limit(1);
+  const [{ data: seasons }, { data: teamsData }] = await Promise.all([
+    supabase.from("seasons").select("id").eq("league_id", league.id).order("year", { ascending: false }).limit(1),
+    supabase.from("teams").select("id, name, logo_url").eq("league_id", league.id),
+  ]);
   const season = seasons?.[0];
+  const teamById = new Map((teamsData ?? []).map((t) => [t.id, t]));
 
   if (!season) {
     return (
@@ -35,9 +34,6 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
       </main>
     );
   }
-
-  const { data: teamsData } = await supabase.from("teams").select("id, name, logo_url").eq("league_id", league.id);
-  const teamById = new Map((teamsData ?? []).map((t) => [t.id, t]));
 
   const { data: matches } = await supabase
     .from("matches")

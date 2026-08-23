@@ -8,48 +8,48 @@ import { MatchPredictionForm } from "./MatchPredictionForm";
 export default async function MatchPage({ params }: PageProps<"/leagues/[code]/calendar/[matchId]">) {
   const { code, matchId } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const { data: match } = await supabase
-    .from("matches")
-    .select("id, home_team_id, away_team_id, kickoff_at, status, home_score, away_score")
-    .eq("id", Number(matchId))
-    .maybeSingle();
+  const [
+    {
+      data: { user },
+    },
+    { data: match },
+  ] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase
+      .from("matches")
+      .select("id, home_team_id, away_team_id, kickoff_at, status, home_score, away_score")
+      .eq("id", Number(matchId))
+      .maybeSingle(),
+  ]);
 
   if (!match) notFound();
 
-  const { data: teams } = await supabase
-    .from("teams")
-    .select("id, name")
-    .in("id", [match.home_team_id, match.away_team_id]);
+  const [{ data: teams }, { data: players }, { data: setting }, { data: existing }] = await Promise.all([
+    supabase.from("teams").select("id, name").in("id", [match.home_team_id, match.away_team_id]),
+    supabase
+      .from("players")
+      .select("id, name, team_id")
+      .in("team_id", [match.home_team_id, match.away_team_id])
+      .order("name"),
+    supabase
+      .from("app_settings")
+      .select("value")
+      .eq("key", "match_prediction_lock_hours_before_kickoff")
+      .single(),
+    supabase
+      .from("match_predictions")
+      .select("predicted_home_score, predicted_away_score, predicted_scorer_player_id")
+      .eq("user_id", user!.id)
+      .eq("match_id", match.id)
+      .maybeSingle(),
+  ]);
   const homeTeam = teams?.find((t) => t.id === match.home_team_id);
   const awayTeam = teams?.find((t) => t.id === match.away_team_id);
-
-  const { data: players } = await supabase
-    .from("players")
-    .select("id, name, team_id")
-    .in("team_id", [match.home_team_id, match.away_team_id])
-    .order("name");
   const homePlayers = (players ?? []).filter((p) => p.team_id === match.home_team_id);
   const awayPlayers = (players ?? []).filter((p) => p.team_id === match.away_team_id);
-
-  const { data: setting } = await supabase
-    .from("app_settings")
-    .select("value")
-    .eq("key", "match_prediction_lock_hours_before_kickoff")
-    .single();
   const lockHours = Number(setting?.value ?? 1);
   const lockAt = new Date(new Date(match.kickoff_at).getTime() - lockHours * 3600_000);
   const locked = lockAt <= new Date();
-
-  const { data: existing } = await supabase
-    .from("match_predictions")
-    .select("predicted_home_score, predicted_away_score, predicted_scorer_player_id")
-    .eq("user_id", user!.id)
-    .eq("match_id", match.id)
-    .maybeSingle();
 
   return (
     <main className="mx-auto w-full max-w-lg flex-1 p-6">

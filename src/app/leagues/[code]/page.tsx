@@ -8,24 +8,27 @@ import { SeasonPredictionForm, type PlayerOption, type TeamOption } from "./Seas
 export default async function LeagueSeasonPage({ params }: PageProps<"/leagues/[code]">) {
   const { code } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const { data: league } = await supabase
-    .from("leagues")
-    .select("id, name, football_data_code, active")
-    .eq("football_data_code", code)
-    .maybeSingle();
+  const [
+    {
+      data: { user },
+    },
+    { data: league },
+  ] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase.from("leagues").select("id, name, football_data_code, active").eq("football_data_code", code).maybeSingle(),
+  ]);
 
   if (!league || !league.active) notFound();
 
-  const { data: seasons } = await supabase
-    .from("seasons")
-    .select("id, year, predictions_lock_at, status")
-    .eq("league_id", league.id)
-    .order("year", { ascending: false })
-    .limit(1);
+  const [{ data: seasons }, { data: teamsData }] = await Promise.all([
+    supabase
+      .from("seasons")
+      .select("id, year, predictions_lock_at, status")
+      .eq("league_id", league.id)
+      .order("year", { ascending: false })
+      .limit(1),
+    supabase.from("teams").select("id, name, logo_url").eq("league_id", league.id).order("name"),
+  ]);
   const season = seasons?.[0];
 
   if (!season) {
@@ -37,32 +40,28 @@ export default async function LeagueSeasonPage({ params }: PageProps<"/leagues/[
     );
   }
 
-  const { data: teamsData } = await supabase
-    .from("teams")
-    .select("id, name, logo_url")
-    .eq("league_id", league.id)
-    .order("name");
   const teams: TeamOption[] = (teamsData ?? []).map((t) => ({ id: t.id, name: t.name, logoUrl: t.logo_url }));
-
   const teamNameById = new Map(teams.map((t) => [t.id, t.name]));
-  const { data: playersData } = await supabase
-    .from("players")
-    .select("id, name, team_id")
-    .in("team_id", teams.map((t) => t.id))
-    .order("name");
+
+  const [{ data: playersData }, { data: existing }] = await Promise.all([
+    supabase
+      .from("players")
+      .select("id, name, team_id")
+      .in("team_id", teams.map((t) => t.id))
+      .order("name"),
+    supabase
+      .from("season_predictions")
+      .select("top_scorer_player_id, top_assist_player_id, top3, bottom3, surprise_team_id, flop_team_id")
+      .eq("user_id", user!.id)
+      .eq("season_id", season.id)
+      .maybeSingle(),
+  ]);
   const players: PlayerOption[] = (playersData ?? []).map((p) => ({
     id: p.id,
     name: p.name,
     teamId: p.team_id,
     teamName: teamNameById.get(p.team_id) ?? "",
   }));
-
-  const { data: existing } = await supabase
-    .from("season_predictions")
-    .select("top_scorer_player_id, top_assist_player_id, top3, bottom3, surprise_team_id, flop_team_id")
-    .eq("user_id", user!.id)
-    .eq("season_id", season.id)
-    .maybeSingle();
 
   const locked = new Date(season.predictions_lock_at) <= new Date();
 
