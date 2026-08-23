@@ -238,6 +238,22 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["points_ledger"]["Row"]>;
         Relationships: [];
       };
+      reminder_log: {
+        Row: {
+          id: number;
+          user_id: string;
+          kind: "match" | "season";
+          source_id: number;
+          sent_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["reminder_log"]["Row"]> & {
+          user_id: string;
+          kind: "match" | "season";
+          source_id: number;
+        };
+        Update: Partial<Database["public"]["Tables"]["reminder_log"]["Row"]>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
