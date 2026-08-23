@@ -6,10 +6,11 @@ on:
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
       - name: Sync fixtures (scores + événements)
         run: |
-          curl -sf -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" https://bootroom.online/api/cron/sync-fixtures
+          curl -sf --max-time 290 -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" https://bootroom.online/api/cron/sync-fixtures
       - name: Process scoring
         run: |
-          curl -sf -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" https://bootroom.online/api/cron/process-scoring
+          curl -sf --max-time 290 -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" https://bootroom.online/api/cron/process-scoring
