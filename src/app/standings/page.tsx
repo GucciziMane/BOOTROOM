@@ -8,6 +8,7 @@ export default async function StandingsLeaguesPage() {
   const { data: leagues } = await supabase
     .from("leagues")
     .select("id, name, country, football_data_code, logo_url")
+    .eq("active", true)
     .order("name");
 
   return (

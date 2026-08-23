@@ -50,6 +50,7 @@ export interface Database {
           football_data_id: number;
           football_data_code: string;
           logo_url: string | null;
+          active: boolean;
         };
         Insert: Partial<Database["public"]["Tables"]["leagues"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["leagues"]["Row"]>;

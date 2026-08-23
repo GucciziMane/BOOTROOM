@@ -13,11 +13,11 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
 
   const { data: league } = await supabase
     .from("leagues")
-    .select("id, name, football_data_code")
+    .select("id, name, football_data_code, active")
     .eq("football_data_code", code)
     .maybeSingle();
 
-  if (!league) notFound();
+  if (!league || !league.active) notFound();
 
   const { data: seasons } = await supabase
     .from("seasons")

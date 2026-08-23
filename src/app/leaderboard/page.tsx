@@ -9,8 +9,14 @@ export default async function LeaderboardPage() {
     .from("profiles")
     .select("id, username, avatar_url")
     .order("username");
-  const { data: leagues } = await supabase.from("leagues").select("id, name").order("name");
-  const { data: ledger } = await supabase.from("points_ledger").select("user_id, league_id, points");
+  const { data: leagues } = await supabase
+    .from("leagues")
+    .select("id, name")
+    .eq("active", true)
+    .order("name");
+  const activeLeagueIds = new Set((leagues ?? []).map((l) => l.id));
+  const { data: ledgerAll } = await supabase.from("points_ledger").select("user_id, league_id, points");
+  const ledger = (ledgerAll ?? []).filter((row) => !row.league_id || activeLeagueIds.has(row.league_id));
 
   const totalByUser = new Map<string, number>();
   const byUserByLeague = new Map<string, Map<number, number>>();

@@ -12,6 +12,7 @@ export default async function LeaguesPage() {
   const { data: leagues } = await supabase
     .from("leagues")
     .select("id, name, country, football_data_code, logo_url")
+    .eq("active", true)
     .order("name");
 
   const { data: seasons } = await supabase.from("seasons").select("id, league_id, predictions_lock_at, status");

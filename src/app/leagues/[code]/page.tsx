@@ -14,11 +14,11 @@ export default async function LeagueSeasonPage({ params }: PageProps<"/leagues/[
 
   const { data: league } = await supabase
     .from("leagues")
-    .select("id, name, football_data_code")
+    .select("id, name, football_data_code, active")
     .eq("football_data_code", code)
     .maybeSingle();
 
-  if (!league) notFound();
+  if (!league || !league.active) notFound();
 
   const { data: seasons } = await supabase
     .from("seasons")
