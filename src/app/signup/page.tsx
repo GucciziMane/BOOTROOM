@@ -14,7 +14,7 @@ export default function SignupPage() {
         <div>
           <h1 className="text-3xl font-bold">Créer un compte</h1>
           <p className="mt-1 text-sm text-mute">
-            Réservé aux 5 membres invités. Un code d&apos;invitation à usage unique est nécessaire.
+            Réservé aux membres invités. Un code d&apos;invitation à usage unique est nécessaire.
           </p>
         </div>
 
