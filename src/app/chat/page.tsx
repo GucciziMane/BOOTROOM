@@ -35,7 +35,7 @@ export default async function ChatPage() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-1 flex-col p-6">
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Chat</h1>
+        <h1 className="text-3xl font-bold">3ème mi-temps</h1>
         <Link href="/" className={`text-sm ${linkMuted}`}>
           Retour
         </Link>

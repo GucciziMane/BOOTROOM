@@ -75,7 +75,12 @@ export default async function DashboardPage() {
             title="Classement général"
             description="Le total des points de chacun entre potes, et le détail par championnat."
           />
-          <NavCard href="/chat" title="Chat" description="La discussion entre tous les membres." badgeCount={unreadChatCount ?? 0} />
+          <NavCard
+            href="/chat"
+            title="3ème mi-temps"
+            description="La discussion entre tous les membres."
+            badgeCount={unreadChatCount ?? 0}
+          />
         </div>
       </div>
     </main>
