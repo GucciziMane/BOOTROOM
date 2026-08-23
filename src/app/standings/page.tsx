@@ -33,9 +33,9 @@ export default async function StandingsLeaguesPage() {
               className="flex items-center gap-3 p-4 transition-colors hover:bg-cream"
             >
               {league.logo_url && <img src={league.logo_url} alt="" className="h-8 w-8 object-contain" />}
-              <div>
-                <div className="font-bold">{league.name}</div>
-                <div className="text-sm">{LEAGUE_FLAG[league.football_data_code] ?? league.country}</div>
+              <div className="flex items-center gap-2 font-bold">
+                <span>{LEAGUE_FLAG[league.football_data_code] ?? league.country}</span>
+                <span>{league.name}</span>
               </div>
             </Link>
           </li>
