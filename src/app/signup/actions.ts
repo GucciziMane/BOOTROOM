@@ -12,10 +12,9 @@ export async function signUp(_prevState: SignUpState, formData: FormData): Promi
   const email = String(formData.get("email") ?? "");
   const password = String(formData.get("password") ?? "");
   const username = String(formData.get("username") ?? "").trim();
-  const inviteCode = String(formData.get("invite_code") ?? "").trim();
 
-  if (!username || !inviteCode) {
-    return { error: "Pseudo et code d'invitation requis.", success: false };
+  if (!username) {
+    return { error: "Pseudo requis.", success: false };
   }
 
   const headersList = await headers();
@@ -27,16 +26,14 @@ export async function signUp(_prevState: SignUpState, formData: FormData): Promi
     email,
     password,
     options: {
-      data: { username, invite_code: inviteCode },
+      data: { username },
       emailRedirectTo: `${origin}/auth/confirm`,
     },
   });
 
   if (error) {
-    // Le trigger handle_new_user() rejette les codes invalides/déjà utilisés
-    // avec ce message précis (voir supabase/migrations/0001_init.sql).
-    if (error.message.includes("code d'invitation")) {
-      return { error: "Code d'invitation invalide ou déjà utilisé.", success: false };
+    if (error.message.includes("duplicate key") || error.message.includes("already registered")) {
+      return { error: "Ce pseudo ou cet email est déjà utilisé.", success: false };
     }
     return { error: error.message, success: false };
   }

@@ -32,9 +32,7 @@ export default function SignupPage() {
       <form action={formAction} className={`w-full max-w-sm space-y-5 ${card}`}>
         <div>
           <h1 className="text-3xl font-bold">Créer un compte</h1>
-          <p className="mt-1 text-sm text-mute">
-            Réservé aux membres invités. Un code d&apos;invitation à usage unique est nécessaire.
-          </p>
+          <p className="mt-1 text-sm text-mute">Pronostics entre amis sur les 5 grands championnats.</p>
         </div>
 
         <div className="space-y-1">
@@ -56,13 +54,6 @@ export default function SignupPage() {
             Mot de passe
           </label>
           <input id="password" name="password" type="password" required minLength={6} className={input} />
-        </div>
-
-        <div className="space-y-1">
-          <label htmlFor="invite_code" className="text-sm font-bold">
-            Code d&apos;invitation
-          </label>
-          <input id="invite_code" name="invite_code" type="text" required className={input} />
         </div>
 
         {state.error && <p className="text-sm text-bad">{state.error}</p>}

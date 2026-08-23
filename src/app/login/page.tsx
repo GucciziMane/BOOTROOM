@@ -30,7 +30,7 @@ export default function LoginPage() {
         <form action={formAction} className={`space-y-5 ${card}`}>
           <div>
             <h1 className="text-3xl font-bold">Boot Room</h1>
-            <p className="mt-1 text-sm text-mute">Connexion réservée aux membres invités.</p>
+            <p className="mt-1 text-sm text-mute">Pronostics entre amis sur les 5 grands championnats.</p>
           </div>
 
           <div className="space-y-1">
@@ -54,7 +54,7 @@ export default function LoginPage() {
           </button>
 
           <p className="text-sm text-mute">
-            Tu as un code d&apos;invitation ?{" "}
+            Pas encore de compte ?{" "}
             <Link href="/signup" className={linkMuted}>
               Créer un compte
             </Link>
