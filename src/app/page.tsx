@@ -67,7 +67,7 @@ export default async function DashboardPage() {
           />
           <NavCard
             href="/standings"
-            title="Classements & buteurs 🏆"
+            title={"Classements & buteurs 🏆"}
             description="Le classement réel de chaque championnat, mis à jour après chaque match, plus les buteurs et passeurs."
           />
           <NavCard
