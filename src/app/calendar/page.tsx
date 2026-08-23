@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { linkMuted, listCard } from "@/lib/ui";
+import { LEAGUE_FLAG } from "@/lib/country-flags";
 
 export default async function CalendarLeaguesPage() {
   const supabase = await createClient();
@@ -34,7 +35,7 @@ export default async function CalendarLeaguesPage() {
               {league.logo_url && <img src={league.logo_url} alt="" className="h-8 w-8 object-contain" />}
               <div>
                 <div className="font-bold">{league.name}</div>
-                <div className="text-sm text-mute">{league.country}</div>
+                <div className="text-sm">{LEAGUE_FLAG[league.football_data_code] ?? league.country}</div>
               </div>
             </Link>
           </li>
