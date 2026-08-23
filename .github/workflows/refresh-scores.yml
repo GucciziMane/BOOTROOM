@@ -8,6 +8,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Sync fixtures (scores + événements)
-        run: curl -sf -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" https://bootroom.online/api/cron/sync-fixtures
+        run: |
+          curl -sf -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" https://bootroom.online/api/cron/sync-fixtures
       - name: Process scoring
-        run: curl -sf -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" https://bootroom.online/api/cron/process-scoring
+        run: |
+          curl -sf -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" https://bootroom.online/api/cron/process-scoring
