@@ -1,33 +1,45 @@
 "use server";
 
-import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 
-export async function signUp(_prevState: string | null, formData: FormData): Promise<string | null> {
+export interface SignUpState {
+  error: string | null;
+  success: boolean;
+}
+
+export async function signUp(_prevState: SignUpState, formData: FormData): Promise<SignUpState> {
   const email = String(formData.get("email") ?? "");
   const password = String(formData.get("password") ?? "");
   const username = String(formData.get("username") ?? "").trim();
   const inviteCode = String(formData.get("invite_code") ?? "").trim();
 
   if (!username || !inviteCode) {
-    return "Pseudo et code d'invitation requis.";
+    return { error: "Pseudo et code d'invitation requis.", success: false };
   }
+
+  const headersList = await headers();
+  const host = headersList.get("host") ?? "boot-room.vercel.app";
+  const origin = headersList.get("origin") ?? `${host.startsWith("localhost") ? "http" : "https"}://${host}`;
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signUp({
     email,
     password,
-    options: { data: { username, invite_code: inviteCode } },
+    options: {
+      data: { username, invite_code: inviteCode },
+      emailRedirectTo: `${origin}/auth/confirm`,
+    },
   });
 
   if (error) {
     // Le trigger handle_new_user() rejette les codes invalides/déjà utilisés
     // avec ce message précis (voir supabase/migrations/0001_init.sql).
     if (error.message.includes("code d'invitation")) {
-      return "Code d'invitation invalide ou déjà utilisé.";
+      return { error: "Code d'invitation invalide ou déjà utilisé.", success: false };
     }
-    return error.message;
+    return { error: error.message, success: false };
   }
 
-  redirect("/");
+  return { error: null, success: true };
 }

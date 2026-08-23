@@ -2,11 +2,30 @@
 
 import { useActionState } from "react";
 import Link from "next/link";
-import { signUp } from "./actions";
-import { card, input, buttonPrimary, linkMuted } from "@/lib/ui";
+import { signUp, type SignUpState } from "./actions";
+import { card, input, buttonPrimary, linkMuted, bannerNeutral } from "@/lib/ui";
+
+const initialState: SignUpState = { error: null, success: false };
 
 export default function SignupPage() {
-  const [error, formAction, isPending] = useActionState(signUp, null);
+  const [state, formAction, isPending] = useActionState(signUp, initialState);
+
+  if (state.success) {
+    return (
+      <main className="flex flex-1 items-center justify-center p-6">
+        <div className={`w-full max-w-sm space-y-4 ${card}`}>
+          <h1 className="text-3xl font-bold">Compte créé</h1>
+          <div className={bannerNeutral}>
+            Vérifie ta boîte mail (et les spams) et clique sur le lien de confirmation — tu
+            pourras ensuite te connecter.
+          </div>
+          <Link href="/login" className={`block text-center text-sm ${linkMuted}`}>
+            Retour à la connexion
+          </Link>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="flex flex-1 items-center justify-center p-6">
@@ -46,7 +65,7 @@ export default function SignupPage() {
           <input id="invite_code" name="invite_code" type="text" required className={input} />
         </div>
 
-        {error && <p className="text-sm text-bad">{error}</p>}
+        {state.error && <p className="text-sm text-bad">{state.error}</p>}
 
         <button type="submit" disabled={isPending} className={`w-full ${buttonPrimary}`}>
           {isPending ? "Création..." : "Créer mon compte"}
