@@ -12,7 +12,7 @@ export default async function DashboardPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("username, avatar_url")
+    .select("username, avatar_url, is_admin")
     .eq("id", user!.id)
     .single();
 
@@ -21,6 +21,11 @@ export default async function DashboardPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Boot Room</h1>
         <div className="flex items-center gap-4">
+          {profile?.is_admin && (
+            <Link href="/admin" className={`text-sm ${linkMuted}`}>
+              Administration
+            </Link>
+          )}
           <Link href="/profile" className="flex items-center gap-2">
             <span className="relative h-16 w-16 shrink-0 overflow-hidden rounded-full border-2 border-line bg-cream">
               {profile?.avatar_url ? (
