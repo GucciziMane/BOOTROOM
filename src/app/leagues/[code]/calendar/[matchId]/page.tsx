@@ -18,7 +18,9 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
     supabase.auth.getUser(),
     supabase
       .from("matches")
-      .select("id, season_id, home_team_id, away_team_id, kickoff_at, status, home_score, away_score")
+      .select(
+        "id, season_id, home_team_id, away_team_id, kickoff_at, status, home_score, away_score, favorite_team_id, odds_tier"
+      )
       .eq("id", Number(matchId))
       .maybeSingle(),
   ]);
@@ -33,6 +35,7 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
     { data: pointConfigRows },
     { data: scorerTierPointsRows },
     { data: playerTierRows },
+    { data: resultMultiplierRows },
   ] = await Promise.all([
     supabase.from("teams").select("id, name").in("id", [match.home_team_id, match.away_team_id]),
     supabase
@@ -57,6 +60,7 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
       .in("key", ["match_exact_score", "match_correct_result_no_score"]),
     supabase.from("match_scorer_tier_points").select("tier, points"),
     supabase.from("player_scoring_tier").select("player_id, tier").eq("season_id", match.season_id),
+    supabase.from("match_result_tier_multipliers").select("tier, favorite_multiplier_pct, underdog_multiplier_pct"),
   ]);
   const homeTeam = teams?.find((t) => t.id === match.home_team_id);
   const awayTeam = teams?.find((t) => t.id === match.away_team_id);
@@ -75,6 +79,24 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
     scorerTierPoints: Object.fromEntries(scorerTierPoints),
     playerTier: Object.fromEntries(
       [...homePlayers, ...awayPlayers].map((p) => [p.id, playerTierById.get(p.id) ?? FALLBACK_SCORER_TIER])
+    ),
+  };
+  const resultOdds = {
+    homeTeamId: match.home_team_id,
+    awayTeamId: match.away_team_id,
+    favoriteTeamId: match.favorite_team_id,
+    favoriteTeamName:
+      match.favorite_team_id === match.home_team_id
+        ? (homeTeam?.name ?? null)
+        : match.favorite_team_id === match.away_team_id
+          ? (awayTeam?.name ?? null)
+          : null,
+    tier: match.odds_tier,
+    multiplierByTier: Object.fromEntries(
+      (resultMultiplierRows ?? []).map((r) => [
+        r.tier,
+        { favoriteMultiplierPct: r.favorite_multiplier_pct, underdogMultiplierPct: r.underdog_multiplier_pct },
+      ])
     ),
   };
 
@@ -118,6 +140,7 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
           homePlayers={homePlayers}
           awayPlayers={awayPlayers}
           scoring={scoring}
+          resultOdds={resultOdds}
           initial={{
             predictedHomeScore: existing?.predicted_home_score ?? null,
             predictedAwayScore: existing?.predicted_away_score ?? null,

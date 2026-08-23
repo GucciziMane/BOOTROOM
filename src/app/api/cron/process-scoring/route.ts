@@ -5,8 +5,12 @@ import {
   computeMatchScorePoints,
   computeSeasonPositionPoints,
   resolveScorerTierPoints,
+  predictedWinnerTeamId,
+  applyResultOdds,
   FALLBACK_SCORER_TIER,
   type PointConfig,
+  type OddsTier,
+  type ResultTierMultiplier,
 } from "@/lib/scoring/points";
 import { computeStandings } from "@/lib/scoring/standings";
 import type { PointsSourceType } from "@/types/database";
@@ -44,7 +48,7 @@ export async function GET(request: NextRequest) {
 async function processFinishedMatches(supabase: ServiceClient, config: PointConfig) {
   const { data: matches, error } = await supabase
     .from("matches")
-    .select("id, league_id, season_id, home_score, away_score")
+    .select("id, league_id, season_id, home_team_id, away_team_id, home_score, away_score, favorite_team_id, odds_tier")
     .eq("status", "finished")
     .not("events_synced_at", "is", null)
     .is("points_processed_at", null)
@@ -56,6 +60,16 @@ async function processFinishedMatches(supabase: ServiceClient, config: PointConf
 
   const { data: tierPoints } = await supabase.from("match_scorer_tier_points").select("tier, points");
   const tierPointsMap = new Map((tierPoints ?? []).map((t) => [t.tier, t.points]));
+
+  const { data: resultMultipliers } = await supabase
+    .from("match_result_tier_multipliers")
+    .select("tier, favorite_multiplier_pct, underdog_multiplier_pct");
+  const resultMultiplierMap = new Map<OddsTier, ResultTierMultiplier>(
+    (resultMultipliers ?? []).map((r) => [
+      r.tier,
+      { favoriteMultiplierPct: r.favorite_multiplier_pct, underdogMultiplierPct: r.underdog_multiplier_pct },
+    ])
+  );
 
   let processed = 0;
   for (const match of matches) {
@@ -70,12 +84,25 @@ async function processFinishedMatches(supabase: ServiceClient, config: PointConf
     const actualScorers = new Set((goals ?? []).map((g) => g.player_id).filter((id): id is number => id !== null));
 
     for (const pred of predictions ?? []) {
-      const scorePoints = computeMatchScorePoints(
+      const baseScorePoints = computeMatchScorePoints(
         pred.predicted_home_score,
         pred.predicted_away_score,
         match.home_score,
         match.away_score,
         config
+      );
+      const winnerTeamId = predictedWinnerTeamId(
+        pred.predicted_home_score,
+        pred.predicted_away_score,
+        match.home_team_id,
+        match.away_team_id
+      );
+      const scorePoints = applyResultOdds(
+        baseScorePoints,
+        winnerTeamId,
+        match.favorite_team_id,
+        match.odds_tier,
+        resultMultiplierMap
       );
 
       let scorerPoints = 0;

@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { saveMatchPrediction, type SaveMatchPredictionState } from "./actions";
 import { buttonPrimary, card, input } from "@/lib/ui";
+import { applyResultOdds, predictedWinnerTeamId, type OddsTier, type ResultTierMultiplier } from "@/lib/scoring/points";
 
 interface PlayerOption {
   id: number;
@@ -16,6 +17,15 @@ interface ScoringInfo {
   playerTier: Record<number, number>;
 }
 
+interface ResultOdds {
+  homeTeamId: number;
+  awayTeamId: number;
+  favoriteTeamId: number | null;
+  favoriteTeamName: string | null;
+  tier: OddsTier | null;
+  multiplierByTier: Record<number, ResultTierMultiplier>;
+}
+
 interface Props {
   leagueCode: string;
   matchId: number;
@@ -24,6 +34,7 @@ interface Props {
   homePlayers: PlayerOption[];
   awayPlayers: PlayerOption[];
   scoring: ScoringInfo;
+  resultOdds: ResultOdds;
   initial: {
     predictedHomeScore: number | null;
     predictedAwayScore: number | null;
@@ -41,6 +52,7 @@ export function MatchPredictionForm({
   homePlayers,
   awayPlayers,
   scoring,
+  resultOdds,
   initial,
 }: Props) {
   const [state, formAction, isPending] = useActionState(saveMatchPrediction, initialState);
@@ -52,6 +64,31 @@ export function MatchPredictionForm({
 
   const scorer = scorerId ? [...homePlayers, ...awayPlayers].find((p) => p.id === Number(scorerId)) : undefined;
   const scorerPoints = scorer ? scoring.scorerTierPoints[scoring.playerTier[scorer.id]] ?? 0 : 0;
+
+  const multiplierByTier = new Map(
+    Object.entries(resultOdds.multiplierByTier).map(([tier, mult]) => [Number(tier) as OddsTier, mult])
+  );
+  const winnerTeamId =
+    homeScore !== "" && awayScore !== ""
+      ? predictedWinnerTeamId(Number(homeScore), Number(awayScore), resultOdds.homeTeamId, resultOdds.awayTeamId)
+      : null;
+  const backingFavorite = winnerTeamId !== null && winnerTeamId === resultOdds.favoriteTeamId;
+  const backingUnderdog =
+    winnerTeamId !== null && resultOdds.favoriteTeamId !== null && winnerTeamId !== resultOdds.favoriteTeamId;
+  const exactScorePoints = applyResultOdds(
+    scoring.matchExactScore,
+    winnerTeamId,
+    resultOdds.favoriteTeamId,
+    resultOdds.tier,
+    multiplierByTier
+  );
+  const correctResultPoints = applyResultOdds(
+    scoring.matchCorrectResultNoScore,
+    winnerTeamId,
+    resultOdds.favoriteTeamId,
+    resultOdds.tier,
+    multiplierByTier
+  );
 
   return (
     <form action={formAction} className={`space-y-6 ${card}`}>
@@ -114,13 +151,22 @@ export function MatchPredictionForm({
 
       <div className="rounded-xl border border-line bg-cream p-4 text-sm">
         <p className="mb-2 font-bold">Points en jeu</p>
+        {resultOdds.favoriteTeamId && resultOdds.tier && (
+          <p className="mb-2 text-mute">
+            {resultOdds.favoriteTeamName} est favori au classement actuel.{" "}
+            {backingUnderdog
+              ? "Tu paries sur l'outsider : bonus de points ci-dessous."
+              : backingFavorite
+                ? "Tu paries sur le favori : points réduits ci-dessous."
+                : "Mise sur l'outsider pour gagner plus de points."}
+          </p>
+        )}
         <ul className="space-y-1 text-mute">
           <li>
-            Score exact : <strong className="text-ink">+{scoring.matchExactScore} pts</strong>
+            Score exact : <strong className="text-ink">+{exactScorePoints} pts</strong>
           </li>
           <li>
-            Bon résultat sans le score exact :{" "}
-            <strong className="text-ink">+{scoring.matchCorrectResultNoScore} pts</strong>
+            Bon résultat sans le score exact : <strong className="text-ink">+{correctResultPoints} pts</strong>
           </li>
           {scorer && (
             <li>
@@ -131,7 +177,7 @@ export function MatchPredictionForm({
         {scorer && (
           <p className="mt-3 border-t border-line pt-3 font-bold">
             Total si score exact + {scorer.name} buteur :{" "}
-            <span className="text-good">{scoring.matchExactScore + scorerPoints} pts</span>
+            <span className="text-good">{exactScorePoints + scorerPoints} pts</span>
           </p>
         )}
       </div>

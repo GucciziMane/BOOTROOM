@@ -3,7 +3,51 @@ import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { footballData, normalizePosition } from "@/lib/football-data/client";
 
+type ServiceClient = ReturnType<typeof createServiceRoleClient>;
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Force historique (points/match de la saison précédente) de chaque équipe, utilisée pour
+ * désigner un favori dès le premier match de la saison en cours (voir lib/scoring/match-odds).
+ * Ne réinterroge l'API que si au moins une équipe n'a pas encore de prior enregistré : le
+ * classement d'une saison terminée ne change plus, inutile de le refetch à chaque sync hebdo.
+ */
+async function updatePriorSeasonStrength(
+  supabase: ServiceClient,
+  code: string,
+  currentYear: number,
+  teamIdByFdId: Map<number, number>
+) {
+  const teamIds = [...teamIdByFdId.values()];
+  const { data: existing } = await supabase.from("teams").select("id, prior_ppg").in("id", teamIds);
+  const alreadyHasPrior = new Set((existing ?? []).filter((t) => t.prior_ppg !== null).map((t) => t.id));
+  if (teamIds.every((id) => alreadyHasPrior.has(id))) return;
+
+  let table: Array<{ team: { id: number }; playedGames: number; points: number }>;
+  try {
+    const standings = await footballData.getStandings(code, currentYear - 1);
+    table = standings.standings.find((s) => s.type === "TOTAL")?.table ?? [];
+  } catch {
+    // Saison précédente indisponible (compétition tout juste suivie, etc.) : pas de prior pour l'instant.
+    return;
+  }
+  if (table.length === 0) return;
+
+  const priorPpgByFdTeamId = new Map(table.map((row) => [row.team.id, row.points / row.playedGames]));
+  const knownPpgValues = [...priorPpgByFdTeamId.values()];
+  // Équipe promue sans historique dans cette division : on la suppose aussi faible que la
+  // lanterne rouge de la saison passée, faute de mieux.
+  const promotedDefaultPpg = knownPpgValues.length > 0 ? Math.min(...knownPpgValues) : null;
+
+  const updates = [...teamIdByFdId.entries()]
+    .map(([fdTeamId, teamId]) => ({ id: teamId, prior_ppg: priorPpgByFdTeamId.get(fdTeamId) ?? promotedDefaultPpg }))
+    .filter((u) => u.prior_ppg !== null);
+
+  for (const u of updates) {
+    await supabase.from("teams").update({ prior_ppg: u.prior_ppg }).eq("id", u.id);
+  }
+}
 
 function computeSeasonStatus(startDate: string, endDate: string): "upcoming" | "in_progress" | "finished" {
   const now = Date.now();
@@ -106,6 +150,9 @@ export async function GET(request: NextRequest) {
       if (playersError) {
         throw new Error(playersError.message);
       }
+
+      await sleep(700);
+      await updatePriorSeasonStrength(supabase, league.football_data_code, year, teamIdByFdId);
 
       summary.push({ league: league.football_data_code, teams: upsertedTeams.length, players: playerRows.length });
       await sleep(700);

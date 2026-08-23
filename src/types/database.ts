@@ -57,7 +57,14 @@ export interface Database {
         Relationships: [];
       };
       teams: {
-        Row: { id: number; league_id: number; name: string; football_data_id: number; logo_url: string | null };
+        Row: {
+          id: number;
+          league_id: number;
+          name: string;
+          football_data_id: number;
+          logo_url: string | null;
+          prior_ppg: number | null;
+        };
         Insert: Partial<Database["public"]["Tables"]["teams"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["teams"]["Row"]>;
         Relationships: [];
@@ -107,9 +114,17 @@ export interface Database {
           away_score: number | null;
           points_processed_at: string | null;
           events_synced_at: string | null;
+          favorite_team_id: number | null;
+          odds_tier: 1 | 2 | 3 | 4 | 5 | null;
         };
         Insert: Partial<Database["public"]["Tables"]["matches"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["matches"]["Row"]>;
+        Relationships: [];
+      };
+      match_result_tier_multipliers: {
+        Row: { tier: 1 | 2 | 3 | 4 | 5; favorite_multiplier_pct: number; underdog_multiplier_pct: number };
+        Insert: Partial<Database["public"]["Tables"]["match_result_tier_multipliers"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["match_result_tier_multipliers"]["Row"]>;
         Relationships: [];
       };
       match_goals: {

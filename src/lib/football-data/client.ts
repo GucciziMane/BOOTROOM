@@ -100,7 +100,9 @@ export const footballData = {
   getCompetitionMatches: (code: string) =>
     footballDataFetch<FdCompetitionMatchesResponse>(`/competitions/${code}/matches`),
 
-  getStandings: (code: string) => footballDataFetch<FdStandingsResponse>(`/competitions/${code}/standings`),
+  /** `season` (année de début, ex: 2025) permet de récupérer le classement d'une saison passée. */
+  getStandings: (code: string, season?: number) =>
+    footballDataFetch<FdStandingsResponse>(`/competitions/${code}/standings${season ? `?season=${season}` : ""}`),
 };
 
 /** Poste football-data.org -> poste normalisé utilisé dans notre schéma. */

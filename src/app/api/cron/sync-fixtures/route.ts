@@ -4,6 +4,8 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 import { footballData, normalizeMatchStatus } from "@/lib/football-data/client";
 import { apiFootball, type AfFixture } from "@/lib/api-football/client";
 import { teamNamesMatch, matchPlayerByName } from "@/lib/sync/name-match";
+import { computeStandings } from "@/lib/scoring/standings";
+import { computeMatchOdds } from "@/lib/scoring/match-odds";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const MAX_EVENT_CALLS_PER_RUN = 80; // reste sous le quota de 100 req/jour d'API-Football
@@ -67,6 +69,8 @@ export async function GET(request: NextRequest) {
         .upsert(rows, { onConflict: "football_data_id" });
       if (upsertError) throw new Error(upsertError.message);
 
+      await updateMatchOdds(supabase, seasonId);
+
       matchesSummary.push({ league: league.football_data_code, matches: rows.length });
       await sleep(700);
     } catch (err) {
@@ -81,6 +85,55 @@ export async function GET(request: NextRequest) {
   const eventsSummary = await syncGoalEvents(supabase, leagues);
 
   return NextResponse.json({ matches: matchesSummary, events: eventsSummary });
+}
+
+/**
+ * Recalcule le favori + l'écart de niveau (odds_tier) de chaque match pas encore joué de la
+ * saison, à partir du classement courant (matchs terminés). Suit donc l'avancée du
+ * championnat : un promu qui s'installe en haut de tableau redevient favori au fil des matchs.
+ */
+async function updateMatchOdds(supabase: ReturnType<typeof createServiceRoleClient>, seasonId: number) {
+  const { data: seasonMatches } = await supabase
+    .from("matches")
+    .select("id, home_team_id, away_team_id, status, home_score, away_score")
+    .eq("season_id", seasonId);
+  if (!seasonMatches || seasonMatches.length === 0) return;
+
+  const teamIds = [...new Set(seasonMatches.flatMap((m) => [m.home_team_id, m.away_team_id]))];
+  const { data: teamsData } = await supabase.from("teams").select("id, prior_ppg").in("id", teamIds);
+  const priorPpgByTeam = new Map((teamsData ?? []).map((t) => [t.id, t.prior_ppg]));
+
+  const finishedResults = seasonMatches
+    .filter((m) => m.status === "finished" && m.home_score !== null && m.away_score !== null)
+    .map((m) => ({
+      homeTeamId: m.home_team_id,
+      awayTeamId: m.away_team_id,
+      homeScore: m.home_score as number,
+      awayScore: m.away_score as number,
+    }));
+  const standingByTeam = new Map(
+    computeStandings(finishedResults, teamIds).map((s) => [
+      s.teamId,
+      { teamId: s.teamId, played: s.played, points: s.points, priorPpg: priorPpgByTeam.get(s.teamId) ?? null },
+    ])
+  );
+
+  const updates = seasonMatches
+    .filter((m) => m.status === "scheduled" || m.status === "live")
+    .flatMap((m) => {
+      const home = standingByTeam.get(m.home_team_id);
+      const away = standingByTeam.get(m.away_team_id);
+      if (!home || !away) return [];
+      const odds = computeMatchOdds(home, away);
+      return [{ id: m.id, favorite_team_id: odds.favoriteTeamId, odds_tier: odds.tier }];
+    });
+
+  for (const u of updates) {
+    await supabase
+      .from("matches")
+      .update({ favorite_team_id: u.favorite_team_id, odds_tier: u.odds_tier })
+      .eq("id", u.id);
+  }
 }
 
 async function syncGoalEvents(

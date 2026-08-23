@@ -41,3 +41,41 @@ const FALLBACK_SCORER_TIER_POINTS = 40;
 export function resolveScorerTierPoints(tier: number | null | undefined, tierPointsMap: Map<number, number>): number {
   return tierPointsMap.get(tier ?? FALLBACK_SCORER_TIER) ?? FALLBACK_SCORER_TIER_POINTS;
 }
+
+/** 1 = équipes proches au classement, 5 = écart de niveau important. */
+export type OddsTier = 1 | 2 | 3 | 4 | 5;
+
+export interface ResultTierMultiplier {
+  favoriteMultiplierPct: number;
+  underdogMultiplierPct: number;
+}
+
+/** Équipe désignée vainqueur par le pronostic (score prédit), ou null si nul pronostiqué. */
+export function predictedWinnerTeamId(
+  predictedHome: number,
+  predictedAway: number,
+  homeTeamId: number,
+  awayTeamId: number
+): number | null {
+  if (predictedHome === predictedAway) return null;
+  return predictedHome > predictedAway ? homeTeamId : awayTeamId;
+}
+
+/**
+ * Ajuste les points de score selon la cote du match : un pronostic gagnant sur l'outsider
+ * rapporte plus qu'un pronostic gagnant sur le favori "logique". Sans favori connu (début de
+ * saison, ou équipes trop proches) ou pronostic nul, les points de base ne sont pas modifiés.
+ */
+export function applyResultOdds(
+  basePoints: number,
+  winnerTeamId: number | null,
+  favoriteTeamId: number | null,
+  tier: OddsTier | null,
+  multiplierByTier: Map<OddsTier, ResultTierMultiplier>
+): number {
+  if (basePoints <= 0 || winnerTeamId === null || favoriteTeamId === null || tier === null) return basePoints;
+  const mult = multiplierByTier.get(tier);
+  if (!mult) return basePoints;
+  const pct = winnerTeamId === favoriteTeamId ? mult.favoriteMultiplierPct : mult.underdogMultiplierPct;
+  return Math.round((basePoints * pct) / 100);
+}
