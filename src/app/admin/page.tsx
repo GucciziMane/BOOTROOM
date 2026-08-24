@@ -3,6 +3,11 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { linkMuted, listCard } from "@/lib/ui";
 import { DeleteUserButton } from "./DeleteUserButton";
+import { RefreshScoresButton } from "./RefreshScoresButton";
+
+// Le refresh peut prendre du temps (events buteurs API-Football + calcul des points) :
+// on aligne la limite sur le budget max des fonctions Vercel plutôt que le défaut des Server Actions.
+export const maxDuration = 300;
 
 export default async function AdminPage() {
   const supabase = await createClient();
@@ -26,6 +31,15 @@ export default async function AdminPage() {
         <Link href="/" className={`text-sm ${linkMuted}`}>
           Retour
         </Link>
+      </div>
+
+      <h2 className="mb-3 text-lg font-bold">Scores &amp; points</h2>
+      <p className="mb-3 text-sm text-mute">
+        Les matchs et les points se rafraîchissent automatiquement toutes les 2h. En cas de retard, force
+        l&apos;actualisation ici.
+      </p>
+      <div className="mb-8">
+        <RefreshScoresButton />
       </div>
 
       <h2 className="mb-3 text-lg font-bold">Membres</h2>
