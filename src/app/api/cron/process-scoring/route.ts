@@ -16,6 +16,10 @@ import { computeStandings } from "@/lib/scoring/standings";
 import type { PointsSourceType } from "@/types/database";
 
 const MAX_MATCHES_PER_RUN = 100;
+// Délai laissé à la sync des buteurs (API-Football) avant de traiter un match quand même :
+// si la clé API-Football est invalide/en panne, on ne veut pas bloquer indéfiniment les points
+// de score (qui n'en dépendent pas) en attendant des buteurs qui ne viendront jamais.
+const EVENTS_SYNC_GRACE_MS = 6 * 60 * 60 * 1000;
 
 type ServiceClient = ReturnType<typeof createServiceRoleClient>;
 
@@ -46,12 +50,14 @@ export async function GET(request: NextRequest) {
 }
 
 async function processFinishedMatches(supabase: ServiceClient, config: PointConfig) {
+  const eventsSyncDeadline = new Date(Date.now() - EVENTS_SYNC_GRACE_MS).toISOString();
+
   const { data: matches, error } = await supabase
     .from("matches")
     .select("id, league_id, season_id, home_team_id, away_team_id, home_score, away_score, favorite_team_id, odds_tier")
     .eq("status", "finished")
-    .not("events_synced_at", "is", null)
     .is("points_processed_at", null)
+    .or(`events_synced_at.not.is.null,kickoff_at.lt.${eventsSyncDeadline}`)
     .limit(MAX_MATCHES_PER_RUN);
 
   if (error || !matches || matches.length === 0) {
