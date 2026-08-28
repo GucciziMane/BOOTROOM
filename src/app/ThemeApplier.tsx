@@ -49,7 +49,7 @@ export function ClubCrestWatermark({ enabled, crestUrl }: { enabled: boolean; cr
         alt=""
         width={520}
         height={520}
-        className="h-[70vmin] w-[70vmin] max-w-none object-contain opacity-[0.08]"
+        className="h-[70vmin] w-[70vmin] max-w-none object-contain opacity-20"
       />
     </div>
   );
