@@ -179,13 +179,13 @@ export function MatchPredictionCard({
 
 function TeamBadge({ name, logoUrl }: { name: string; logoUrl: string | null }) {
   return (
-    <span className="flex w-16 flex-col items-center gap-1 text-center">
+    <span className="flex w-20 flex-col items-center gap-1.5 text-center">
       {logoUrl ? (
-        <Image src={logoUrl} alt="" width={24} height={24} className="h-6 w-6 shrink-0 object-contain" />
+        <Image src={logoUrl} alt="" width={40} height={40} className="h-10 w-10 shrink-0 object-contain" />
       ) : (
-        <span className="block h-6 w-6 shrink-0 rounded-full bg-cream" />
+        <span className="block h-10 w-10 shrink-0 rounded-full bg-cream" />
       )}
-      <span className="line-clamp-1 text-[10px] font-bold leading-tight">{name}</span>
+      <span className="text-[11px] font-bold leading-tight">{name}</span>
     </span>
   );
 }

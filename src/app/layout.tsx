@@ -1,14 +1,12 @@
 import type { Metadata } from "next";
-import { Comic_Neue } from "next/font/google";
+import { Instrument_Sans } from "next/font/google";
 import { BottomNav } from "./BottomNav";
 import "./globals.css";
 
-// Comic Sans MS est une police système (non distribuable) : on la place en tête de pile,
-// avec Comic Neue (équivalent libre) chargée en secours pour les systèmes qui ne l'ont pas.
-const comicNeue = Comic_Neue({
+const comicNeue = Instrument_Sans({
   variable: "--font-comic-neue",
   subsets: ["latin"],
-  weight: ["400", "700"],
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
