@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Instrument_Sans } from "next/font/google";
 import { createClient } from "@/lib/supabase/server";
 import { BottomNav } from "./BottomNav";
-import { ThemeApplier } from "./ThemeApplier";
+import { ThemeApplier, ClubCrestWatermark } from "./ThemeApplier";
 import "./globals.css";
 
 const comicNeue = Instrument_Sans({
@@ -21,12 +21,21 @@ export const metadata: Metadata = {
   },
 };
 
-async function getClubTheme(): Promise<{ enabled: boolean; primaryColor: string | null }> {
+interface ClubTheme {
+  enabled: boolean;
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  crestUrl: string | null;
+}
+
+async function getClubTheme(): Promise<ClubTheme> {
+  const empty: ClubTheme = { enabled: false, primaryColor: null, secondaryColor: null, crestUrl: null };
+
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return { enabled: false, primaryColor: null };
+  if (!user) return empty;
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -34,15 +43,22 @@ async function getClubTheme(): Promise<{ enabled: boolean; primaryColor: string 
     .eq("id", user.id)
     .maybeSingle();
 
-  if (!profile?.use_club_theme || !profile.favorite_team_id) return { enabled: false, primaryColor: null };
+  if (!profile?.use_club_theme || !profile.favorite_team_id) return empty;
 
   const { data: team } = await supabase
     .from("teams")
-    .select("primary_color")
+    .select("primary_color, secondary_color, logo_url")
     .eq("id", profile.favorite_team_id)
     .maybeSingle();
 
-  return { enabled: true, primaryColor: team?.primary_color ?? null };
+  if (!team?.primary_color) return empty;
+
+  return {
+    enabled: true,
+    primaryColor: team.primary_color,
+    secondaryColor: team.secondary_color,
+    crestUrl: team.logo_url,
+  };
 }
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
@@ -51,9 +67,14 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="fr" className={`${comicNeue.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col pb-32 lg:pb-0">
+        <ClubCrestWatermark enabled={clubTheme.enabled} crestUrl={clubTheme.crestUrl} />
         {children}
         <BottomNav />
-        <ThemeApplier enabled={clubTheme.enabled} primaryColor={clubTheme.primaryColor} />
+        <ThemeApplier
+          enabled={clubTheme.enabled}
+          primaryColor={clubTheme.primaryColor}
+          secondaryColor={clubTheme.secondaryColor}
+        />
       </body>
     </html>
   );

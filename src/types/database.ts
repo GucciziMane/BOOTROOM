@@ -68,6 +68,7 @@ export interface Database {
           logo_url: string | null;
           prior_ppg: number | null;
           primary_color: string | null;
+          secondary_color: string | null;
         };
         Insert: Partial<Database["public"]["Tables"]["teams"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["teams"]["Row"]>;
