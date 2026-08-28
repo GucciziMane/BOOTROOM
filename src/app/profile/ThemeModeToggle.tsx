@@ -48,14 +48,14 @@ export function ThemeModeToggle({
           disabled={isPending}
           title="Thème du club favori"
           aria-pressed={useClubTheme}
-          className={`flex h-11 w-11 items-center justify-center rounded-full transition-all disabled:opacity-60 ${
+          className={`flex h-7 w-7 items-center justify-center rounded-full transition-all disabled:opacity-60 ${
             useClubTheme ? "bg-accent ring-2 ring-paper" : "opacity-50 hover:opacity-80"
           }`}
         >
           {favoriteTeamLogoUrl ? (
-            <Image src={favoriteTeamLogoUrl} alt="" width={22} height={22} className="h-[22px] w-[22px] object-contain" />
+            <Image src={favoriteTeamLogoUrl} alt="" width={14} height={14} className="h-3.5 w-3.5 object-contain" />
           ) : (
-            <span className="text-lg">⚽</span>
+            <span className="text-xs">⚽</span>
           )}
         </button>
         <button
@@ -64,7 +64,7 @@ export function ThemeModeToggle({
           disabled={isPending}
           title="Thème de base"
           aria-pressed={!useClubTheme}
-          className={`flex h-11 w-11 items-center justify-center rounded-full text-lg transition-all disabled:opacity-60 ${
+          className={`flex h-7 w-7 items-center justify-center rounded-full text-xs transition-all disabled:opacity-60 ${
             !useClubTheme ? "bg-ink text-paper ring-2 ring-paper" : "opacity-50 hover:opacity-80"
           }`}
         >
