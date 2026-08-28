@@ -2,10 +2,18 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { sendChatMessage, subscribeToPush, unsubscribeFromPush, type SendChatMessageState } from "./actions";
+import {
+  sendChatMessage,
+  subscribeToPush,
+  unsubscribeFromPush,
+  toggleReaction,
+  type SendChatMessageState,
+} from "./actions";
 import { createClient } from "@/lib/supabase/client";
 import { buttonPrimary, input, linkMuted } from "@/lib/ui";
 import { formatParisDateTime } from "@/lib/format-date";
+
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
 
 /** L'API Push attend la clé VAPID en Uint8Array, pas en base64url telle que fournie. */
 function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
@@ -29,18 +37,33 @@ interface ProfileInfo {
   avatarUrl: string | null;
 }
 
+interface Reaction {
+  id: number;
+  messageId: number;
+  userId: string;
+  emoji: string;
+}
+
 const initialState: SendChatMessageState = { error: null };
 
 export function ChatRoom({
   initialMessages,
+  initialReactions,
   profilesById,
   currentUserId,
 }: {
   initialMessages: ChatMessage[];
+  initialReactions: Array<{ id: number; message_id: number; user_id: string; emoji: string }>;
   profilesById: Record<string, ProfileInfo>;
   currentUserId: string;
 }) {
   const [messages, setMessages] = useState(initialMessages);
+  const [reactions, setReactions] = useState<Record<number, Reaction>>(() =>
+    Object.fromEntries(
+      initialReactions.map((r) => [r.id, { id: r.id, messageId: r.message_id, userId: r.user_id, emoji: r.emoji }])
+    )
+  );
+  const [openPickerFor, setOpenPickerFor] = useState<number | null>(null);
   const [state, formAction, isPending] = useActionState(sendChatMessage, initialState);
   const [notifications, setNotifications] = useState({ supported: false, on: false });
   const formRef = useRef<HTMLFormElement>(null);
@@ -115,6 +138,40 @@ export function ChatRoom({
               : [...prev, { id: row.id, userId: row.user_id, content: row.content, createdAt: row.created_at }]
           );
         })
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "chat_message_reactions" },
+          (payload) => {
+            const row = payload.new as { id: number; message_id: number; user_id: string; emoji: string };
+            setReactions((prev) => ({
+              ...prev,
+              [row.id]: { id: row.id, messageId: row.message_id, userId: row.user_id, emoji: row.emoji },
+            }));
+          }
+        )
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "chat_message_reactions" },
+          (payload) => {
+            const row = payload.new as { id: number; message_id: number; user_id: string; emoji: string };
+            setReactions((prev) => ({
+              ...prev,
+              [row.id]: { id: row.id, messageId: row.message_id, userId: row.user_id, emoji: row.emoji },
+            }));
+          }
+        )
+        .on(
+          "postgres_changes",
+          { event: "DELETE", schema: "public", table: "chat_message_reactions" },
+          (payload) => {
+            const row = payload.old as { id: number };
+            setReactions((prev) => {
+              const next = { ...prev };
+              delete next[row.id];
+              return next;
+            });
+          }
+        )
         .subscribe();
     });
 
@@ -148,6 +205,11 @@ export function ChatRoom({
         {messages.map((m) => {
           const profile = profilesById[m.userId];
           const isOwn = m.userId === currentUserId;
+          const reactionGroups: Record<string, string[]> = {};
+          for (const r of Object.values(reactions)) {
+            if (r.messageId !== m.id) continue;
+            (reactionGroups[r.emoji] ??= []).push(r.userId);
+          }
           return (
             <div key={m.id} className={`flex items-start gap-3 ${isOwn ? "flex-row-reverse text-right" : ""}`}>
               <span className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full border-2 border-line bg-cream">
@@ -164,6 +226,46 @@ export function ChatRoom({
                   {profile?.username ?? "?"} · {formatParisDateTime(m.createdAt)}
                 </p>
                 <p className="mt-1 inline-block rounded-2xl border border-line bg-cream px-3 py-2">{m.content}</p>
+                <div className={`relative mt-1 flex flex-wrap items-center gap-1 ${isOwn ? "justify-end" : ""}`}>
+                  {Object.entries(reactionGroups).map(([emoji, userIds]) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => toggleReaction(m.id, emoji)}
+                      className={`rounded-full border px-1.5 py-0.5 text-xs ${
+                        userIds.includes(currentUserId) ? "border-ink bg-cream" : "border-line bg-paper"
+                      }`}
+                    >
+                      {emoji} {userIds.length}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setOpenPickerFor(openPickerFor === m.id ? null : m.id)}
+                    className="text-xs text-mute"
+                  >
+                    🙂+
+                  </button>
+                  {openPickerFor === m.id && (
+                    <div
+                      className={`absolute top-full z-10 mt-1 flex gap-1 rounded-xl border border-line bg-paper p-1.5 shadow-sm ${isOwn ? "right-0" : "left-0"}`}
+                    >
+                      {QUICK_REACTIONS.map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => {
+                            toggleReaction(m.id, emoji);
+                            setOpenPickerFor(null);
+                          }}
+                          className="text-lg transition-transform hover:scale-125"
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           );

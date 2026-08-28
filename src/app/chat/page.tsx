@@ -30,6 +30,16 @@ export default async function ChatPage() {
     .reverse()
     .map((m) => ({ id: m.id, userId: m.user_id, content: m.content, createdAt: m.created_at }));
 
+  const { data: reactions } = messages?.length
+    ? await supabase
+        .from("chat_message_reactions")
+        .select("id, message_id, user_id, emoji")
+        .in(
+          "message_id",
+          messages.map((m) => m.id)
+        )
+    : { data: [] };
+
   await markChatAsRead();
 
   return (
@@ -41,7 +51,12 @@ export default async function ChatPage() {
         </Link>
       </div>
       <div className="flex h-[70vh] flex-col overflow-hidden rounded-2xl border border-line bg-paper shadow-sm">
-        <ChatRoom initialMessages={initialMessages} profilesById={profilesById} currentUserId={user.id} />
+        <ChatRoom
+          initialMessages={initialMessages}
+          initialReactions={reactions ?? []}
+          profilesById={profilesById}
+          currentUserId={user.id}
+        />
       </div>
     </main>
   );

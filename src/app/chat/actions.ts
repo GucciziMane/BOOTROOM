@@ -67,6 +67,33 @@ export async function unsubscribeFromPush(endpoint: string): Promise<void> {
   await supabase.from("push_subscriptions").delete().eq("endpoint", endpoint);
 }
 
+/** Une seule réaction par utilisateur et par message : en choisir une nouvelle remplace la
+ * précédente, recliquer la même l'enlève (comme les réactions Instagram DM). */
+export async function toggleReaction(messageId: number, emoji: string): Promise<void> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const { data: existing } = await supabase
+    .from("chat_message_reactions")
+    .select("id, emoji")
+    .eq("message_id", messageId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (existing?.emoji === emoji) {
+    await supabase.from("chat_message_reactions").delete().eq("id", existing.id);
+  } else if (existing) {
+    await supabase.from("chat_message_reactions").update({ emoji }).eq("id", existing.id);
+  } else {
+    await supabase.from("chat_message_reactions").insert({ message_id: messageId, user_id: user.id, emoji });
+  }
+
+  revalidatePath("/chat");
+}
+
 export async function markChatAsRead(): Promise<void> {
   const supabase = await createClient();
   const {

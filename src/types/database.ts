@@ -271,6 +271,22 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["push_subscriptions"]["Row"]>;
         Relationships: [];
       };
+      chat_message_reactions: {
+        Row: {
+          id: number;
+          message_id: number;
+          user_id: string;
+          emoji: string;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["chat_message_reactions"]["Row"]> & {
+          message_id: number;
+          user_id: string;
+          emoji: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["chat_message_reactions"]["Row"]>;
+        Relationships: [];
+      };
       reminder_log: {
         Row: {
           id: number;
