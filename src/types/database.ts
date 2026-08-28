@@ -26,6 +26,7 @@ export interface Database {
           created_at: string;
           chat_last_read_at: string | null;
           favorite_team_id: number | null;
+          use_club_theme: boolean;
         };
         Insert: Partial<Database["public"]["Tables"]["profiles"]["Row"]> & { id: string; username: string };
         Update: Partial<Database["public"]["Tables"]["profiles"]["Row"]>;
@@ -66,6 +67,7 @@ export interface Database {
           football_data_id: number;
           logo_url: string | null;
           prior_ppg: number | null;
+          primary_color: string | null;
         };
         Insert: Partial<Database["public"]["Tables"]["teams"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["teams"]["Row"]>;

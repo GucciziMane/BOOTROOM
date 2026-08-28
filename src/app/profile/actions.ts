@@ -102,3 +102,44 @@ export async function setFavoriteTeam(
   revalidatePath("/");
   return { error: null, success: true };
 }
+
+export interface SetThemeModeState {
+  error: string | null;
+  success: boolean;
+}
+
+export async function setThemeMode(
+  _prevState: SetThemeModeState,
+  formData: FormData
+): Promise<SetThemeModeState> {
+  const useClubTheme = formData.get("use_club_theme") === "1";
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Non connecté.", success: false };
+
+  if (useClubTheme) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("favorite_team_id")
+      .eq("id", user.id)
+      .single();
+    if (!profile?.favorite_team_id) {
+      return { error: "Choisis d'abord un club favori.", success: false };
+    }
+  }
+
+  const { error: updateError } = await supabase
+    .from("profiles")
+    .update({ use_club_theme: useClubTheme })
+    .eq("id", user.id);
+
+  if (updateError) {
+    return { error: `Échec de la mise à jour : ${updateError.message}`, success: false };
+  }
+
+  revalidatePath("/", "layout");
+  return { error: null, success: true };
+}
