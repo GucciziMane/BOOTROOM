@@ -13,6 +13,11 @@ const comicNeue = Comic_Neue({
 export const metadata: Metadata = {
   title: "Boot Room",
   description: "Pronostics entre amis sur les 5 grands championnats",
+  appleWebApp: {
+    capable: true,
+    title: "Boot Room",
+    statusBarStyle: "black-translucent",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
