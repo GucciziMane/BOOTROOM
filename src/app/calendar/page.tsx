@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { formatParisDateTime } from "@/lib/format-date";
-import { linkMuted, listCard } from "@/lib/ui";
+import { linkMuted } from "@/lib/ui";
 import { LEAGUE_FLAG } from "@/lib/country-flags";
 import { FALLBACK_SCORER_TIER, type OddsTier } from "@/lib/scoring/points";
 import { MatchPredictionCard } from "@/app/leagues/[code]/calendar/MatchPredictionCard";
+import { CalendarTabs } from "./CalendarTabs";
 
 export default async function CalendarPage() {
   const supabase = await createClient();
@@ -114,11 +115,12 @@ export default async function CalendarPage() {
         </Link>
       </div>
 
-      <section className="mb-10">
-        <h2 className="mb-1 text-lg font-bold">Prochaine journée</h2>
+      <CalendarTabs active="next" />
+
+      <section>
         <p className="mb-4 text-sm text-mute">
-          Tous les matchs à venir des 5 championnats, triés par date et heure : de quoi pronostiquer toute la journée
-          sans changer de page.
+          Tous les matchs à venir des championnats actifs, triés par date et heure : de quoi pronostiquer toute la
+          journée sans changer de page.
         </p>
 
         {[...groups.entries()].map(([date, dayMatches]) => (
@@ -177,33 +179,6 @@ export default async function CalendarPage() {
           </div>
         ))}
         {groups.size === 0 && <p className="text-mute">Aucun match à venir.</p>}
-      </section>
-
-      <section>
-        <h2 className="mb-1 text-lg font-bold">Championnats</h2>
-        <p className="mb-4 text-sm text-mute">
-          Ou choisis un championnat pour voir son calendrier complet et ses derniers résultats.
-        </p>
-
-        <ul className={listCard}>
-          {(leagues ?? []).map((league) => (
-            <li key={league.id}>
-              <Link
-                href={`/leagues/${league.football_data_code}/calendar`}
-                className="flex items-center gap-3 p-4 transition-colors hover:bg-cream"
-              >
-                {league.logo_url && (
-                  // eslint-disable-next-line @next/next/no-img-element -- crest hosted on football-data.org, pas dans les remotePatterns next/image
-                  <img src={league.logo_url} alt="" className="h-8 w-8 object-contain" />
-                )}
-                <div className="flex items-center gap-2 font-bold">
-                  <span>{LEAGUE_FLAG[league.football_data_code] ?? league.country}</span>
-                  <span>{league.name}</span>
-                </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
       </section>
     </main>
   );
