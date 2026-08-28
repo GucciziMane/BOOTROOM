@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Comic_Neue } from "next/font/google";
+import { BottomNav } from "./BottomNav";
 import "./globals.css";
 
 // Comic Sans MS est une police système (non distribuable) : on la place en tête de pile,
@@ -23,7 +24,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="fr" className={`${comicNeue.variable} h-full antialiased`}>
-      <body className="flex min-h-full flex-col">{children}</body>
+      <body className="flex min-h-full flex-col pb-24 lg:pb-0">
+        {children}
+        <BottomNav />
+      </body>
     </html>
   );
 }
