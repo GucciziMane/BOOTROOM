@@ -51,11 +51,9 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
     .sort((a, b) => b.kickoff_at.localeCompare(a.kickoff_at))
     .slice(0, 10);
 
-  const matchIds = allMatches.map((m) => m.id);
   const upcomingMatchIds = upcoming.map((m) => m.id);
 
   const [
-    { data: predictions },
     { data: fullPredictions },
     { data: players },
     { data: setting },
@@ -64,11 +62,6 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
     { data: playerTierRows },
     { data: resultMultiplierRows },
   ] = await Promise.all([
-    supabase
-      .from("match_predictions")
-      .select("match_id")
-      .eq("user_id", user!.id)
-      .in("match_id", matchIds.length > 0 ? matchIds : [-1]),
     supabase
       .from("match_predictions")
       .select("match_id, predicted_home_score, predicted_away_score, predicted_scorer_player_id")
@@ -82,7 +75,6 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
     supabase.from("match_result_tier_multipliers").select("tier, favorite_multiplier_pct, underdog_multiplier_pct"),
   ]);
 
-  const predictedMatchIds = new Set((predictions ?? []).map((p) => p.match_id));
   const predictionByMatchId = new Map((fullPredictions ?? []).map((p) => [p.match_id, p]));
   const playersByTeamId = new Map<number, Array<{ id: number; name: string }>>();
   for (const p of players ?? []) {
@@ -146,8 +138,7 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
           <div key={date} className="mb-4">
             <h3 className="mb-2 text-sm font-bold text-mute">{date}</h3>
 
-            {/* Desktop : pronostic (score + buteur) directement dans la liste. */}
-            <div className="hidden gap-3 lg:grid lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {dayMatches.map((m) => {
                 const home = teamLabel(m.home_team_id);
                 const away = teamLabel(m.away_team_id);
@@ -193,27 +184,6 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
                 );
               })}
             </div>
-
-            {/* Mobile : liste compacte vers la page dédiée à chaque match. */}
-            <ul className={`${listCard} lg:hidden`}>
-              {dayMatches.map((m) => (
-                <li key={m.id}>
-                  <Link
-                    href={`/leagues/${code}/calendar/${m.id}`}
-                    className="flex items-center justify-between p-3 text-sm transition-colors hover:bg-cream"
-                  >
-                    <MatchTeams home={teamLabel(m.home_team_id)} away={teamLabel(m.away_team_id)} />
-                    <span className="font-bold">
-                      {predictedMatchIds.has(m.id) ? (
-                        <span className="text-good">Pronostiqué</span>
-                      ) : (
-                        <span className="text-ink underline decoration-2 underline-offset-2">Pronostiquer</span>
-                      )}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
           </div>
         ))}
         {groups.size === 0 && <p className="text-mute">Aucun match à venir.</p>}
