@@ -16,6 +16,11 @@ import { splitContentByMentions } from "@/lib/chat/mentions";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
 
+// Les notifications sont activées par défaut pour tout le monde (voir toggleNotifications) : on
+// ne mémorise localement que le fait qu'un utilisateur les a désactivées à la main, pour ne pas
+// re-proposer/re-souscrire à chaque visite après un refus explicite.
+const OPT_OUT_KEY = "chat-notifications-opted-out";
+
 /** L'API Push attend la clé VAPID en Uint8Array, pas en base64url telle que fournie. */
 function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
@@ -110,6 +115,22 @@ export function ChatRoom({
     });
   }
 
+  async function subscribe() {
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") return false;
+
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!),
+    });
+    const json = sub.toJSON();
+    if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) return false;
+
+    await subscribeToPush({ endpoint: json.endpoint, keys: { p256dh: json.keys.p256dh, auth: json.keys.auth } });
+    return true;
+  }
+
   useEffect(() => {
     // Lu après montage (pas en lazy initial state) pour que le rendu serveur et la première
     // passe client restent identiques : ces API n'existent pas côté serveur.
@@ -122,8 +143,29 @@ export function ChatRoom({
     navigator.serviceWorker
       .register("/sw.js")
       .then((reg) => reg.pushManager.getSubscription())
-      .then((sub) => {
-        setNotifications({ supported: true, on: !!sub });
+      .then(async (sub) => {
+        if (sub) {
+          setNotifications({ supported: true, on: true });
+          return;
+        }
+
+        // Activées par défaut : si personne n'a explicitement désactivé les notifications sur cet
+        // appareil et que le navigateur n'a pas déjà refusé la permission, on souscrit directement
+        // au lieu d'attendre un clic manuel.
+        let optedOut = false;
+        try {
+          optedOut = localStorage.getItem(OPT_OUT_KEY) === "1";
+        } catch {
+          // Stockage indisponible (navigation privée, etc.) : on se comporte comme si personne
+          // n'avait rien désactivé.
+        }
+        if (optedOut || typeof Notification === "undefined" || Notification.permission === "denied") {
+          setNotifications({ supported: true, on: false });
+          return;
+        }
+
+        const subscribed = await subscribe().catch(() => false);
+        setNotifications({ supported: true, on: subscribed });
       })
       .catch(() => {
         setNotifications({ supported: true, on: false });
@@ -138,22 +180,22 @@ export function ChatRoom({
         await unsubscribeFromPush(sub.endpoint);
         await sub.unsubscribe();
       }
+      try {
+        localStorage.setItem(OPT_OUT_KEY, "1");
+      } catch {
+        // Stockage indisponible : tant pis, l'utilisateur devra redésactiver manuellement au besoin.
+      }
       setNotifications((prev) => ({ ...prev, on: false }));
       return;
     }
 
-    const permission = await Notification.requestPermission();
-    if (permission !== "granted") return;
-
-    const reg = await navigator.serviceWorker.ready;
-    const sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!),
-    });
-    const json = sub.toJSON();
-    if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) return;
-
-    await subscribeToPush({ endpoint: json.endpoint, keys: { p256dh: json.keys.p256dh, auth: json.keys.auth } });
+    const subscribed = await subscribe();
+    if (!subscribed) return;
+    try {
+      localStorage.removeItem(OPT_OUT_KEY);
+    } catch {
+      // Stockage indisponible : sans conséquence, il n'y avait rien à effacer côté serveur.
+    }
     setNotifications((prev) => ({ ...prev, on: true }));
   }
 

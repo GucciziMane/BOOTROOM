@@ -42,14 +42,43 @@ export default async function CalendarPage() {
   const teamById = new Map((teamsData ?? []).map((t) => [t.id, t]));
   const teamIds = (teamsData ?? []).map((t) => t.id);
 
-  const { data: matches } = await supabase
-    .from("matches")
-    .select("id, season_id, home_team_id, away_team_id, kickoff_at, status, favorite_team_id, odds_tier, matchday")
-    .in("season_id", seasonIds.length > 0 ? seasonIds : [-1])
-    .in("status", ["scheduled", "live"])
-    .order("kickoff_at", { ascending: true });
+  // Une seule "prochaine journée" par championnat, pas toute la saison restante : la page
+  // s'appelle "Prochaine journée", et charger ~1600 matchs d'un coup la rendait lente pour
+  // ne finalement afficher que les tout premiers (silencieusement tronqués par Supabase en plus).
+  const nextMatchdayBySeasonId = new Map<number, number>();
+  await Promise.all(
+    seasonIds.map(async (seasonId) => {
+      const { data: row } = await supabase
+        .from("matches")
+        .select("matchday")
+        .eq("season_id", seasonId)
+        .in("status", ["scheduled", "live"])
+        .not("matchday", "is", null)
+        .order("matchday", { ascending: true })
+        .order("kickoff_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (row?.matchday != null) nextMatchdayBySeasonId.set(seasonId, row.matchday);
+    })
+  );
 
-  const upcoming = matches ?? [];
+  const matchesPerSeason = await Promise.all(
+    seasonIds.map(async (seasonId) => {
+      const nextMatchday = nextMatchdayBySeasonId.get(seasonId);
+      const base = supabase
+        .from("matches")
+        .select("id, season_id, home_team_id, away_team_id, kickoff_at, status, favorite_team_id, odds_tier, matchday")
+        .eq("season_id", seasonId)
+        .in("status", ["scheduled", "live"]);
+      const { data } =
+        nextMatchday != null
+          ? await base.eq("matchday", nextMatchday)
+          : await base.order("kickoff_at", { ascending: true }).limit(20);
+      return data ?? [];
+    })
+  );
+
+  const upcoming = matchesPerSeason.flat().sort((a, b) => a.kickoff_at.localeCompare(b.kickoff_at));
   const upcomingMatchIds = upcoming.map((m) => m.id);
 
   const [
@@ -119,7 +148,7 @@ export default async function CalendarPage() {
 
       <section>
         <p className="mb-4 text-sm text-mute">
-          Tous les matchs à venir des championnats actifs, triés par date et heure : de quoi pronostiquer toute la
+          La prochaine journée de chaque championnat actif, triés par date et heure : de quoi pronostiquer toute la
           journée sans changer de page.
         </p>
 

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import { formatParisDateTime } from "@/lib/format-date";
 import { bannerWarn, linkMuted, listCard } from "@/lib/ui";
@@ -58,7 +59,9 @@ export default async function LeaguesPage() {
                 className="flex items-center justify-between p-4 transition-colors hover:bg-cream"
               >
                 <div className="flex items-center gap-3">
-                  {league.logo_url && <img src={league.logo_url} alt="" className="h-8 w-8 object-contain" />}
+                  {league.logo_url && (
+                    <Image src={league.logo_url} alt="" width={32} height={32} className="h-8 w-8 object-contain" />
+                  )}
                   <div className="flex items-center gap-2 font-bold">
                     <span>{LEAGUE_FLAG[league.football_data_code] ?? league.country}</span>
                     <span>{league.name}</span>

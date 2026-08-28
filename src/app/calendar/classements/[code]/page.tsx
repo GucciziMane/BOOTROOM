@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { linkMuted } from "@/lib/ui";
@@ -113,7 +114,9 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
                   <td className="p-3 text-mute">{i + 1}</td>
                   <td className="p-3">
                     <span className="flex items-center gap-2 font-bold">
-                      {team?.logo_url && <img src={team.logo_url} alt="" className="h-5 w-5 object-contain" />}
+                      {team?.logo_url && (
+                        <Image src={team.logo_url} alt="" width={20} height={20} className="h-5 w-5 object-contain" />
+                      )}
                       {team?.name}
                     </span>
                   </td>

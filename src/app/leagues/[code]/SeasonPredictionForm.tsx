@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { saveSeasonPrediction, type SaveSeasonPredictionState } from "./actions";
 import { buttonPrimary, card, input } from "@/lib/ui";
 
@@ -69,7 +70,9 @@ function TeamCombobox({
       >
         {selected ? (
           <>
-            {selected.logoUrl && <img src={selected.logoUrl} alt="" className="h-5 w-5 object-contain" />}
+            {selected.logoUrl && (
+              <Image src={selected.logoUrl} alt="" width={20} height={20} className="h-5 w-5 object-contain" />
+            )}
             <span className="truncate">{selected.name}</span>
           </>
         ) : (
@@ -101,7 +104,7 @@ function TeamCombobox({
                 }}
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-ink hover:bg-cream"
               >
-                {t.logoUrl && <img src={t.logoUrl} alt="" className="h-5 w-5 object-contain" />}
+                {t.logoUrl && <Image src={t.logoUrl} alt="" width={20} height={20} className="h-5 w-5 object-contain" />}
                 <span className="truncate">{t.name}</span>
               </button>
             </li>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import Image from "next/image";
 import { saveMatchPrediction, type SaveMatchPredictionState } from "./[matchId]/actions";
 import { buttonPrimary, input } from "@/lib/ui";
 import { applyResultOdds, predictedWinnerTeamId, type OddsTier, type ResultTierMultiplier } from "@/lib/scoring/points";
@@ -180,8 +181,7 @@ function TeamBadge({ name, logoUrl }: { name: string; logoUrl: string | null }) 
   return (
     <span className="flex w-16 flex-col items-center gap-1 text-center">
       {logoUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element -- crest hosted on football-data.org, pas dans les remotePatterns next/image
-        <img src={logoUrl} alt="" className="h-6 w-6 shrink-0 object-contain" />
+        <Image src={logoUrl} alt="" width={24} height={24} className="h-6 w-6 shrink-0 object-contain" />
       ) : (
         <span className="block h-6 w-6 shrink-0 rounded-full bg-cream" />
       )}

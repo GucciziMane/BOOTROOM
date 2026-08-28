@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { submitQuizAnswer, getQuizLeaderboard, type LeaderboardRow } from "./actions";
 import { buttonPrimary, card } from "@/lib/ui";
 import type { DailyQuestionPublic } from "@/lib/quiz/daily";
@@ -136,8 +137,7 @@ export function QuizRunner({ questions, initialAnsweredCount, initialStreak, ini
       </div>
 
       {q.teamLogoUrl && (
-        // eslint-disable-next-line @next/next/no-img-element -- crest hosted sur football-data.org
-        <img src={q.teamLogoUrl} alt="" className="mx-auto mb-3 h-12 w-12 object-contain" />
+        <Image src={q.teamLogoUrl} alt="" width={48} height={48} className="mx-auto mb-3 h-12 w-12 object-contain" />
       )}
 
       <p className="mb-4 text-lg font-bold">{q.question}</p>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatParisDateTime } from "@/lib/format-date";
@@ -218,10 +219,10 @@ function MatchTeams({
 }) {
   return (
     <span className="flex items-center gap-2">
-      {home.logoUrl && <img src={home.logoUrl} alt="" className="h-5 w-5 object-contain" />}
+      {home.logoUrl && <Image src={home.logoUrl} alt="" width={20} height={20} className="h-5 w-5 object-contain" />}
       <span>{home.name}</span>
       <span className="text-mute">vs</span>
-      {away.logoUrl && <img src={away.logoUrl} alt="" className="h-5 w-5 object-contain" />}
+      {away.logoUrl && <Image src={away.logoUrl} alt="" width={20} height={20} className="h-5 w-5 object-contain" />}
       <span>{away.name}</span>
     </span>
   );
