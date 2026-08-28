@@ -251,7 +251,7 @@ export function ChatRoom({
             if (r.messageId !== m.id) continue;
             (reactionGroups[r.emoji] ??= []).push(r.userId);
           }
-          const mentionsMe = !!currentUsername && m.content.includes(`@${currentUsername}`);
+          const mentionsMe = !isOwn && !!currentUsername && m.content.includes(`@${currentUsername}`);
           return (
             <div key={m.id} className={`flex items-start gap-3 ${isOwn ? "flex-row-reverse text-right" : ""}`}>
               <span className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full border-2 border-line bg-cream">
@@ -268,11 +268,17 @@ export function ChatRoom({
                   {profile?.username ?? "?"} · {formatParisDateTime(m.createdAt)}
                 </p>
                 <p
-                  className={`mt-1 inline-block rounded-2xl border px-3 py-2 ${mentionsMe ? "border-accent bg-cream" : "border-line bg-cream"}`}
+                  className={`mt-1 inline-block rounded-2xl border px-3 py-2 ${
+                    isOwn
+                      ? "border-ink bg-ink text-paper"
+                      : mentionsMe
+                        ? "border-accent bg-cream"
+                        : "border-line bg-cream"
+                  }`}
                 >
                   {splitContentByMentions(m.content, allUsernames).map((part, i) =>
                     part.isMention ? (
-                      <span key={i} className="font-bold">
+                      <span key={i} className={`font-bold ${isOwn ? "text-warn-bg" : ""}`}>
                         {part.text}
                       </span>
                     ) : (
