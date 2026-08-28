@@ -18,11 +18,25 @@ export default async function ChatPage() {
       .select("id, user_id, content, created_at")
       .order("created_at", { ascending: false })
       .limit(100),
-    supabase.from("profiles").select("id, username, avatar_url"),
+    supabase.from("profiles").select("id, username, avatar_url, favorite_team_id"),
   ]);
 
+  const favoriteTeamIds = [...new Set((profiles ?? []).map((p) => p.favorite_team_id).filter((id): id is number => id != null))];
+  const { data: favoriteTeams } = await supabase
+    .from("teams")
+    .select("id, logo_url")
+    .in("id", favoriteTeamIds.length > 0 ? favoriteTeamIds : [-1]);
+  const teamLogoById = new Map((favoriteTeams ?? []).map((t) => [t.id, t.logo_url]));
+
   const profilesById = Object.fromEntries(
-    (profiles ?? []).map((p) => [p.id, { username: p.username, avatarUrl: p.avatar_url }])
+    (profiles ?? []).map((p) => [
+      p.id,
+      {
+        username: p.username,
+        avatarUrl: p.avatar_url,
+        favoriteTeamLogoUrl: p.favorite_team_id ? (teamLogoById.get(p.favorite_team_id) ?? null) : null,
+      },
+    ])
   );
 
   const initialMessages = (messages ?? [])

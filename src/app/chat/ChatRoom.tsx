@@ -10,6 +10,7 @@ import {
   type SendChatMessageState,
 } from "./actions";
 import { createClient } from "@/lib/supabase/client";
+import { FavoriteTeamBadge } from "@/app/profile/FavoriteTeamBadge";
 import { buttonPrimary, input, linkMuted } from "@/lib/ui";
 import { formatParisDateTime } from "@/lib/format-date";
 import { splitContentByMentions } from "@/lib/chat/mentions";
@@ -41,6 +42,7 @@ interface ChatMessage {
 interface ProfileInfo {
   username: string;
   avatarUrl: string | null;
+  favoriteTeamLogoUrl: string | null;
 }
 
 interface Reaction {
@@ -296,14 +298,17 @@ export function ChatRoom({
           const mentionsMe = !isOwn && !!currentUsername && m.content.includes(`@${currentUsername}`);
           return (
             <div key={m.id} className={`flex items-start gap-3 ${isOwn ? "flex-row-reverse text-right" : ""}`}>
-              <span className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full border-2 border-line bg-cream">
-                {profile?.avatarUrl ? (
-                  <Image src={profile.avatarUrl} alt="" fill sizes="32px" className="object-cover" />
-                ) : (
-                  <span className="flex h-full w-full items-center justify-center text-xs font-bold text-mute">
-                    {(profile?.username ?? "?").slice(0, 1).toUpperCase()}
-                  </span>
-                )}
+              <span className="relative h-8 w-8 shrink-0">
+                <span className="relative block h-8 w-8 overflow-hidden rounded-full border-2 border-line bg-cream">
+                  {profile?.avatarUrl ? (
+                    <Image src={profile.avatarUrl} alt="" fill sizes="32px" className="object-cover" />
+                  ) : (
+                    <span className="flex h-full w-full items-center justify-center text-xs font-bold text-mute">
+                      {(profile?.username ?? "?").slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                </span>
+                <FavoriteTeamBadge logoUrl={profile?.favoriteTeamLogoUrl ?? null} size={14} />
               </span>
               <div>
                 <p className="text-xs font-bold text-mute">

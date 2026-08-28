@@ -2,15 +2,23 @@ import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import { linkMuted, listCard } from "@/lib/ui";
+import { FavoriteTeamBadge } from "@/app/profile/FavoriteTeamBadge";
 
 export default async function LeaderboardPage() {
   const supabase = await createClient();
 
   const [{ data: profiles }, { data: leagues }, { data: ledgerAll }] = await Promise.all([
-    supabase.from("profiles").select("id, username, avatar_url").order("username"),
+    supabase.from("profiles").select("id, username, avatar_url, favorite_team_id").order("username"),
     supabase.from("leagues").select("id, name").eq("active", true).order("name"),
     supabase.from("points_ledger").select("user_id, league_id, points"),
   ]);
+
+  const favoriteTeamIds = [...new Set((profiles ?? []).map((p) => p.favorite_team_id).filter((id): id is number => id != null))];
+  const { data: favoriteTeams } = await supabase
+    .from("teams")
+    .select("id, logo_url")
+    .in("id", favoriteTeamIds.length > 0 ? favoriteTeamIds : [-1]);
+  const teamLogoById = new Map((favoriteTeams ?? []).map((t) => [t.id, t.logo_url]));
   const activeLeagueIds = new Set((leagues ?? []).map((l) => l.id));
   const ledger = (ledgerAll ?? []).filter((row) => !row.league_id || activeLeagueIds.has(row.league_id));
 
@@ -42,14 +50,17 @@ export default async function LeaderboardPage() {
           <li key={p.id} className="flex items-center justify-between p-4">
             <span className="flex items-center gap-4">
               <span className="w-6 text-mute">{i + 1}</span>
-              <span className="relative h-16 w-16 shrink-0 overflow-hidden rounded-full border-2 border-line bg-cream">
-                {p.avatar_url ? (
-                  <Image src={p.avatar_url} alt="" fill sizes="64px" className="object-cover" />
-                ) : (
-                  <span className="flex h-full w-full items-center justify-center text-2xl font-bold text-mute">
-                    {p.username.slice(0, 1).toUpperCase()}
-                  </span>
-                )}
+              <span className="relative h-16 w-16 shrink-0">
+                <span className="relative block h-16 w-16 overflow-hidden rounded-full border-2 border-line bg-cream">
+                  {p.avatar_url ? (
+                    <Image src={p.avatar_url} alt="" fill sizes="64px" className="object-cover" />
+                  ) : (
+                    <span className="flex h-full w-full items-center justify-center text-2xl font-bold text-mute">
+                      {p.username.slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                </span>
+                <FavoriteTeamBadge logoUrl={p.favorite_team_id ? (teamLogoById.get(p.favorite_team_id) ?? null) : null} size={22} />
               </span>
               <span className="text-lg font-bold">{p.username}</span>
             </span>
