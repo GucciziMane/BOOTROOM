@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatParisDateTime } from "@/lib/format-date";
 import { linkMuted, listCard } from "@/lib/ui";
+import { FALLBACK_SCORER_TIER, type OddsTier } from "@/lib/scoring/points";
+import { MatchPredictionCard } from "./MatchPredictionCard";
 
 export default async function CalendarPage({ params }: PageProps<"/leagues/[code]/calendar">) {
   const { code } = await params;
@@ -25,6 +27,7 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
   ]);
   const season = seasons?.[0];
   const teamById = new Map((teamsData ?? []).map((t) => [t.id, t]));
+  const teamIds = (teamsData ?? []).map((t) => t.id);
 
   if (!season) {
     return (
@@ -37,7 +40,7 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
 
   const { data: matches } = await supabase
     .from("matches")
-    .select("id, home_team_id, away_team_id, kickoff_at, status, home_score, away_score")
+    .select("id, home_team_id, away_team_id, kickoff_at, status, home_score, away_score, favorite_team_id, odds_tier")
     .eq("season_id", season.id)
     .order("kickoff_at", { ascending: true });
 
@@ -49,12 +52,56 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
     .slice(0, 10);
 
   const matchIds = allMatches.map((m) => m.id);
-  const { data: predictions } = await supabase
-    .from("match_predictions")
-    .select("match_id")
-    .eq("user_id", user!.id)
-    .in("match_id", matchIds.length > 0 ? matchIds : [-1]);
+  const upcomingMatchIds = upcoming.map((m) => m.id);
+
+  const [
+    { data: predictions },
+    { data: fullPredictions },
+    { data: players },
+    { data: setting },
+    { data: pointConfigRows },
+    { data: scorerTierPointsRows },
+    { data: playerTierRows },
+    { data: resultMultiplierRows },
+  ] = await Promise.all([
+    supabase
+      .from("match_predictions")
+      .select("match_id")
+      .eq("user_id", user!.id)
+      .in("match_id", matchIds.length > 0 ? matchIds : [-1]),
+    supabase
+      .from("match_predictions")
+      .select("match_id, predicted_home_score, predicted_away_score, predicted_scorer_player_id")
+      .eq("user_id", user!.id)
+      .in("match_id", upcomingMatchIds.length > 0 ? upcomingMatchIds : [-1]),
+    supabase.from("players").select("id, name, team_id").in("team_id", teamIds.length > 0 ? teamIds : [-1]).order("name"),
+    supabase.from("app_settings").select("value").eq("key", "match_prediction_lock_hours_before_kickoff").single(),
+    supabase.from("point_config").select("key, points").in("key", ["match_exact_score", "match_correct_result_no_score"]),
+    supabase.from("match_scorer_tier_points").select("tier, points"),
+    supabase.from("player_scoring_tier").select("player_id, tier").eq("season_id", season.id),
+    supabase.from("match_result_tier_multipliers").select("tier, favorite_multiplier_pct, underdog_multiplier_pct"),
+  ]);
+
   const predictedMatchIds = new Set((predictions ?? []).map((p) => p.match_id));
+  const predictionByMatchId = new Map((fullPredictions ?? []).map((p) => [p.match_id, p]));
+  const playersByTeamId = new Map<number, Array<{ id: number; name: string }>>();
+  for (const p of players ?? []) {
+    if (!playersByTeamId.has(p.team_id)) playersByTeamId.set(p.team_id, []);
+    playersByTeamId.get(p.team_id)!.push({ id: p.id, name: p.name });
+  }
+  const lockHours = Number(setting?.value ?? 1);
+
+  const pointConfigMap = new Map((pointConfigRows ?? []).map((r) => [r.key, r.points]));
+  const scorerTierPoints = new Map((scorerTierPointsRows ?? []).map((r) => [r.tier, r.points]));
+  const playerTierById = new Map((playerTierRows ?? []).map((r) => [r.player_id, r.tier]));
+  const matchExactScore = pointConfigMap.get("match_exact_score") ?? 30;
+  const scorerTierPointsObj = Object.fromEntries(scorerTierPoints);
+  const multiplierByTierObj = Object.fromEntries(
+    (resultMultiplierRows ?? []).map((r) => [
+      r.tier,
+      { favoriteMultiplierPct: r.favorite_multiplier_pct, underdogMultiplierPct: r.underdog_multiplier_pct },
+    ])
+  );
 
   const groups = new Map<string, typeof upcoming>();
   for (const m of upcoming) {
@@ -98,7 +145,57 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
         {[...groups.entries()].map(([date, dayMatches]) => (
           <div key={date} className="mb-4">
             <h3 className="mb-2 text-sm font-bold text-mute">{date}</h3>
-            <ul className={listCard}>
+
+            {/* Desktop : pronostic (score + buteur) directement dans la liste. */}
+            <div className="hidden gap-3 lg:grid lg:grid-cols-2">
+              {dayMatches.map((m) => {
+                const home = teamLabel(m.home_team_id);
+                const away = teamLabel(m.away_team_id);
+                const homePlayers = playersByTeamId.get(m.home_team_id) ?? [];
+                const awayPlayers = playersByTeamId.get(m.away_team_id) ?? [];
+                const existing = predictionByMatchId.get(m.id);
+                const lockAt = new Date(new Date(m.kickoff_at).getTime() - lockHours * 3600_000);
+                const locked = lockAt <= new Date();
+
+                return (
+                  <MatchPredictionCard
+                    key={m.id}
+                    leagueCode={code}
+                    matchId={m.id}
+                    kickoffAt={m.kickoff_at}
+                    homeTeamName={home.name}
+                    awayTeamName={away.name}
+                    homeLogoUrl={home.logoUrl}
+                    awayLogoUrl={away.logoUrl}
+                    homePlayers={homePlayers}
+                    awayPlayers={awayPlayers}
+                    locked={locked}
+                    scoring={{
+                      matchExactScore,
+                      scorerTierPoints: scorerTierPointsObj,
+                      playerTier: Object.fromEntries(
+                        [...homePlayers, ...awayPlayers].map((p) => [p.id, playerTierById.get(p.id) ?? FALLBACK_SCORER_TIER])
+                      ),
+                    }}
+                    resultOdds={{
+                      homeTeamId: m.home_team_id,
+                      awayTeamId: m.away_team_id,
+                      favoriteTeamId: m.favorite_team_id,
+                      tier: m.odds_tier as OddsTier | null,
+                      multiplierByTier: multiplierByTierObj,
+                    }}
+                    initial={{
+                      predictedHomeScore: existing?.predicted_home_score ?? null,
+                      predictedAwayScore: existing?.predicted_away_score ?? null,
+                      predictedScorerPlayerId: existing?.predicted_scorer_player_id ?? null,
+                    }}
+                  />
+                );
+              })}
+            </div>
+
+            {/* Mobile : liste compacte vers la page dédiée à chaque match. */}
+            <ul className={`${listCard} lg:hidden`}>
               {dayMatches.map((m) => (
                 <li key={m.id}>
                   <Link
