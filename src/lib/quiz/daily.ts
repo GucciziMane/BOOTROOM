@@ -2,7 +2,15 @@ import type { createServiceRoleClient } from "@/lib/supabase/server";
 
 type ServiceClient = ReturnType<typeof createServiceRoleClient>;
 
-export type QuizCategory = "score" | "player_career" | "trivia" | "vintage_jersey" | "hidden_teammate";
+export type QuizCategory =
+  | "score"
+  | "player_career"
+  | "trivia"
+  | "vintage_jersey"
+  | "hidden_teammate"
+  | "guess_crest"
+  | "guess_player_team"
+  | "guess_match_score";
 export type QuizDifficulty = "easy" | "medium" | "hard";
 
 export interface DailyQuestionFull {
@@ -77,19 +85,21 @@ function seededShuffle<T>(arr: T[], seedStr: string): T[] {
   return copy;
 }
 
-// Ordre fixe des 10 questions du jour : facile en ouverture, montée en difficulté, questions
-// "coéquipier caché" (générées à partir de l'effectif réel) réparties entre les deux.
+// Ordre fixe des 10 questions du jour. Seules 3 questions viennent de la banque écrite à la main
+// (une par difficulté) : les 7 autres sont générées depuis les vraies données (effectifs, blasons,
+// scores de matchs) et ne se répètent donc jamais, ce qui garantit l'absence de répétition sur bien
+// plus de 50 jours sans avoir à écrire des centaines de questions supplémentaires.
 const SLOT_PLAN: Array<{ kind: "static"; difficulty: QuizDifficulty } | { kind: "dynamic" }> = [
+  { kind: "dynamic" },
   { kind: "static", difficulty: "easy" },
-  { kind: "static", difficulty: "easy" },
+  { kind: "dynamic" },
   { kind: "dynamic" },
   { kind: "static", difficulty: "medium" },
   { kind: "dynamic" },
-  { kind: "static", difficulty: "medium" },
-  { kind: "static", difficulty: "hard" },
-  { kind: "static", difficulty: "hard" },
   { kind: "dynamic" },
   { kind: "static", difficulty: "hard" },
+  { kind: "dynamic" },
+  { kind: "dynamic" },
 ];
 
 interface QuestionRow {
@@ -103,8 +113,8 @@ interface QuestionRow {
 }
 
 async function pickStaticQuestions(supabase: ServiceClient, quizDate: string): Promise<Map<number, DailyQuestionFull>> {
-  // .order("id") pour la même raison que dans generateHiddenTeammateQuestion : garantir un
-  // ordre stable d'un appel à l'autre avant le mélange déterministe.
+  // .order("id") pour la même raison que pour les données dynamiques : garantir un ordre stable
+  // d'un appel à l'autre avant le mélange déterministe.
   const { data: rows } = await supabase
     .from("quiz_questions")
     .select("id, category, difficulty, question, choices, correct_index, explanation")
@@ -150,19 +160,44 @@ async function pickStaticQuestions(supabase: ServiceClient, quizDate: string): P
   return result;
 }
 
-/** "Ces 3 joueurs jouent dans la même équipe, qui est le 4e ?" — généré depuis les vrais effectifs. */
-async function generateHiddenTeammateQuestion(
-  supabase: ServiceClient,
-  position: number,
-  seedStr: string
-): Promise<DailyQuestionFull | null> {
+interface TeamLite {
+  id: number;
+  name: string;
+  logo_url: string | null;
+}
+
+interface PlayerLite {
+  id: number;
+  name: string;
+  team_id: number;
+  photo_url: string | null;
+}
+
+interface LeagueData {
+  leagueIds: number[];
+  teams: TeamLite[];
+  players: PlayerLite[];
+  playersByTeam: Map<number, Array<{ id: number; name: string }>>;
+}
+
+interface MatchRow {
+  id: number;
+  home_team_id: number;
+  away_team_id: number;
+  home_score: number;
+  away_score: number;
+  matchday: number | null;
+}
+
+/** Charge une seule fois les données réelles (effectifs, blasons) utilisées par tous les générateurs dynamiques. */
+async function fetchLeagueData(supabase: ServiceClient): Promise<LeagueData> {
   const { data: leagues } = await supabase.from("leagues").select("id").eq("active", true);
   const leagueIds = (leagues ?? []).map((l) => l.id);
-  if (leagueIds.length === 0) return null;
+  if (leagueIds.length === 0) return { leagueIds: [], teams: [], players: [], playersByTeam: new Map() };
 
-  // .order("id") est indispensable : sans ordre explicite, Postgres peut renvoyer les lignes
-  // dans un ordre différent d'un appel à l'autre, ce qui casserait le mélange déterministe (la
-  // page afficherait une équipe et la validation serveur en recalculerait une autre).
+  // .order("id") est indispensable : sans ordre explicite, Postgres peut renvoyer les lignes dans
+  // un ordre différent d'un appel à l'autre, ce qui casserait le mélange déterministe (la page
+  // afficherait une question et la validation serveur en recalculerait une autre).
   const { data: teams } = await supabase
     .from("teams")
     .select("id, name, logo_url")
@@ -170,7 +205,7 @@ async function generateHiddenTeammateQuestion(
     .order("id", { ascending: true });
   const { data: players } = await supabase
     .from("players")
-    .select("id, name, team_id")
+    .select("id, name, team_id, photo_url")
     .in(
       "team_id",
       (teams ?? []).map((t) => t.id)
@@ -183,19 +218,43 @@ async function generateHiddenTeammateQuestion(
     playersByTeam.get(p.team_id)!.push({ id: p.id, name: p.name });
   }
 
-  const eligibleTeams = (teams ?? []).filter((t) => (playersByTeam.get(t.id)?.length ?? 0) >= 4);
+  return { leagueIds, teams: teams ?? [], players: players ?? [], playersByTeam };
+}
+
+/** Matchs terminés avant le jour du quiz — la borne évite qu'un match en cours ne change de statut
+ * pendant que quelqu'un répond, ce qui ferait diverger l'affichage et la validation serveur. */
+async function fetchFinishedMatches(supabase: ServiceClient, leagueIds: number[], quizDate: string): Promise<MatchRow[]> {
+  if (leagueIds.length === 0) return [];
+  const { data } = await supabase
+    .from("matches")
+    .select("id, home_team_id, away_team_id, home_score, away_score, matchday")
+    .in("league_id", leagueIds)
+    .eq("status", "finished")
+    .not("home_score", "is", null)
+    .not("away_score", "is", null)
+    .lt("kickoff_at", `${quizDate}T00:00:00Z`)
+    .order("id", { ascending: true });
+  return (data ?? []) as MatchRow[];
+}
+
+/** "Ces 3 joueurs jouent dans la même équipe, qui est le 4e ?" — généré depuis les vrais effectifs. */
+function genHiddenTeammate(data: LeagueData, position: number, seedStr: string): DailyQuestionFull | null {
+  const eligibleTeams = data.teams.filter((t) => (data.playersByTeam.get(t.id)?.length ?? 0) >= 4);
   if (eligibleTeams.length === 0) return null;
 
   const team = seededShuffle(eligibleTeams, `${seedStr}-team`)[0];
-  const teamPlayers = seededShuffle(playersByTeam.get(team.id)!, `${seedStr}-squad`);
+  const teamPlayers = seededShuffle(data.playersByTeam.get(team.id)!, `${seedStr}-squad`);
   const [p1, p2, p3, hidden] = teamPlayers;
 
-  const otherPlayers = (players ?? []).filter((p) => p.team_id !== team.id);
+  const otherPlayers = data.players.filter((p) => p.team_id !== team.id);
   const decoys = seededShuffle(otherPlayers, `${seedStr}-decoys`)
     .filter((p) => p.name !== hidden.name)
     .slice(0, 3);
 
-  const choiceObjs = seededShuffle([hidden, ...decoys], `${seedStr}-order`);
+  const choiceObjs = seededShuffle(
+    [{ id: hidden.id, name: hidden.name }, ...decoys.map((d) => ({ id: d.id, name: d.name }))],
+    `${seedStr}-order`
+  );
   const correctIndex = choiceObjs.findIndex((c) => c.id === hidden.id);
 
   return {
@@ -210,14 +269,149 @@ async function generateHiddenTeammateQuestion(
   };
 }
 
+/** "Quel club est représenté par ce blason ?" — généré depuis les vrais blasons suivis par l'app. */
+function genGuessCrest(data: LeagueData, position: number, seedStr: string): DailyQuestionFull | null {
+  const teamsWithLogo = data.teams.filter((t) => t.logo_url);
+  if (teamsWithLogo.length < 4) return null;
+
+  const team = seededShuffle(teamsWithLogo, `${seedStr}-team`)[0];
+  const decoys = seededShuffle(
+    teamsWithLogo.filter((t) => t.id !== team.id),
+    `${seedStr}-decoys`
+  ).slice(0, 3);
+
+  const choiceObjs = seededShuffle([team, ...decoys], `${seedStr}-order`);
+  const correctIndex = choiceObjs.findIndex((c) => c.id === team.id);
+
+  return {
+    position,
+    category: "guess_crest",
+    difficulty: "easy",
+    question: "Quel club est représenté par ce blason ?",
+    teamLogoUrl: team.logo_url,
+    choices: choiceObjs.map((c) => c.name),
+    correctIndex,
+    explanation: `Il s'agit de ${team.name}.`,
+  };
+}
+
+/** "Dans quel club évolue ce joueur ?" — généré depuis les vrais effectifs. */
+function genGuessPlayerTeam(data: LeagueData, position: number, seedStr: string): DailyQuestionFull | null {
+  if (data.players.length === 0 || data.teams.length < 4) return null;
+
+  const player = seededShuffle(data.players, `${seedStr}-player`)[0];
+  const correctTeam = data.teams.find((t) => t.id === player.team_id);
+  if (!correctTeam) return null;
+
+  const decoys = seededShuffle(
+    data.teams.filter((t) => t.id !== correctTeam.id),
+    `${seedStr}-decoys`
+  ).slice(0, 3);
+
+  const choiceObjs = seededShuffle([correctTeam, ...decoys], `${seedStr}-order`);
+  const correctIndex = choiceObjs.findIndex((c) => c.id === correctTeam.id);
+
+  return {
+    position,
+    category: "guess_player_team",
+    difficulty: "medium",
+    question: `Dans quel club évolue ${player.name} ?`,
+    teamLogoUrl: player.photo_url,
+    choices: choiceObjs.map((c) => c.name),
+    correctIndex,
+    explanation: `${player.name} joue à ${correctTeam.name}.`,
+  };
+}
+
+/** "Quel a été le score de ce match ?" — généré depuis les vrais résultats déjà synchronisés. */
+function genGuessMatchScore(
+  matches: MatchRow[],
+  teamsById: Map<number, TeamLite>,
+  position: number,
+  seedStr: string
+): DailyQuestionFull | null {
+  if (matches.length === 0) return null;
+
+  const match = seededShuffle(matches, `${seedStr}-match`)[0];
+  const home = teamsById.get(match.home_team_id);
+  const away = teamsById.get(match.away_team_id);
+  if (!home || !away) return null;
+
+  const h = match.home_score;
+  const a = match.away_score;
+  const correct = `${h}-${a}`;
+  const rawCandidates = [
+    `${h + 1}-${a}`,
+    `${h}-${a + 1}`,
+    `${a}-${h}`,
+    `${Math.max(0, h - 1)}-${a}`,
+    `${h}-${Math.max(0, a - 1)}`,
+    `${h + 1}-${a + 1}`,
+    `${h + 2}-${a}`,
+    `${h}-${a + 2}`,
+  ];
+  const uniqueCandidates = Array.from(new Set(rawCandidates)).filter((c) => c !== correct);
+  const decoys = seededShuffle(uniqueCandidates, `${seedStr}-decoys`).slice(0, 3);
+  if (decoys.length < 3) return null;
+
+  const choices = seededShuffle([correct, ...decoys], `${seedStr}-order`);
+  const correctIndex = choices.indexOf(correct);
+
+  return {
+    position,
+    category: "guess_match_score",
+    difficulty: "medium",
+    question: `Quel a été le score du match ${home.name} – ${away.name}${match.matchday ? ` (journée ${match.matchday})` : ""} ?`,
+    teamLogoUrl: home.logo_url,
+    choices,
+    correctIndex,
+    explanation: `Score final : ${correct}.`,
+  };
+}
+
+type DynamicType = "hidden_teammate" | "guess_crest" | "guess_player_team" | "guess_match_score";
+
+// Composition du "sac" de types dynamiques : mélangé différemment chaque jour et distribué aux 7
+// positions dynamiques, ce qui garantit un mélange varié tous les jours sans jamais faire reposer
+// la majorité du quiz sur le "coéquipier caché" (1 occurrence sur 7 ici, contre les autres x2).
+const DYNAMIC_TYPE_POOL: DynamicType[] = [
+  "guess_crest",
+  "guess_crest",
+  "guess_player_team",
+  "guess_player_team",
+  "guess_match_score",
+  "guess_match_score",
+  "hidden_teammate",
+];
+
 /** Les 10 questions du jour, complètes (avec la bonne réponse) — usage serveur uniquement. */
 export async function getDailyQuiz(supabase: ServiceClient, quizDate: string): Promise<DailyQuestionFull[]> {
   const staticByPosition = await pickStaticQuestions(supabase, quizDate);
 
   const dynamicPositions = SLOT_PLAN.map((slot, i) => (slot.kind === "dynamic" ? i : -1)).filter((i) => i >= 0);
-  const dynamicQuestions = await Promise.all(
-    dynamicPositions.map((position) => generateHiddenTeammateQuestion(supabase, position, `${quizDate}-${position}`))
-  );
+
+  let dynamicQuestions: Array<DailyQuestionFull | null> = [];
+  if (dynamicPositions.length > 0) {
+    const leagueData = await fetchLeagueData(supabase);
+    const matches = await fetchFinishedMatches(supabase, leagueData.leagueIds, quizDate);
+    const teamsById = new Map(leagueData.teams.map((t) => [t.id, t]));
+    const typeOrder = seededShuffle(DYNAMIC_TYPE_POOL, `${quizDate}-dynamic-order`);
+
+    dynamicQuestions = dynamicPositions.map((position, idx) => {
+      const type = typeOrder[idx % typeOrder.length];
+      const seedStr = `${quizDate}-${position}`;
+      switch (type) {
+        case "hidden_teammate":
+          return genHiddenTeammate(leagueData, position, seedStr);
+        case "guess_crest":
+          return genGuessCrest(leagueData, position, seedStr);
+        case "guess_player_team":
+          return genGuessPlayerTeam(leagueData, position, seedStr);
+        case "guess_match_score":
+          return genGuessMatchScore(matches, teamsById, position, seedStr);
+      }
+    });
+  }
 
   const questions: DailyQuestionFull[] = [];
   for (let position = 0; position < SLOT_PLAN.length; position++) {

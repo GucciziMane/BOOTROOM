@@ -18,6 +18,9 @@ const CATEGORY_LABEL: Record<string, string> = {
   trivia: "Culture générale",
   vintage_jersey: "Maillot vintage",
   hidden_teammate: "Le coéquipier caché",
+  guess_crest: "Devine le blason",
+  guess_player_team: "Dans quel club ?",
+  guess_match_score: "Score du match",
 };
 
 const DIFFICULTY_LABEL: Record<string, string> = { easy: "Facile", medium: "Moyen", hard: "Difficile" };
