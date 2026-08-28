@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { footballData, normalizeMatchStatus } from "@/lib/football-data/client";
-import { apiFootball, type AfFixture } from "@/lib/api-football/client";
+import { highlightly, type HlMatch } from "@/lib/highlightly/client";
 import { teamNamesMatch, matchPlayerByName } from "@/lib/sync/name-match";
 import { computeStandings } from "@/lib/scoring/standings";
 import { computeMatchOdds } from "@/lib/scoring/match-odds";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-const MAX_EVENT_CALLS_PER_RUN = 80; // reste sous le quota de 100 req/jour d'API-Football
+const MAX_EVENT_CALLS_PER_RUN = 40; // reste sous le quota de 100 req/jour de Highlightly (1 call/date+championnat + 1 call/match)
 
 /**
  * Sync quotidien : calendrier + résultats (football-data.org), puis pour les matchs
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   const supabase = createServiceRoleClient();
   const { data: leagues, error: leaguesError } = await supabase
     .from("leagues")
-    .select("id, football_data_code, api_football_id");
+    .select("id, football_data_code, highlightly_league_id");
 
   if (leaguesError || !leagues) {
     return NextResponse.json({ error: leaguesError?.message ?? "leagues introuvables" }, { status: 500 });
@@ -138,9 +138,9 @@ async function updateMatchOdds(supabase: ReturnType<typeof createServiceRoleClie
 
 async function syncGoalEvents(
   supabase: ReturnType<typeof createServiceRoleClient>,
-  leagues: Array<{ id: number; football_data_code: string; api_football_id: number }>
+  leagues: Array<{ id: number; football_data_code: string; highlightly_league_id: number }>
 ) {
-  const apiFootballLeagueIds = new Set(leagues.map((l) => l.api_football_id));
+  const highlightlyLeagueIdByLeagueId = new Map(leagues.map((l) => [l.id, l.highlightly_league_id]));
 
   const { data: pendingMatches, error } = await supabase
     .from("matches")
@@ -164,28 +164,34 @@ async function syncGoalEvents(
     playersByTeamId.get(p.team_id)!.push({ id: p.id, name: p.name });
   }
 
-  const fixturesByDateCache = new Map<string, AfFixture[] | null>();
+  const matchesByDateAndLeagueCache = new Map<string, HlMatch[] | null>();
   let matched = 0;
   let unmatched = 0;
   let outOfWindow = 0;
 
   for (const match of pendingMatches) {
     try {
+      const highlightlyLeagueId = highlightlyLeagueIdByLeagueId.get(match.league_id);
+      if (!highlightlyLeagueId) {
+        unmatched++;
+        continue;
+      }
+
       const dateKey = match.kickoff_at.slice(0, 10);
-      let dayFixtures = fixturesByDateCache.get(dateKey);
-      if (dayFixtures === undefined) {
+      const cacheKey = `${dateKey}|${highlightlyLeagueId}`;
+      let dayMatches = matchesByDateAndLeagueCache.get(cacheKey);
+      if (dayMatches === undefined) {
         try {
-          dayFixtures = await apiFootball.getFixturesByDate(dateKey);
+          dayMatches = await highlightly.getMatchesByDate(dateKey, highlightlyLeagueId);
         } catch {
-          // Le plan gratuit d'API-Football ne donne accès qu'à une fenêtre glissante de
-          // quelques jours autour d'aujourd'hui : un match plus ancien tombe hors fenêtre.
-          dayFixtures = null;
+          // Match trop ancien ou hors couverture du plan gratuit.
+          dayMatches = null;
         }
-        fixturesByDateCache.set(dateKey, dayFixtures);
+        matchesByDateAndLeagueCache.set(cacheKey, dayMatches);
         await sleep(700);
       }
 
-      if (!dayFixtures) {
+      if (!dayMatches) {
         outOfWindow++;
         continue;
       }
@@ -193,27 +199,24 @@ async function syncGoalEvents(
       const homeName = teamNameById.get(match.home_team_id) ?? "";
       const awayName = teamNameById.get(match.away_team_id) ?? "";
 
-      const afFixture = dayFixtures.find(
-        (f) =>
-          apiFootballLeagueIds.has(f.league.id) &&
-          teamNamesMatch(f.teams.home.name, homeName) &&
-          teamNamesMatch(f.teams.away.name, awayName)
+      const hlMatch = dayMatches.find(
+        (m) => teamNamesMatch(m.homeTeam.name, homeName) && teamNamesMatch(m.awayTeam.name, awayName)
       );
 
-      if (!afFixture) {
+      if (!hlMatch) {
         unmatched++;
         continue;
       }
 
-      const events = await apiFootball.getFixtureEvents(afFixture.fixture.id);
+      const events = await highlightly.getMatchEvents(hlMatch.id);
       await sleep(700);
 
       const goalRows = events
         .filter((e) => e.type === "Goal")
         .flatMap((e) => {
           const teamId = teamNamesMatch(e.team.name, homeName) ? match.home_team_id : match.away_team_id;
-          const scorer = matchPlayerByName(e.player.name, playersByTeamId.get(teamId) ?? []);
-          const assist = e.assist.name ? matchPlayerByName(e.assist.name, playersByTeamId.get(teamId) ?? []) : null;
+          const scorer = matchPlayerByName(e.player, playersByTeamId.get(teamId) ?? []);
+          const assist = e.assist ? matchPlayerByName(e.assist, playersByTeamId.get(teamId) ?? []) : null;
           if (!scorer) return [];
           return [
             {
@@ -221,7 +224,7 @@ async function syncGoalEvents(
               team_id: teamId,
               player_id: scorer.id,
               assist_player_id: assist?.id ?? null,
-              minute: e.time.elapsed,
+              minute: parseInt(e.time, 10),
             },
           ];
         });

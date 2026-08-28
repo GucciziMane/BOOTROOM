@@ -47,7 +47,7 @@ export interface Database {
           id: number;
           name: string;
           country: string;
-          api_football_id: number;
+          highlightly_league_id: number;
           football_data_id: number;
           football_data_code: string;
           logo_url: string | null;
