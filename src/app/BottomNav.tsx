@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { href: "/calendar", label: "Pronos", emoji: "🎯", isActive: (p: string) => p.startsWith("/calendar") || /^\/leagues\/[^/]+\/calendar/.test(p) },
   { href: "/quiz", label: "Quiz", emoji: "🧠", isActive: (p: string) => p.startsWith("/quiz") },
-  { href: "/leaderboard", label: "Mon classement", emoji: "🏅", isActive: (p: string) => p.startsWith("/leaderboard") },
+  { href: "/leaderboard", label: "Classement", emoji: "🏅", isActive: (p: string) => p.startsWith("/leaderboard") },
   { href: "/leagues", label: "Prédictions", emoji: "🔮", isActive: (p: string) => p === "/leagues" || /^\/leagues\/[^/]+$/.test(p) },
   { href: "/chat", label: "Chat", emoji: "🍻", isActive: (p: string) => p.startsWith("/chat") },
 ];
@@ -27,12 +27,12 @@ export function BottomNav() {
             <Link
               key={tab.href}
               href={tab.href}
-              className={`flex flex-1 flex-col items-center gap-1 pb-4 pt-2 text-xs font-bold ${
+              className={`flex flex-1 flex-col items-center gap-1 pb-4 pt-2 text-[11px] font-bold ${
                 active ? "text-ink" : "text-mute"
               }`}
             >
               <span className="text-2xl">{tab.emoji}</span>
-              <span>{tab.label}</span>
+              <span className="whitespace-nowrap">{tab.label}</span>
             </Link>
           );
         })}
