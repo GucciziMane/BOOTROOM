@@ -51,6 +51,6 @@ export async function saveMatchPrediction(
 
   revalidatePath(`/leagues/${leagueCode}/calendar`);
   revalidatePath(`/leagues/${leagueCode}/calendar/${matchId}`);
-  revalidatePath("/calendar/next");
+  revalidatePath("/calendar");
   return { error: null, success: true };
 }
