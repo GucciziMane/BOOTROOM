@@ -17,17 +17,39 @@ export function normalizeName(raw: string): string {
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "") // accents (marques diacritiques combinantes après NFD)
     .replace(/\b(fc|cf|sc|ac|as|rc|ol|om|psg|club|calcio|cd|ud|sd|uc)\b/g, "")
-    .replace(/[^a-z0-9 ]/g, "")
-    .replace(/\s+/g, " ")
+    .replace(/[^a-z0-9]+/g, " ") // ponctuation (tirets, apostrophes...) -> espace, pour séparer les mots composés
     .trim();
 }
 
-/** Vrai si deux noms d'équipe désignent probablement le même club (contenance après normalisation). */
+// Mots de liaison ignorés pour la comparaison de sous-ensemble, mais conservés dans le nom
+// normalisé (ex: "clube") car ils peuvent contribuer à un sigle ("Sporting Clube de Portugal" -> "cp").
+const CONNECTORS = new Set(["de", "del", "des", "la", "le", "les", "el", "of", "the"]);
+
+/**
+ * Vrai si deux noms d'équipe désignent probablement le même club, en tolérant les mots de
+ * liaison qui diffèrent entre sources (ex: "Real Racing Club de Santander" / "Racing Santander")
+ * et les sigles (ex: "Sporting Clube de Portugal" / "Sporting CP" — "cp" == initiales de ce qui
+ * reste une fois le préfixe commun "sporting" retiré et "de" ignoré).
+ */
 export function teamNamesMatch(a: string, b: string): boolean {
-  const na = normalizeName(a);
-  const nb = normalizeName(b);
-  if (!na || !nb) return false;
-  return na === nb || na.includes(nb) || nb.includes(na);
+  const ta = normalizeName(a).split(" ").filter(Boolean);
+  const tb = normalizeName(b).split(" ").filter(Boolean);
+  if (ta.length === 0 || tb.length === 0) return false;
+  if (ta.join(" ") === tb.join(" ")) return true;
+
+  const fa = ta.filter((t) => !CONNECTORS.has(t));
+  const fb = tb.filter((t) => !CONNECTORS.has(t));
+  const [shortTokens, longTokens] = fa.length <= fb.length ? [fa, fb] : [fb, fa];
+  if (shortTokens.length > 0 && shortTokens.every((t) => longTokens.includes(t))) return true;
+
+  const common = shortTokens.filter((t) => longTokens.includes(t));
+  const shortRest = shortTokens.filter((t) => !common.includes(t));
+  const longRest = longTokens.filter((t) => !common.includes(t));
+  if (shortRest.length === 1 && shortRest[0].length >= 2 && shortRest[0].length <= 5 && longRest.length >= 2) {
+    const initials = longRest.map((w) => w[0]).join("");
+    if (initials === shortRest[0]) return true;
+  }
+  return false;
 }
 
 /**

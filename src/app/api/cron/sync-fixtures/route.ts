@@ -199,8 +199,13 @@ async function syncGoalEvents(
       const homeName = teamNameById.get(match.home_team_id) ?? "";
       const awayName = teamNameById.get(match.away_team_id) ?? "";
 
+      // homeTeam/awayTeam peuvent être inversés entre football-data.org et Highlightly pour un
+      // même match : on accepte les deux orientations, l'assignation but/passe par événement
+      // (plus bas) ne dépend de toute façon pas de cet ordre.
       const hlMatch = dayMatches.find(
-        (m) => teamNamesMatch(m.homeTeam.name, homeName) && teamNamesMatch(m.awayTeam.name, awayName)
+        (m) =>
+          (teamNamesMatch(m.homeTeam.name, homeName) && teamNamesMatch(m.awayTeam.name, awayName)) ||
+          (teamNamesMatch(m.homeTeam.name, awayName) && teamNamesMatch(m.awayTeam.name, homeName))
       );
 
       if (!hlMatch) {
