@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="fr" className={`${comicNeue.variable} h-full antialiased`}>
-      <body className="flex min-h-full flex-col pb-24 lg:pb-0">
+      <body className="flex min-h-full flex-col pb-32 lg:pb-0">
         {children}
         <BottomNav />
       </body>
