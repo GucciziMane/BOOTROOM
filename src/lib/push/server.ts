@@ -7,22 +7,17 @@ webpush.setVapidDetails(
   process.env.VAPID_PRIVATE_KEY!
 );
 
+type PushSubscriptionRow = { id: number; endpoint: string; p256dh: string; auth: string };
+
 /**
- * Envoie une notification push à tous les abonnés autres que `excludeUserId` (l'auteur du
- * message). Supprime au passage les souscriptions expirées/révoquées (404/410) plutôt que de
- * les retenter indéfiniment.
+ * Envoie une notification push à un lot de souscriptions. Supprime au passage celles
+ * expirées/révoquées (404/410) plutôt que de les retenter indéfiniment.
  */
-export async function sendPushToOthers(
-  excludeUserId: string,
+async function sendToSubscriptions(
+  subscriptions: PushSubscriptionRow[],
   payload: { title: string; body: string; url?: string }
 ): Promise<void> {
-  const supabase = createServiceRoleClient();
-  const { data: subscriptions } = await supabase
-    .from("push_subscriptions")
-    .select("id, endpoint, p256dh, auth")
-    .neq("user_id", excludeUserId);
-
-  if (!subscriptions || subscriptions.length === 0) return;
+  if (subscriptions.length === 0) return;
 
   const staleIds: number[] = [];
 
@@ -41,6 +36,36 @@ export async function sendPushToOthers(
   );
 
   if (staleIds.length > 0) {
+    const supabase = createServiceRoleClient();
     await supabase.from("push_subscriptions").delete().in("id", staleIds);
   }
+}
+
+/** Notification push à tous les abonnés sauf ceux listés dans `excludeUserIds` (l'auteur, et les mentionnés le cas échéant). */
+export async function sendPushToOthers(
+  excludeUserIds: string[],
+  payload: { title: string; body: string; url?: string }
+): Promise<void> {
+  const supabase = createServiceRoleClient();
+  const { data: subscriptions } = await supabase
+    .from("push_subscriptions")
+    .select("id, user_id, endpoint, p256dh, auth");
+
+  const excludeSet = new Set(excludeUserIds);
+  const targets = (subscriptions ?? []).filter((s) => !excludeSet.has(s.user_id));
+  await sendToSubscriptions(targets, payload);
+}
+
+/** Notification push ciblée à des utilisateurs précis (ex: mention @pseudo). */
+export async function sendPushToUserIds(
+  userIds: string[],
+  payload: { title: string; body: string; url?: string }
+): Promise<void> {
+  if (userIds.length === 0) return;
+  const supabase = createServiceRoleClient();
+  const { data: subscriptions } = await supabase
+    .from("push_subscriptions")
+    .select("id, endpoint, p256dh, auth")
+    .in("user_id", userIds);
+  await sendToSubscriptions(subscriptions ?? [], payload);
 }

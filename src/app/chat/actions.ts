@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { sendPushToOthers } from "@/lib/push/server";
+import { sendPushToOthers, sendPushToUserIds } from "@/lib/push/server";
+import { extractMentionedUserIds } from "@/lib/chat/mentions";
 
 export interface SendChatMessageState {
   error: string | null;
@@ -25,10 +26,20 @@ export async function sendChatMessage(
   const { error } = await supabase.from("chat_messages").insert({ user_id: user.id, content });
   if (error) return { error: error.message };
 
-  const { data: profile } = await supabase.from("profiles").select("username").eq("id", user.id).single();
+  const { data: profiles } = await supabase.from("profiles").select("id, username");
+  const senderName = profiles?.find((p) => p.id === user.id)?.username ?? "Quelqu'un";
+  const mentionedUserIds = extractMentionedUserIds(content, profiles ?? []).filter((id) => id !== user.id);
+
   try {
-    await sendPushToOthers(user.id, {
-      title: `${profile?.username ?? "Quelqu'un"} — 3ème mi-temps`,
+    if (mentionedUserIds.length > 0) {
+      await sendPushToUserIds(mentionedUserIds, {
+        title: `${senderName} vous a mentionné — 3ème mi-temps`,
+        body: content,
+        url: "/chat",
+      });
+    }
+    await sendPushToOthers([user.id, ...mentionedUserIds], {
+      title: `${senderName} — 3ème mi-temps`,
       body: content,
       url: "/chat",
     });
