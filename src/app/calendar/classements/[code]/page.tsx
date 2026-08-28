@@ -6,7 +6,7 @@ import { computeStandings } from "@/lib/scoring/standings";
 
 const TOP_N = 10;
 
-export default async function StandingsPage({ params }: PageProps<"/standings/[code]">) {
+export default async function StandingsPage({ params }: PageProps<"/calendar/classements/[code]">) {
   const { code } = await params;
   const supabase = await createClient();
 
@@ -86,7 +86,7 @@ export default async function StandingsPage({ params }: PageProps<"/standings/[c
     <main className="mx-auto w-full max-w-3xl flex-1 p-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-3xl font-bold">{league.name}</h1>
-        <Link href="/standings" className={`text-sm ${linkMuted}`}>
+        <Link href="/calendar/classements" className={`text-sm ${linkMuted}`}>
           Retour
         </Link>
       </div>

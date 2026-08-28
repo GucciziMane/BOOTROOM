@@ -66,7 +66,7 @@ export default async function DashboardPage() {
             description="Calendrier des matchs : score et buteur, championnat par championnat."
           />
           <NavCard
-            href="/standings"
+            href="/calendar/classements"
             title={"Classements & buteurs 🏆"}
             description="Le classement réel de chaque championnat, mis à jour après chaque match, plus les buteurs et passeurs."
           />

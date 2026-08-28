@@ -1,9 +1,10 @@
 import Link from "next/link";
 
-export function CalendarTabs({ active }: { active: "next" | "leagues" }) {
+export function CalendarTabs({ active }: { active: "next" | "leagues" | "classements" }) {
   const tabs = [
     { href: "/calendar", label: "Prochaine journée", key: "next" as const },
     { href: "/calendar/championnats", label: "Championnats", key: "leagues" as const },
+    { href: "/calendar/classements", label: "Classements", key: "classements" as const },
   ];
 
   return (
