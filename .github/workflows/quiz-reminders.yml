@@ -1,0 +1,13 @@
+name: Quiz reminders
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch: {}
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Rappeler le quiz du jour (midi/18h Paris, si pas encore fait)
+        run: |
+          curl -sf --max-time 60 -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" https://bootroom.online/api/cron/quiz-reminders
