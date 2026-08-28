@@ -103,10 +103,13 @@ interface QuestionRow {
 }
 
 async function pickStaticQuestions(supabase: ServiceClient, quizDate: string): Promise<Map<number, DailyQuestionFull>> {
+  // .order("id") pour la même raison que dans generateHiddenTeammateQuestion : garantir un
+  // ordre stable d'un appel à l'autre avant le mélange déterministe.
   const { data: rows } = await supabase
     .from("quiz_questions")
     .select("id, category, difficulty, question, choices, correct_index, explanation")
-    .eq("active", true);
+    .eq("active", true)
+    .order("id", { ascending: true });
 
   const byDifficulty: Record<QuizDifficulty, QuestionRow[]> = { easy: [], medium: [], hard: [] };
   for (const r of (rows ?? []) as QuestionRow[]) byDifficulty[r.difficulty as QuizDifficulty].push(r);
@@ -157,14 +160,22 @@ async function generateHiddenTeammateQuestion(
   const leagueIds = (leagues ?? []).map((l) => l.id);
   if (leagueIds.length === 0) return null;
 
-  const { data: teams } = await supabase.from("teams").select("id, name, logo_url").in("league_id", leagueIds);
+  // .order("id") est indispensable : sans ordre explicite, Postgres peut renvoyer les lignes
+  // dans un ordre différent d'un appel à l'autre, ce qui casserait le mélange déterministe (la
+  // page afficherait une équipe et la validation serveur en recalculerait une autre).
+  const { data: teams } = await supabase
+    .from("teams")
+    .select("id, name, logo_url")
+    .in("league_id", leagueIds)
+    .order("id", { ascending: true });
   const { data: players } = await supabase
     .from("players")
     .select("id, name, team_id")
     .in(
       "team_id",
       (teams ?? []).map((t) => t.id)
-    );
+    )
+    .order("id", { ascending: true });
 
   const playersByTeam = new Map<number, Array<{ id: number; name: string }>>();
   for (const p of players ?? []) {
