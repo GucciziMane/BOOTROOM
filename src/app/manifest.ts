@@ -9,7 +9,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Boot Room",
     short_name: "Boot Room",
     description: "Pronostics entre amis sur les 5 grands championnats",
-    start_url: "/",
+    start_url: "/calendar",
     display: "standalone",
     background_color: "#f6f1e6",
     theme_color: "#211c14",
