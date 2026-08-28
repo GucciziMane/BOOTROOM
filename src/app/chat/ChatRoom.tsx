@@ -2,11 +2,20 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { sendChatMessage, type SendChatMessageState } from "./actions";
-import { chatNotificationsEnabled, setChatNotificationsEnabled } from "./ChatNotifications";
+import { sendChatMessage, subscribeToPush, unsubscribeFromPush, type SendChatMessageState } from "./actions";
 import { createClient } from "@/lib/supabase/client";
 import { buttonPrimary, input, linkMuted } from "@/lib/ui";
 import { formatParisDateTime } from "@/lib/format-date";
+
+/** L'API Push attend la clé VAPID en Uint8Array, pas en base64url telle que fournie. */
+function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const normalized = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = window.atob(normalized);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return bytes;
+}
 
 interface ChatMessage {
   id: number;
@@ -40,26 +49,49 @@ export function ChatRoom({
 
   useEffect(() => {
     // Lu après montage (pas en lazy initial state) pour que le rendu serveur et la première
-    // passe client restent identiques : Notification.permission n'existe pas côté serveur.
-    const supported = typeof window !== "undefined" && "Notification" in window;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setNotifications({
-      supported,
-      on: supported && Notification.permission === "granted" && chatNotificationsEnabled(),
-    });
+    // passe client restent identiques : ces API n'existent pas côté serveur.
+    const supported = typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window;
+    if (!supported) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setNotifications({ supported: false, on: false });
+      return;
+    }
+    navigator.serviceWorker
+      .register("/sw.js")
+      .then((reg) => reg.pushManager.getSubscription())
+      .then((sub) => {
+        setNotifications({ supported: true, on: !!sub });
+      })
+      .catch(() => {
+        setNotifications({ supported: true, on: false });
+      });
   }, []);
 
   async function toggleNotifications() {
     if (notifications.on) {
-      setChatNotificationsEnabled(false);
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        await unsubscribeFromPush(sub.endpoint);
+        await sub.unsubscribe();
+      }
       setNotifications((prev) => ({ ...prev, on: false }));
       return;
     }
+
     const permission = await Notification.requestPermission();
-    if (permission === "granted") {
-      setChatNotificationsEnabled(true);
-      setNotifications((prev) => ({ ...prev, on: true }));
-    }
+    if (permission !== "granted") return;
+
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!),
+    });
+    const json = sub.toJSON();
+    if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) return;
+
+    await subscribeToPush({ endpoint: json.endpoint, keys: { p256dh: json.keys.p256dh, auth: json.keys.auth } });
+    setNotifications((prev) => ({ ...prev, on: true }));
   }
 
   useEffect(() => {

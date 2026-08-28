@@ -29,7 +29,7 @@ export async function createClient() {
   );
 }
 
-/** Client admin (service role) — jobs de sync et moteur de scoring uniquement. Ne jamais exposer côté navigateur. */
+/** Client admin (service role), contourne RLS — jobs de sync, moteur de scoring, envoi de push. Ne jamais exposer côté navigateur. */
 export function createServiceRoleClient() {
   return createSupabaseClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
