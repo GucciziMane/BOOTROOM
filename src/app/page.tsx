@@ -5,6 +5,7 @@ import { signOut } from "@/app/login/actions";
 import { getFavoriteTeamLeagueGroups } from "@/lib/favorite-teams";
 import { linkMuted } from "@/lib/ui";
 import { FavoriteTeamBadge } from "@/app/profile/FavoriteTeamBadge";
+import { ThemeModeToggle } from "@/app/profile/ThemeModeToggle";
 import { FavoriteTeamOnboarding } from "./FavoriteTeamOnboarding";
 
 export default async function DashboardPage() {
@@ -15,7 +16,7 @@ export default async function DashboardPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("username, avatar_url, is_admin, chat_last_read_at, favorite_team_id")
+    .select("username, avatar_url, is_admin, chat_last_read_at, favorite_team_id, use_club_theme")
     .eq("id", user!.id)
     .single();
 
@@ -60,7 +61,17 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <p className="mt-3 text-lg text-mute">Salut {profile?.username ?? user?.email}.</p>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-lg text-mute">Salut {profile?.username ?? user?.email}.</p>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-mute">Thème</span>
+          <ThemeModeToggle
+            initialUseClubTheme={profile?.use_club_theme ?? false}
+            favoriteTeamLogoUrl={favoriteTeamLogoUrl ?? null}
+            hasFavoriteTeam={!!profile?.favorite_team_id}
+          />
+        </div>
+      </div>
 
       <div className="flex flex-1 items-center justify-center">
         <div className="grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-6">
