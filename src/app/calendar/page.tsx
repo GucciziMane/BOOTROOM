@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { linkMuted, listCard } from "@/lib/ui";
 import { LEAGUE_FLAG } from "@/lib/country-flags";
+import { CalendarTabs } from "./CalendarTabs";
 
 export default async function CalendarLeaguesPage() {
   const supabase = await createClient();
@@ -20,6 +21,8 @@ export default async function CalendarLeaguesPage() {
           Retour
         </Link>
       </div>
+
+      <CalendarTabs active="leagues" />
 
       <p className="mb-6 text-sm text-mute">
         Choisis un championnat pour voir le calendrier et pronostiquer un score + un buteur, match par match.

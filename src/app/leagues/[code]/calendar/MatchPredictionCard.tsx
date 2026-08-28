@@ -39,6 +39,8 @@ interface Props {
     predictedAwayScore: number | null;
     predictedScorerPlayerId: number | null;
   };
+  /** Affiché uniquement sur une vue qui mélange plusieurs championnats (ex: "prochaine journée"). */
+  leagueLabel?: string;
 }
 
 const initialState: SaveMatchPredictionState = { error: null, success: false };
@@ -57,6 +59,7 @@ export function MatchPredictionCard({
   resultOdds,
   locked,
   initial,
+  leagueLabel,
 }: Props) {
   const [state, formAction, isPending] = useActionState(saveMatchPrediction, initialState);
   const [homeScore, setHomeScore] = useState(initial.predictedHomeScore != null ? String(initial.predictedHomeScore) : "");
@@ -86,7 +89,10 @@ export function MatchPredictionCard({
     const lockedScorer = [...homePlayers, ...awayPlayers].find((p) => p.id === initial.predictedScorerPlayerId);
     return (
       <div className="rounded-2xl border border-line bg-paper p-4 shadow-sm">
-        <p className="mb-2 text-xs font-bold text-mute">{formatParisDateTime(kickoffAt)}</p>
+        <p className="mb-2 flex items-center justify-between text-xs font-bold text-mute">
+          <span>{formatParisDateTime(kickoffAt)}</span>
+          {leagueLabel && <span>{leagueLabel}</span>}
+        </p>
         <div className="flex items-center justify-center gap-3">
           <TeamBadge name={homeTeamName} logoUrl={homeLogoUrl} />
           <span className="text-lg font-bold">
@@ -106,7 +112,10 @@ export function MatchPredictionCard({
     <form action={formAction} className="rounded-2xl border border-line bg-paper p-4 shadow-sm">
       <input type="hidden" name="match_id" value={matchId} />
       <input type="hidden" name="league_code" value={leagueCode} />
-      <p className="mb-2 text-xs font-bold text-mute">{formatParisDateTime(kickoffAt)}</p>
+      <p className="mb-2 flex items-center justify-between text-xs font-bold text-mute">
+        <span>{formatParisDateTime(kickoffAt)}</span>
+        {leagueLabel && <span>{leagueLabel}</span>}
+      </p>
 
       <div className="flex items-center justify-center gap-2">
         <TeamBadge name={homeTeamName} logoUrl={homeLogoUrl} />
