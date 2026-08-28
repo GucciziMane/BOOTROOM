@@ -3,8 +3,9 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { sendChatMessage, type SendChatMessageState } from "./actions";
+import { chatNotificationsEnabled, setChatNotificationsEnabled } from "./ChatNotifications";
 import { createClient } from "@/lib/supabase/client";
-import { buttonPrimary, input } from "@/lib/ui";
+import { buttonPrimary, input, linkMuted } from "@/lib/ui";
 import { formatParisDateTime } from "@/lib/format-date";
 
 interface ChatMessage {
@@ -32,9 +33,34 @@ export function ChatRoom({
 }) {
   const [messages, setMessages] = useState(initialMessages);
   const [state, formAction, isPending] = useActionState(sendChatMessage, initialState);
+  const [notifications, setNotifications] = useState({ supported: false, on: false });
   const formRef = useRef<HTMLFormElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const wasPending = useRef(false);
+
+  useEffect(() => {
+    // Lu après montage (pas en lazy initial state) pour que le rendu serveur et la première
+    // passe client restent identiques : Notification.permission n'existe pas côté serveur.
+    const supported = typeof window !== "undefined" && "Notification" in window;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNotifications({
+      supported,
+      on: supported && Notification.permission === "granted" && chatNotificationsEnabled(),
+    });
+  }, []);
+
+  async function toggleNotifications() {
+    if (notifications.on) {
+      setChatNotificationsEnabled(false);
+      setNotifications((prev) => ({ ...prev, on: false }));
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    if (permission === "granted") {
+      setChatNotificationsEnabled(true);
+      setNotifications((prev) => ({ ...prev, on: true }));
+    }
+  }
 
   useEffect(() => {
     const supabase = createClient();
@@ -79,6 +105,13 @@ export function ChatRoom({
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
+      {notifications.supported && (
+        <div className="flex justify-end border-b border-line px-4 py-2">
+          <button type="button" onClick={toggleNotifications} className={`text-xs ${linkMuted}`}>
+            {notifications.on ? "🔔 Notifications activées" : "🔕 Activer les notifications"}
+          </button>
+        </div>
+      )}
       <div className="flex-1 space-y-4 overflow-y-auto p-4">
         {messages.map((m) => {
           const profile = profilesById[m.userId];

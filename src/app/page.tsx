@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/app/login/actions";
+import { ChatNotifications } from "@/app/chat/ChatNotifications";
 import { linkMuted } from "@/lib/ui";
 
 export default async function DashboardPage() {
@@ -24,6 +25,7 @@ export default async function DashboardPage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-1 flex-col p-6">
+      <ChatNotifications currentUserId={user!.id} />
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Boot Room</h1>
         <div className="flex items-center gap-4">
