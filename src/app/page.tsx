@@ -2,7 +2,10 @@ import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/app/login/actions";
+import { getFavoriteTeamLeagueGroups } from "@/lib/favorite-teams";
 import { linkMuted } from "@/lib/ui";
+import { FavoriteTeamBadge } from "@/app/profile/FavoriteTeamBadge";
+import { FavoriteTeamOnboarding } from "./FavoriteTeamOnboarding";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -12,7 +15,7 @@ export default async function DashboardPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("username, avatar_url, is_admin, chat_last_read_at")
+    .select("username, avatar_url, is_admin, chat_last_read_at, favorite_team_id")
     .eq("id", user!.id)
     .single();
 
@@ -21,6 +24,11 @@ export default async function DashboardPage() {
     .select("id", { count: "exact", head: true })
     .neq("user_id", user!.id)
     .gt("created_at", profile?.chat_last_read_at ?? "1970-01-01");
+
+  const leagues = await getFavoriteTeamLeagueGroups(supabase);
+  const favoriteTeamLogoUrl = leagues
+    .flatMap((l) => l.teams)
+    .find((t) => t.id === profile?.favorite_team_id)?.logoUrl;
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-1 flex-col p-6">
@@ -32,8 +40,8 @@ export default async function DashboardPage() {
               Administration
             </Link>
           )}
-          <Link href="/profile" className="flex items-center gap-2">
-            <span className="relative h-16 w-16 shrink-0 overflow-hidden rounded-full border-2 border-line bg-cream">
+          <Link href="/profile" className="relative flex h-16 w-16 shrink-0 items-center gap-2">
+            <span className="relative h-16 w-16 overflow-hidden rounded-full border-2 border-line bg-cream">
               {profile?.avatar_url ? (
                 <Image src={profile.avatar_url} alt="" fill sizes="64px" className="object-cover" />
               ) : (
@@ -42,6 +50,7 @@ export default async function DashboardPage() {
                 </span>
               )}
             </span>
+            <FavoriteTeamBadge logoUrl={favoriteTeamLogoUrl ?? null} size={22} />
           </Link>
           <form action={signOut}>
             <button type="submit" className={`text-sm ${linkMuted}`}>
@@ -88,6 +97,8 @@ export default async function DashboardPage() {
           />
         </div>
       </div>
+
+      {!profile?.favorite_team_id && <FavoriteTeamOnboarding leagues={leagues} />}
     </main>
   );
 }

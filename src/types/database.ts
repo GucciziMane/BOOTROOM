@@ -25,6 +25,7 @@ export interface Database {
           is_admin: boolean;
           created_at: string;
           chat_last_read_at: string | null;
+          favorite_team_id: number | null;
         };
         Insert: Partial<Database["public"]["Tables"]["profiles"]["Row"]> & { id: string; username: string };
         Update: Partial<Database["public"]["Tables"]["profiles"]["Row"]>;

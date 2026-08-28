@@ -60,3 +60,45 @@ export async function updateAvatar(
   revalidatePath("/");
   return { error: null, success: true };
 }
+
+export interface SetFavoriteTeamState {
+  error: string | null;
+  success: boolean;
+}
+
+export async function setFavoriteTeam(
+  _prevState: SetFavoriteTeamState,
+  formData: FormData
+): Promise<SetFavoriteTeamState> {
+  const raw = formData.get("team_id");
+  const teamId = raw ? Number(raw) : null;
+  if (raw && (!Number.isInteger(teamId) || (teamId as number) <= 0)) {
+    return { error: "Club invalide.", success: false };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Non connecté.", success: false };
+
+  if (teamId != null) {
+    const { data: team } = await supabase.from("teams").select("id, league_id").eq("id", teamId).maybeSingle();
+    if (!team) return { error: "Club introuvable.", success: false };
+    const { data: league } = await supabase.from("leagues").select("active").eq("id", team.league_id).maybeSingle();
+    if (!league?.active) return { error: "Ce championnat n'est pas suivi actuellement.", success: false };
+  }
+
+  const { error: updateError } = await supabase
+    .from("profiles")
+    .update({ favorite_team_id: teamId })
+    .eq("id", user.id);
+
+  if (updateError) {
+    return { error: `Échec de la mise à jour : ${updateError.message}`, success: false };
+  }
+
+  revalidatePath("/profile");
+  revalidatePath("/");
+  return { error: null, success: true };
+}
