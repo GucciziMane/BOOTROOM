@@ -288,6 +288,61 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["chat_message_reactions"]["Row"]>;
         Relationships: [];
       };
+      quiz_questions: {
+        Row: {
+          id: number;
+          category: "score" | "player_career" | "trivia" | "vintage_jersey";
+          difficulty: "easy" | "medium" | "hard";
+          question: string;
+          choices: string[];
+          correct_index: number;
+          explanation: string | null;
+          active: boolean;
+        };
+        Insert: Partial<Database["public"]["Tables"]["quiz_questions"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["quiz_questions"]["Row"]>;
+        Relationships: [];
+      };
+      quiz_answers: {
+        Row: {
+          id: number;
+          user_id: string;
+          quiz_date: string;
+          position: number;
+          choice_index: number;
+          is_correct: boolean;
+          points: number;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["quiz_answers"]["Row"]> & {
+          user_id: string;
+          quiz_date: string;
+          position: number;
+          choice_index: number;
+          is_correct: boolean;
+          points: number;
+        };
+        Update: Partial<Database["public"]["Tables"]["quiz_answers"]["Row"]>;
+        Relationships: [];
+      };
+      quiz_results: {
+        Row: {
+          id: number;
+          user_id: string;
+          quiz_date: string;
+          score: number;
+          correct_count: number;
+          completed_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["quiz_results"]["Row"]> & {
+          user_id: string;
+          quiz_date: string;
+          score: number;
+          correct_count: number;
+        };
+        Update: Partial<Database["public"]["Tables"]["quiz_results"]["Row"]>;
+        Relationships: [];
+      };
       reminder_log: {
         Row: {
           id: number;

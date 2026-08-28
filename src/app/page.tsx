@@ -54,7 +54,7 @@ export default async function DashboardPage() {
       <p className="mt-3 text-lg text-mute">Salut {profile?.username ?? user?.email}.</p>
 
       <div className="flex flex-1 items-center justify-center">
-        <div className="grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-5 lg:gap-6">
+        <div className="grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-6">
           <NavCard
             href="/leagues"
             title="Mes prédictions 🔮"
@@ -80,6 +80,11 @@ export default async function DashboardPage() {
             title="3ème mi‑temps 🍻"
             description="La discussion entre tous les membres."
             badgeCount={unreadChatCount ?? 0}
+          />
+          <NavCard
+            href="/quiz"
+            title="Quiz du jour 🧠"
+            description="10 questions sur le foot, un nouveau quiz chaque jour à minuit. Classement quotidien entre potes."
           />
         </div>
       </div>
