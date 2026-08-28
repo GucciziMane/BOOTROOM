@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { submitQuizAnswer, getQuizLeaderboard, type LeaderboardRow } from "./actions";
+import {
+  submitQuizAnswer,
+  getQuizLeaderboard,
+  getQuizSeasonLeaderboard,
+  type LeaderboardRow,
+  type SeasonLeaderboardRow,
+} from "./actions";
 import { buttonPrimary, card } from "@/lib/ui";
 import type { DailyQuestionPublic } from "@/lib/quiz/daily";
 
@@ -43,10 +49,13 @@ export function QuizRunner({ questions, initialAnsweredCount, initialStreak, ini
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardRow[] | null>(null);
+  const [seasonLeaderboard, setSeasonLeaderboard] = useState<SeasonLeaderboardRow[] | null>(null);
+  const [leaderboardView, setLeaderboardView] = useState<"today" | "season">("today");
 
   useEffect(() => {
     if (finalScore != null) {
       getQuizLeaderboard().then(setLeaderboard);
+      getQuizSeasonLeaderboard().then(setSeasonLeaderboard);
     }
   }, [finalScore]);
 
@@ -92,14 +101,56 @@ export function QuizRunner({ questions, initialAnsweredCount, initialStreak, ini
           Ton score du jour : <strong className="text-good">{finalScore} pts</strong>
         </p>
 
-        <h3 className="mb-2 mt-6 font-bold">Classement du jour</h3>
-        {!leaderboard ? (
+        <div className="mb-3 mt-6 flex gap-4 border-b border-line">
+          <button
+            type="button"
+            onClick={() => setLeaderboardView("today")}
+            className={`-mb-px border-b-2 px-1 py-2 text-sm font-bold ${
+              leaderboardView === "today" ? "border-ink text-ink" : "border-transparent text-mute hover:text-ink"
+            }`}
+          >
+            Aujourd&apos;hui
+          </button>
+          <button
+            type="button"
+            onClick={() => setLeaderboardView("season")}
+            className={`-mb-px border-b-2 px-1 py-2 text-sm font-bold ${
+              leaderboardView === "season" ? "border-ink text-ink" : "border-transparent text-mute hover:text-ink"
+            }`}
+          >
+            Saison 🏆
+          </button>
+        </div>
+
+        {leaderboardView === "today" ? (
+          !leaderboard ? (
+            <p className="text-sm text-mute">Chargement du classement...</p>
+          ) : leaderboard.length === 0 ? (
+            <p className="text-sm text-mute">Personne d&apos;autre n&apos;a encore terminé le quiz aujourd&apos;hui.</p>
+          ) : (
+            <ol className="space-y-2">
+              {leaderboard.map((row, i) => (
+                <li
+                  key={row.userId}
+                  className="flex items-center justify-between rounded-xl border border-line bg-cream p-3 text-sm"
+                >
+                  <span className="font-bold">
+                    {i + 1}. {row.username}
+                  </span>
+                  <span className="font-bold">
+                    {row.score} pts <span className="text-mute">({row.correctCount}/10)</span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )
+        ) : !seasonLeaderboard ? (
           <p className="text-sm text-mute">Chargement du classement...</p>
-        ) : leaderboard.length === 0 ? (
-          <p className="text-sm text-mute">Personne d&apos;autre n&apos;a encore terminé le quiz aujourd&apos;hui.</p>
+        ) : seasonLeaderboard.length === 0 ? (
+          <p className="text-sm text-mute">Aucun score enregistré pour l&apos;instant.</p>
         ) : (
           <ol className="space-y-2">
-            {leaderboard.map((row, i) => (
+            {seasonLeaderboard.map((row, i) => (
               <li
                 key={row.userId}
                 className="flex items-center justify-between rounded-xl border border-line bg-cream p-3 text-sm"
@@ -108,7 +159,7 @@ export function QuizRunner({ questions, initialAnsweredCount, initialStreak, ini
                   {i + 1}. {row.username}
                 </span>
                 <span className="font-bold">
-                  {row.score} pts <span className="text-mute">({row.correctCount}/10)</span>
+                  {row.totalScore} pts <span className="text-mute">({row.daysPlayed}j)</span>
                 </span>
               </li>
             ))}

@@ -133,3 +133,43 @@ export async function getQuizLeaderboard(): Promise<LeaderboardRow[]> {
     correctCount: r.correct_count,
   }));
 }
+
+export interface SeasonLeaderboardRow {
+  userId: string;
+  username: string;
+  avatarUrl: string | null;
+  totalScore: number;
+  daysPlayed: number;
+}
+
+/** Cumul de tous les scores quotidiens depuis le début, pour départager un vainqueur en fin de saison. */
+export async function getQuizSeasonLeaderboard(): Promise<SeasonLeaderboardRow[]> {
+  const admin = createServiceRoleClient();
+
+  const { data: results } = await admin.from("quiz_results").select("user_id, score");
+  if (!results || results.length === 0) return [];
+
+  const totals = new Map<string, { total: number; days: number }>();
+  for (const r of results) {
+    const cur = totals.get(r.user_id) ?? { total: 0, days: 0 };
+    cur.total += r.score;
+    cur.days += 1;
+    totals.set(r.user_id, cur);
+  }
+
+  const { data: profiles } = await admin
+    .from("profiles")
+    .select("id, username, avatar_url")
+    .in("id", [...totals.keys()]);
+  const profileById = new Map((profiles ?? []).map((p) => [p.id, p]));
+
+  return [...totals.entries()]
+    .map(([userId, t]) => ({
+      userId,
+      username: profileById.get(userId)?.username ?? "?",
+      avatarUrl: profileById.get(userId)?.avatar_url ?? null,
+      totalScore: t.total,
+      daysPlayed: t.days,
+    }))
+    .sort((a, b) => b.totalScore - a.totalScore);
+}
