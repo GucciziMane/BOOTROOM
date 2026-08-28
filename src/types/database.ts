@@ -117,6 +117,7 @@ export interface Database {
           events_synced_at: string | null;
           favorite_team_id: number | null;
           odds_tier: 1 | 2 | 3 | 4 | 5 | null;
+          matchday: number | null;
         };
         Insert: Partial<Database["public"]["Tables"]["matches"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["matches"]["Row"]>;

@@ -44,7 +44,7 @@ export default async function CalendarPage() {
 
   const { data: matches } = await supabase
     .from("matches")
-    .select("id, season_id, home_team_id, away_team_id, kickoff_at, status, favorite_team_id, odds_tier")
+    .select("id, season_id, home_team_id, away_team_id, kickoff_at, status, favorite_team_id, odds_tier, matchday")
     .in("season_id", seasonIds.length > 0 ? seasonIds : [-1])
     .in("status", ["scheduled", "live"])
     .order("kickoff_at", { ascending: true });
@@ -143,7 +143,11 @@ export default async function CalendarPage() {
                   <MatchPredictionCard
                     key={m.id}
                     leagueCode={league?.football_data_code ?? ""}
-                    leagueLabel={league ? `${LEAGUE_FLAG[league.football_data_code] ?? ""} ${league.name}` : undefined}
+                    leagueLabel={
+                      league
+                        ? `${LEAGUE_FLAG[league.football_data_code] ?? ""} ${league.name}${m.matchday != null ? ` · J${m.matchday}` : ""}`
+                        : undefined
+                    }
                     matchId={m.id}
                     kickoffAt={m.kickoff_at}
                     homeTeamName={home.name}

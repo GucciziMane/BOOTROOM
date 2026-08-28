@@ -60,6 +60,7 @@ export async function GET(request: NextRequest) {
             status: normalizeMatchStatus(m.status),
             home_score: m.score.fullTime.home,
             away_score: m.score.fullTime.away,
+            matchday: m.matchday,
           },
         ];
       });

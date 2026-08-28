@@ -70,6 +70,7 @@ export interface FdMatch {
   id: number;
   utcDate: string;
   status: FdMatchStatus;
+  matchday: number | null;
   homeTeam: { id: number; name: string };
   awayTeam: { id: number; name: string };
   score: { fullTime: { home: number | null; away: number | null } };

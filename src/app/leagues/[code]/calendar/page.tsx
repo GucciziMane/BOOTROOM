@@ -40,7 +40,9 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
 
   const { data: matches } = await supabase
     .from("matches")
-    .select("id, home_team_id, away_team_id, kickoff_at, status, home_score, away_score, favorite_team_id, odds_tier")
+    .select(
+      "id, home_team_id, away_team_id, kickoff_at, status, home_score, away_score, favorite_team_id, odds_tier, matchday"
+    )
     .eq("season_id", season.id)
     .order("kickoff_at", { ascending: true });
 
@@ -95,11 +97,16 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
     ])
   );
 
-  const groups = new Map<string, typeof upcoming>();
+  // Groupe d'abord par journée (numéro officiel du championnat), puis par date à l'intérieur —
+  // une journée s'étale souvent sur plusieurs jours (vendredi à lundi).
+  const matchdayGroups = new Map<string, { matchday: number | null; dates: Map<string, typeof upcoming> }>();
   for (const m of upcoming) {
+    const matchdayKey = m.matchday != null ? String(m.matchday) : "—";
+    if (!matchdayGroups.has(matchdayKey)) matchdayGroups.set(matchdayKey, { matchday: m.matchday, dates: new Map() });
+    const group = matchdayGroups.get(matchdayKey)!;
     const dateKey = formatParisDateTime(m.kickoff_at).split(" à")[0];
-    if (!groups.has(dateKey)) groups.set(dateKey, []);
-    groups.get(dateKey)!.push(m);
+    if (!group.dates.has(dateKey)) group.dates.set(dateKey, []);
+    group.dates.get(dateKey)!.push(m);
   }
 
   const teamLabel = (id: number) => {
@@ -134,59 +141,69 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
 
       <section>
         <h2 className="mb-3 text-lg font-bold">À venir</h2>
-        {[...groups.entries()].map(([date, dayMatches]) => (
-          <div key={date} className="mb-4">
-            <h3 className="mb-2 text-sm font-bold text-mute">{date}</h3>
+        {[...matchdayGroups.entries()].map(([matchdayKey, { matchday, dates }]) => (
+          <div key={matchdayKey} className="mb-6">
+            {matchday != null && (
+              <div className="mb-3 flex items-center gap-3">
+                <h3 className="text-lg font-bold">Journée {matchday}</h3>
+                <span className="h-px flex-1 bg-line" />
+              </div>
+            )}
+            {[...dates.entries()].map(([date, dayMatches]) => (
+              <div key={date} className="mb-4">
+                <h4 className="mb-2 text-sm font-bold text-mute">{date}</h4>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {dayMatches.map((m) => {
-                const home = teamLabel(m.home_team_id);
-                const away = teamLabel(m.away_team_id);
-                const homePlayers = playersByTeamId.get(m.home_team_id) ?? [];
-                const awayPlayers = playersByTeamId.get(m.away_team_id) ?? [];
-                const existing = predictionByMatchId.get(m.id);
-                const lockAt = new Date(new Date(m.kickoff_at).getTime() - lockHours * 3600_000);
-                const locked = lockAt <= new Date();
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {dayMatches.map((m) => {
+                    const home = teamLabel(m.home_team_id);
+                    const away = teamLabel(m.away_team_id);
+                    const homePlayers = playersByTeamId.get(m.home_team_id) ?? [];
+                    const awayPlayers = playersByTeamId.get(m.away_team_id) ?? [];
+                    const existing = predictionByMatchId.get(m.id);
+                    const lockAt = new Date(new Date(m.kickoff_at).getTime() - lockHours * 3600_000);
+                    const locked = lockAt <= new Date();
 
-                return (
-                  <MatchPredictionCard
-                    key={m.id}
-                    leagueCode={code}
-                    matchId={m.id}
-                    kickoffAt={m.kickoff_at}
-                    homeTeamName={home.name}
-                    awayTeamName={away.name}
-                    homeLogoUrl={home.logoUrl}
-                    awayLogoUrl={away.logoUrl}
-                    homePlayers={homePlayers}
-                    awayPlayers={awayPlayers}
-                    locked={locked}
-                    scoring={{
-                      matchExactScore,
-                      scorerTierPoints: scorerTierPointsObj,
-                      playerTier: Object.fromEntries(
-                        [...homePlayers, ...awayPlayers].map((p) => [p.id, playerTierById.get(p.id) ?? FALLBACK_SCORER_TIER])
-                      ),
-                    }}
-                    resultOdds={{
-                      homeTeamId: m.home_team_id,
-                      awayTeamId: m.away_team_id,
-                      favoriteTeamId: m.favorite_team_id,
-                      tier: m.odds_tier as OddsTier | null,
-                      multiplierByTier: multiplierByTierObj,
-                    }}
-                    initial={{
-                      predictedHomeScore: existing?.predicted_home_score ?? null,
-                      predictedAwayScore: existing?.predicted_away_score ?? null,
-                      predictedScorerPlayerId: existing?.predicted_scorer_player_id ?? null,
-                    }}
-                  />
-                );
-              })}
-            </div>
+                    return (
+                      <MatchPredictionCard
+                        key={m.id}
+                        leagueCode={code}
+                        matchId={m.id}
+                        kickoffAt={m.kickoff_at}
+                        homeTeamName={home.name}
+                        awayTeamName={away.name}
+                        homeLogoUrl={home.logoUrl}
+                        awayLogoUrl={away.logoUrl}
+                        homePlayers={homePlayers}
+                        awayPlayers={awayPlayers}
+                        locked={locked}
+                        scoring={{
+                          matchExactScore,
+                          scorerTierPoints: scorerTierPointsObj,
+                          playerTier: Object.fromEntries(
+                            [...homePlayers, ...awayPlayers].map((p) => [p.id, playerTierById.get(p.id) ?? FALLBACK_SCORER_TIER])
+                          ),
+                        }}
+                        resultOdds={{
+                          homeTeamId: m.home_team_id,
+                          awayTeamId: m.away_team_id,
+                          favoriteTeamId: m.favorite_team_id,
+                          tier: m.odds_tier as OddsTier | null,
+                          multiplierByTier: multiplierByTierObj,
+                        }}
+                        initial={{
+                          predictedHomeScore: existing?.predicted_home_score ?? null,
+                          predictedAwayScore: existing?.predicted_away_score ?? null,
+                          predictedScorerPlayerId: existing?.predicted_scorer_player_id ?? null,
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         ))}
-        {groups.size === 0 && <p className="text-mute">Aucun match à venir.</p>}
+        {matchdayGroups.size === 0 && <p className="text-mute">Aucun match à venir.</p>}
       </section>
     </main>
   );
