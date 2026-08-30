@@ -48,7 +48,7 @@ type AnswerState = "correct" | "wrong" | null;
 type ResultPhase = "idle" | "hold" | "flying";
 
 const HOLD_MS = 1100;
-const FLY_MS = 380;
+const FLY_MS = 420;
 
 function deriveStreak(history: AnswerState[]): number {
   let streak = 0;

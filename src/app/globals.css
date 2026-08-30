@@ -97,22 +97,27 @@ textarea {
       box-shadow 160ms ease,
       transform 160ms ease;
   }
+}
 
-  .animate-card-in {
-    animation: card-in 280ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
+/* Les animations de la carte quiz (empilement, envol bonne/mauvaise réponse) restent actives même
+   si l'appareil demande "réduire les animations" : sans ça, la carte disparaît juste d'un coup sec
+   après le délai au lieu de s'envoler — pire que l'animation elle-même pour quelqu'un qui n'a pas
+   demandé ce réglage exprès. Ce sont aussi des animations porteuses de sens (bonne/mauvaise
+   réponse), pas seulement décoratives. */
+.animate-card-in {
+  animation: card-in 280ms cubic-bezier(0.16, 1, 0.3, 1);
+}
 
-  .animate-fly-right {
-    animation: fly-right 380ms cubic-bezier(0.4, 0, 1, 1) forwards;
-  }
+.animate-fly-right {
+  animation: fly-right 420ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
 
-  .animate-fly-left {
-    animation: fly-left 380ms cubic-bezier(0.4, 0, 1, 1) forwards;
-  }
+.animate-fly-left {
+  animation: fly-left 420ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
 
-  .animate-pop-in {
-    animation: pop-in 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
+.animate-pop-in {
+  animation: pop-in 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 @keyframes card-in {
