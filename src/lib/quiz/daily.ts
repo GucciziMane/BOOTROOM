@@ -479,10 +479,15 @@ async function getOrGenerateDynamicQuestions(
 
 /** Les 10 questions du jour, complètes (avec la bonne réponse) — usage serveur uniquement. */
 export async function getDailyQuiz(supabase: ServiceClient, quizDate: string): Promise<DailyQuestionFull[]> {
-  const staticByPosition = await pickStaticQuestions(supabase, quizDate);
-
   const dynamicPositions = SLOT_PLAN.map((slot, i) => (slot.kind === "dynamic" ? i : -1)).filter((i) => i >= 0);
-  const dynamicByPosition = await getOrGenerateDynamicQuestions(supabase, quizDate, dynamicPositions);
+
+  // Indépendantes l'une de l'autre : lancées en parallèle plutôt qu'en série pour ne pas doubler
+  // la latence à chaque soumission de réponse (ce chemin est appelé sur chaque tap, pas qu'au
+  // premier chargement de la page).
+  const [staticByPosition, dynamicByPosition] = await Promise.all([
+    pickStaticQuestions(supabase, quizDate),
+    getOrGenerateDynamicQuestions(supabase, quizDate, dynamicPositions),
+  ]);
 
   const questions: DailyQuestionFull[] = [];
   for (let position = 0; position < SLOT_PLAN.length; position++) {

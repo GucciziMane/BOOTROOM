@@ -24,29 +24,29 @@ export async function submitQuizAnswer(position: number, choiceIndex: number): P
   const admin = createServiceRoleClient();
   const quizDate = parisDateString();
 
-  const { count: answeredCount } = await admin
-    .from("quiz_answers")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", user.id)
-    .eq("quiz_date", quizDate);
+  // Le quiz du jour et les réponses déjà données sont indépendants l'un de l'autre : lancés en
+  // parallèle plutôt qu'en série pour réduire la latence perçue à chaque tap (c'était jusqu'à 5-6
+  // aller-retours Supabase séquentiels, sensible sur mobile).
+  const [quiz, { data: priorAnswers }] = await Promise.all([
+    getDailyQuiz(admin, quizDate),
+    admin
+      .from("quiz_answers")
+      .select("is_correct, points")
+      .eq("user_id", user.id)
+      .eq("quiz_date", quizDate)
+      .order("position", { ascending: true }),
+  ]);
 
-  if ((answeredCount ?? 0) !== position) {
+  const answered = priorAnswers ?? [];
+  if (answered.length !== position) {
     return { error: "Question déjà répondue ou hors séquence." };
   }
 
-  const quiz = await getDailyQuiz(admin, quizDate);
   const question = quiz[position];
   if (!question) return { error: "Question introuvable." };
 
-  const { data: priorAnswers } = await admin
-    .from("quiz_answers")
-    .select("is_correct")
-    .eq("user_id", user.id)
-    .eq("quiz_date", quizDate)
-    .order("position", { ascending: true });
-
   let streak = 0;
-  for (const a of priorAnswers ?? []) {
+  for (const a of answered) {
     if (a.is_correct) streak++;
     else streak = 0;
   }
@@ -67,13 +67,10 @@ export async function submitQuizAnswer(position: number, choiceIndex: number): P
 
   let finalScore: number | null = null;
   if (position === 9) {
-    const { data: allAnswers } = await admin
-      .from("quiz_answers")
-      .select("points, is_correct")
-      .eq("user_id", user.id)
-      .eq("quiz_date", quizDate);
-    const totalPoints = (allAnswers ?? []).reduce((sum, a) => sum + a.points, 0);
-    const correctCount = (allAnswers ?? []).filter((a) => a.is_correct).length;
+    // Pas besoin de relire quiz_answers : `answered` (positions 0-8) + la réponse qu'on vient
+    // d'insérer couvrent déjà les 10 questions.
+    const totalPoints = answered.reduce((sum, a) => sum + a.points, 0) + points;
+    const correctCount = answered.filter((a) => a.is_correct).length + (isCorrect ? 1 : 0);
     const bonus = correctCount === 10 ? 3 : 0;
     finalScore = totalPoints + bonus;
 

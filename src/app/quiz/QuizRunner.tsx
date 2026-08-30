@@ -293,74 +293,80 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Pro
             </div>
           )}
 
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wide text-paper/70">Score</p>
-              <p className="text-4xl font-black leading-none">{score}</p>
+          {/* position:relative pour que ce bloc peigne au-dessus de la couche de résultat
+              ci-dessus : un élément absolute peint après le flux normal quel que soit son ordre
+              dans le DOM, il faut donc que le contenu soit lui aussi "positionné" pour rester
+              visible par-dessus. */}
+          <div className="relative">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wide text-paper/70">Score</p>
+                <p className="text-4xl font-black leading-none">{score}</p>
+              </div>
+              {streak >= 2 && (
+                <span className="rounded-full bg-paper/15 px-3 py-1 text-xs font-bold">🔥 Série de {streak}</span>
+              )}
             </div>
-            {streak >= 2 && (
-              <span className="rounded-full bg-paper/15 px-3 py-1 text-xs font-bold">🔥 Série de {streak}</span>
+
+            <p className="mt-4 text-xs font-bold uppercase tracking-wide text-paper/70">
+              Question {position + 1}/10 · {CATEGORY_LABEL[q.category] ?? q.category} · {DIFFICULTY_LABEL[q.difficulty]}
+            </p>
+
+            {q.teamLogoUrl && (
+              <div className="mx-auto mt-4 flex h-16 w-16 items-center justify-center rounded-full bg-paper p-2 shadow">
+                <Image src={q.teamLogoUrl} alt="" width={48} height={48} className="h-full w-full object-contain" />
+              </div>
+            )}
+
+            <p className="mt-4 text-xl font-bold leading-snug">{q.question}</p>
+
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              {q.choices.map((choice, i) => {
+                const isSelected = selected === i;
+                const isCorrectChoice = !!feedback && i === feedback.correctIndex;
+                const isWrongSelected = !!feedback && isSelected && !feedback.isCorrect;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    disabled={selected !== null}
+                    onClick={() => handleAnswer(i)}
+                    className={`rounded-2xl px-3 py-3 text-center text-sm font-bold transition-colors ${
+                      isCorrectChoice
+                        ? "bg-good text-paper"
+                        : isWrongSelected
+                          ? "bg-bad text-paper"
+                          : isSelected
+                            ? `bg-paper text-accent ring-2 ring-paper ${submitting ? "animate-pulse" : ""}`
+                            : "bg-paper/95 text-accent hover:bg-paper"
+                    }`}
+                  >
+                    {choice}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-5 h-1.5 w-full overflow-hidden rounded-full bg-paper/25">
+              <div
+                className="h-full w-full origin-left rounded-full bg-paper transition-transform duration-300"
+                style={{ transform: `scaleX(${progressPct / 100})` }}
+              />
+            </div>
+
+            {error && <p className="mt-4 text-sm font-bold text-paper">{error}</p>}
+
+            {feedback && (
+              <div className="mt-4 rounded-2xl bg-paper/10 p-3">
+                <p className="font-bold">
+                  {feedback.isCorrect
+                    ? `Bonne réponse ! +${feedback.points} pt${feedback.points > 1 ? "s" : ""}`
+                    : "Mauvaise réponse."}
+                </p>
+                {feedback.explanation && <p className="mt-1 text-sm text-paper/80">{feedback.explanation}</p>}
+              </div>
             )}
           </div>
-
-          <p className="mt-4 text-xs font-bold uppercase tracking-wide text-paper/70">
-            Question {position + 1}/10 · {CATEGORY_LABEL[q.category] ?? q.category} · {DIFFICULTY_LABEL[q.difficulty]}
-          </p>
-
-          {q.teamLogoUrl && (
-            <div className="mx-auto mt-4 flex h-16 w-16 items-center justify-center rounded-full bg-paper p-2 shadow">
-              <Image src={q.teamLogoUrl} alt="" width={48} height={48} className="h-full w-full object-contain" />
-            </div>
-          )}
-
-          <p className="mt-4 text-xl font-bold leading-snug">{q.question}</p>
-
-          <div className="mt-5 grid grid-cols-2 gap-3">
-            {q.choices.map((choice, i) => {
-              const isSelected = selected === i;
-              const isCorrectChoice = !!feedback && i === feedback.correctIndex;
-              const isWrongSelected = !!feedback && isSelected && !feedback.isCorrect;
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  disabled={selected !== null}
-                  onClick={() => handleAnswer(i)}
-                  className={`rounded-2xl px-3 py-3 text-center text-sm font-bold transition-colors ${
-                    isCorrectChoice
-                      ? "bg-good text-paper"
-                      : isWrongSelected
-                        ? "bg-bad text-paper"
-                        : isSelected
-                          ? "bg-paper text-accent ring-2 ring-paper"
-                          : "bg-paper/95 text-accent hover:bg-paper"
-                  }`}
-                >
-                  {choice}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="mt-5 h-1.5 w-full overflow-hidden rounded-full bg-paper/25">
-            <div
-              className="h-full w-full origin-left rounded-full bg-paper transition-transform duration-300"
-              style={{ transform: `scaleX(${progressPct / 100})` }}
-            />
-          </div>
-
-          {error && <p className="mt-4 text-sm font-bold text-paper">{error}</p>}
-
-          {feedback && (
-            <div className="mt-4 rounded-2xl bg-paper/10 p-3">
-              <p className="font-bold">
-                {feedback.isCorrect
-                  ? `Bonne réponse ! +${feedback.points} pt${feedback.points > 1 ? "s" : ""}`
-                  : "Mauvaise réponse."}
-              </p>
-              {feedback.explanation && <p className="mt-1 text-sm text-paper/80">{feedback.explanation}</p>}
-            </div>
-          )}
         </div>
       </div>
 
