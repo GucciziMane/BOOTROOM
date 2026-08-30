@@ -64,7 +64,6 @@ export default async function DashboardPage() {
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <p className="text-lg text-mute">Salut {profile?.username ?? user?.email}.</p>
         <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-mute">Thème</span>
           <ThemeModeToggle
             initialUseClubTheme={profile?.use_club_theme ?? false}
             favoriteTeamLogoUrl={favoriteTeamLogoUrl ?? null}
