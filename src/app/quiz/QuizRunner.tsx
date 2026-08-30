@@ -251,17 +251,13 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Pro
   return (
     <div className="mx-auto w-full max-w-md">
       <div className="relative pt-3">
-        {/* Pile de cartes : deux tranches qui dépassent derrière la carte active, décalées vers le haut
-            (la carte principale a un padding-top qui les laisse apparaître au-dessus d'elle). */}
+        {/* La carte suivante occupe déjà tout l'espace derrière l'actuelle (même taille, juste
+            décalée de quelques px vers le haut) : quand la carte du dessus s'envole, il y a
+            toujours quelque chose derrière au lieu d'un vide le temps que la suivante arrive. */}
         <div
           aria-hidden
-          className="absolute inset-x-8 top-0 h-10 rounded-t-[22px] opacity-20"
-          style={{ background: "var(--color-accent)" }}
-        />
-        <div
-          aria-hidden
-          className="absolute inset-x-4 top-1.5 h-10 rounded-t-[24px] opacity-40"
-          style={{ background: "var(--color-accent)" }}
+          className="absolute inset-x-3 top-0 bottom-0 rounded-[26px] shadow-lg"
+          style={{ background: "linear-gradient(135deg, var(--color-accent), var(--color-accent-hover))" }}
         />
 
         <div
