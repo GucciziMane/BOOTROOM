@@ -1,65 +1,89 @@
 "use client";
 
-import { Suspense, useActionState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useState, useTransition } from "react";
+import { login } from "./actions";
 import Link from "next/link";
-import { signIn } from "./actions";
-import { card, input, buttonPrimary, linkMuted, bannerNeutral, bannerWarn } from "@/lib/ui";
-
-function ConfirmationBanner() {
-  const searchParams = useSearchParams();
-  if (searchParams.get("confirmed")) {
-    return <div className={`mb-4 ${bannerNeutral}`}>Email confirmé ! Tu peux maintenant te connecter.</div>;
-  }
-  if (searchParams.get("confirm_error")) {
-    return <div className={`mb-4 ${bannerWarn}`}>Le lien de confirmation est invalide ou a expiré.</div>;
-  }
-  return null;
-}
+import { ArrowRight, Mail, Lock, Sparkles } from "lucide-react";
 
 export default function LoginPage() {
-  const [error, formAction, isPending] = useActionState(signIn, null);
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(formData: FormData) {
+    setError(null);
+    startTransition(async () => {
+      const result = await login(formData);
+      if (result?.error) setError(result.error);
+    });
+  }
 
   return (
-    <main className="flex flex-1 items-center justify-center p-6">
-      <div className="w-full max-w-sm">
-        <Suspense fallback={null}>
-          <ConfirmationBanner />
-        </Suspense>
+    <main className="min-h-screen flex items-center justify-center px-4 py-12">
+      <div className="w-full max-w-md space-y-8">
+        <div className="text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+            <Sparkles className="h-6 w-6" />
+          </div>
+          <h1 className="text-2xl font-bold">Connexion</h1>
+          <p className="mt-2 text-muted-foreground">Accède à ton espace Bootroom</p>
+        </div>
 
-        <form action={formAction} className={`space-y-5 ${card}`}>
-          <div>
-            <h1 className="text-3xl font-bold">Boot Room</h1>
-            <p className="mt-1 text-sm text-mute">Pronostics entre amis sur les 5 grands championnats.</p>
+        <form action={handleSubmit} className="card p-6 space-y-6">
+          {error && (
+            <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{error}</div>
+          )}
+          
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium mb-2">Email</label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  disabled={isPending}
+                  className="input pl-10"
+                  placeholder="ton@email.com"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium mb-2">Mot de passe</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  disabled={isPending}
+                  className="input pl-10"
+                  placeholder="••••••••"
+                />
+              </div>
+            </div>
           </div>
 
-          <div className="space-y-1">
-            <label htmlFor="email" className="text-sm font-bold">
-              Email
-            </label>
-            <input id="email" name="email" type="email" required className={input} />
-          </div>
-
-          <div className="space-y-1">
-            <label htmlFor="password" className="text-sm font-bold">
-              Mot de passe
-            </label>
-            <input id="password" name="password" type="password" required className={input} />
-          </div>
-
-          {error && <p className="text-sm text-bad">{error}</p>}
-
-          <button type="submit" disabled={isPending} className={`w-full ${buttonPrimary}`}>
+          <button
+            type="submit"
+            disabled={isPending}
+            className="btn-primary w-full py-3 text-base"
+          >
             {isPending ? "Connexion..." : "Se connecter"}
           </button>
-
-          <p className="text-sm text-mute">
-            Pas encore de compte ?{" "}
-            <Link href="/signup" className={linkMuted}>
-              Créer un compte
-            </Link>
-          </p>
         </form>
+
+        <p className="text-center text-sm text-muted-foreground">
+          Pas encore de compte ?{" "}
+          <Link href="/signup" className="font-medium text-primary hover:underline">
+            S'inscrire
+          </Link>
+        </p>
       </div>
     </main>
   );

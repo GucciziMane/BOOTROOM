@@ -1,142 +1,383 @@
-import Link from "next/link";
-import Image from "next/image";
+import { Suspense } from "react";
+import { BottomNav } from "./BottomNav";
 import { createClient } from "@/lib/supabase/server";
-import { signOut } from "@/app/login/actions";
-import { getFavoriteTeamLeagueGroups } from "@/lib/favorite-teams";
-import { linkMuted } from "@/lib/ui";
-import { FavoriteTeamBadge } from "@/app/profile/FavoriteTeamBadge";
-import { ThemeModeToggle } from "@/app/profile/ThemeModeToggle";
-import { FavoriteTeamOnboarding } from "./FavoriteTeamOnboarding";
+import Link from "next/link";
+import { Trophy, MessageCircle, Calendar, ArrowRight, Sparkles, Users, TrendingUp } from "lucide-react";
 
-export default async function DashboardPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+async function getUserStats() {
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+    
+    const [{ data: profile }, { data: quizzes }, { data: messages }] = await Promise.all([
+      supabase.from("profiles").select("username, avatar_url").eq("id", user.id).single(),
+      supabase.from("quiz_attempts").select("id", { count: "exact" }).eq("user_id", user.id),
+      supabase.from("chat_messages").select("id", { count: "exact" }).eq("user_id", user.id),
+    ]);
+    
+    return {
+      username: profile?.username,
+      avatarUrl: profile?.avatar_url,
+      quizzesCount: quizzes?.[0]?.count ?? 0,
+      messagesCount: messages?.[0]?.count ?? 0,
+    };
+  } catch {
+    return null;
+  }
+}
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("username, avatar_url, is_admin, chat_last_read_at, favorite_team_id, use_club_theme")
-    .eq("id", user!.id)
-    .single();
-
-  const { count: unreadChatCount } = await supabase
-    .from("chat_messages")
-    .select("id", { count: "exact", head: true })
-    .neq("user_id", user!.id)
-    .gt("created_at", profile?.chat_last_read_at ?? "1970-01-01");
-
-  const leagues = await getFavoriteTeamLeagueGroups(supabase);
-  const favoriteTeamLogoUrl = leagues
-    .flatMap((l) => l.teams)
-    .find((t) => t.id === profile?.favorite_team_id)?.logoUrl;
-
+function StatsCard({ icon: Icon, label, value, href, color }: { 
+  icon: React.ElementType; 
+  label: string; 
+  value: number | string; 
+  href: string;
+  color: string;
+}) {
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-1 flex-col p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Boot Room</h1>
-        <div className="flex items-center gap-4">
-          {profile?.is_admin && (
-            <Link href="/admin" className={`text-sm ${linkMuted}`}>
-              Administration
-            </Link>
+    <Link href={href} className="card p-4 transition-all duration-200 hover:shadow-md active:scale-[0.98]">
+      <div className="flex items-center gap-3">
+        <div className={`flex h-10 w-10 items-center justify-center rounded-full ${color}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="text-2xl font-bold text-foreground">{value}</p>
+          <p className="text-sm text-muted-foreground">{label}</p>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function QuickAction({ icon: Icon, label, desc, href, color }: {
+  icon: React.ElementType;
+  label: string;
+  desc: string;
+  href: string;
+  color: string;
+}) {
+  return (
+    <Link href={href} className="card p-4 transition-all duration-200 hover:shadow-md active:scale-[0.98]">
+      <div className="flex items-center gap-3">
+        <div className={`flex h-10 w-10 items-center justify-center rounded-full ${color}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="font-semibold">{label}</p>
+          <p className="text-sm text-muted-foreground">{desc}</p>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function HomeContent({ userStats }: { userStats: any }) {
+  return (
+    <main className="min-h-screen pb-20">
+      {/* Hero */}
+      <section className="relative overflow-hidden bg-gradient-to-br from-primary/5 via-background to-primary/5">
+        <div className="container mx-auto px-4 py-12 sm:py-16">
+          {userStats ? (
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold">Bonjour, {userStats.username} 👋</h1>
+                <p className="text-muted-foreground">Prêt à jouer ?</p>
+              </div>
+              <Link href="/profile">
+                {userStats.avatarUrl ? (
+                  <img src={userStats.avatarUrl} alt="Avatar" className="h-12 w-12 rounded-full object-cover ring-2 ring-primary/20" loading="lazy" />
+                ) : (
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold">
+                    {userStats.username?.[0]?.toUpperCase() ?? "U"}
+                  </div>
+                )}
+              </Link>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center text-center">
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg">
+                <Sparkles className="h-8 w-8" />
+              </div>
+              <h1 className="mb-3 text-3xl font-bold tracking-tight sm:text-4xl">Bienvenue sur Bootroom</h1>
+              <p className="mb-6 max-w-md text-muted-foreground">L'application ultime pour les fans de football</p>
+              <Link href="/quiz" className="btn-primary inline-flex items-center gap-2 rounded-lg px-6 py-3 text-base font-semibold shadow-lg shadow-primary/25">
+                Commencer un quiz <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
           )}
-          <Link href="/profile" className="relative flex h-16 w-16 shrink-0 items-center gap-2">
-            <span className="relative h-16 w-16 overflow-hidden rounded-full border-2 border-line bg-cream">
-              {profile?.avatar_url ? (
-                <Image src={profile.avatar_url} alt="" fill sizes="64px" className="object-cover" />
-              ) : (
-                <span className="flex h-full w-full items-center justify-center text-2xl font-bold text-mute">
-                  {(profile?.username ?? "?").slice(0, 1).toUpperCase()}
-                </span>
-              )}
-            </span>
-            <FavoriteTeamBadge logoUrl={favoriteTeamLogoUrl ?? null} size={22} />
+        </div>
+      </section>
+
+      {/* Stats */}
+      {userStats && (
+        <section className="container mx-auto px-4 py-6">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <StatsCard icon={Trophy} label="Quiz joués" value={userStats.quizzesCount} href="/quiz" color="bg-orange-500/10" />
+            <StatsCard icon={MessageCircle} label="Messages" value={userStats.messagesCount} href="/chat" color="bg-blue-500/10" />
+            <StatsCard icon={Calendar} label="Matchs" value="—" href="/calendar" color="bg-green-500/10" />
+          </div>
+        </section>
+      )}
+
+      {/* Quick Actions */}
+      <section className="container mx-auto px-4 pb-8">
+        <h2 className="mb-4 text-xl font-semibold">Actions rapides</h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <QuickAction icon={Trophy} label="Quiz" desc="Teste tes connaissances" href="/quiz" color="bg-orange-500/10" />
+          <QuickAction icon={MessageCircle} label="Chat" desc="Discute avec la communauté" href="/chat" color="bg-blue-500/10" />
+          <QuickAction icon={Calendar} label="Calendrier" desc="Matchs à venir" href="/calendar" color="bg-green-500/10" />
+          <QuickAction icon={Users} label="Classement" desc="Voir les meilleurs" href="/leaderboard" color="bg-purple-500/10" />
+        </div>
+      </section>
+
+      {/* Leagues */}
+      <section className="container mx-auto px-4 pb-8">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold">Ligues populaires</h2>
+          <Link href="/leagues" className="text-sm font-medium text-primary hover:underline flex items-center gap-1">
+            Voir tout <ArrowRight className="h-3 w-3" />
           </Link>
-          <form action={signOut}>
-            <button type="submit" className={`text-sm ${linkMuted}`}>
-              Déconnexion
-            </button>
-          </form>
         </div>
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-lg text-mute">Salut {profile?.username ?? user?.email}.</p>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-mute">Thème</span>
-          <ThemeModeToggle
-            initialUseClubTheme={profile?.use_club_theme ?? false}
-            favoriteTeamLogoUrl={favoriteTeamLogoUrl ?? null}
-            hasFavoriteTeam={!!profile?.favorite_team_id}
-          />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {["Premier League", "La Liga", "Serie A", "Bundesliga", "Ligue 1", "Ligue des Champions"].map((league) => (
+            <Link key={league} href={`/leagues/${encodeURIComponent(league.toLowerCase().replace(/\s+/g, "-"))}`} className="card p-4 transition-all duration-200 hover:shadow-md active:scale-[0.98]">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">{league}</span>
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              </div>
+            </Link>
+          ))}
         </div>
-      </div>
+      </section>
 
-      <div className="flex flex-1 items-center justify-center">
-        <div className="grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-6">
-          <NavCard
-            href="/leagues"
-            title="Mes prédictions 🔮"
-            description="Buteur, passeur, top 3, flop 3, équipe surprise et équipe flop, par championnat."
-          />
-          <NavCard
-            href="/calendar"
-            title="Pronostics 🎯"
-            description="Calendrier des matchs : score et buteur, championnat par championnat."
-          />
-          <NavCard
-            href="/calendar/classements"
-            title={"Classements & buteurs 🏆"}
-            description="Le classement réel de chaque championnat, mis à jour après chaque match, plus les buteurs et passeurs."
-          />
-          <NavCard
-            href="/leaderboard"
-            title="Classement général 🏅"
-            description="Le total des points de chacun entre potes, et le détail par championnat."
-          />
-          <NavCard
-            href="/chat"
-            title="3ème mi‑temps 🍻"
-            description="La discussion entre tous les membres."
-            badgeCount={unreadChatCount ?? 0}
-          />
-          <NavCard
-            href="/quiz"
-            title="Quiz du jour 🧠"
-            description="10 questions sur le foot, un nouveau quiz chaque jour à minuit. Classement quotidien entre potes."
-          />
-        </div>
-      </div>
-
-      {!profile?.favorite_team_id && <FavoriteTeamOnboarding leagues={leagues} />}
+      <BottomNav />
     </main>
   );
 }
 
-function NavCard({
-  href,
-  title,
-  description,
-  badgeCount,
-}: {
+function LoadingSkeleton() {
+  return (
+    <main className="min-h-screen pb-20">
+      <section className="bg-gradient-to-br from-primary/5 via-background to-primary/5">
+        <div className="container mx-auto px-4 py-12">
+          <div className="flex flex-col items-center text-center">
+            <div className="mb-4 h-16 w-16 rounded-2xl bg-muted animate-pulse" />
+            <div className="mb-3 h-8 w-48 rounded bg-muted animate-pulse" />
+            <div className="mb-6 h-4 w-64 rounded bg-muted animate-pulse" />
+            <div className="h-12 w-40 rounded-lg bg-muted animate-pulse" />
+          </div>
+        </div>
+      </section>
+      <section className="container mx-auto px-4 py-8">
+        <div className="mb-4 h-6 w-40 rounded bg-muted animate-pulse" />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="card p-4"><div className="flex items-center gap-3"><div className="h-10 w-10 rounded-full bg-muted animate-pulse" /><div className="flex-1"><div className="mb-2 h-4 w-20 rounded bg-muted animate-pulse" /><div className="h-3 w-32 rounded bg-muted animate-pulse" /></div></div></div></div>
+          ))}
+        </div>
+      </section>
+      <BottomNav />
+    </main>
+  );
+}
+
+export default async function HomePage() {
+  const userStats = await getUserStats();
+  return (
+    <Suspense fallback={<LoadingSkeleton />}>
+      <HomeContent userStats={userStats} />
+    </Suspense>
+  );
+}
+EOFcat > src/app/page.tsx << 'EOF'
+import { Suspense } from "react";
+import { BottomNav } from "./BottomNav";
+import { createClient } from "@/lib/supabase/server";
+import Link from "next/link";
+import { Trophy, MessageCircle, Calendar, ArrowRight, Sparkles, Users, TrendingUp } from "lucide-react";
+
+async function getUserStats() {
+  try {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+    
+    const [{ data: profile }, { data: quizzes }, { data: messages }] = await Promise.all([
+      supabase.from("profiles").select("username, avatar_url").eq("id", user.id).single(),
+      supabase.from("quiz_attempts").select("id", { count: "exact" }).eq("user_id", user.id),
+      supabase.from("chat_messages").select("id", { count: "exact" }).eq("user_id", user.id),
+    ]);
+    
+    return {
+      username: profile?.username,
+      avatarUrl: profile?.avatar_url,
+      quizzesCount: quizzes?.[0]?.count ?? 0,
+      messagesCount: messages?.[0]?.count ?? 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function StatsCard({ icon: Icon, label, value, href, color }: { 
+  icon: React.ElementType; 
+  label: string; 
+  value: number | string; 
   href: string;
-  title: string;
-  description: string;
-  badgeCount?: number;
+  color: string;
 }) {
   return (
-    <Link
-      href={href}
-      className="relative flex min-h-[160px] flex-col items-center justify-center rounded-2xl border-2 border-line bg-paper p-6 text-center shadow-sm transition-colors hover:border-ink hover:bg-cream lg:min-h-[200px] lg:p-8"
-    >
-      {!!badgeCount && (
-        <span className="absolute right-4 top-4 flex h-6 min-w-6 items-center justify-center rounded-full bg-accent px-1.5 text-xs font-bold text-paper">
-          {badgeCount}
-        </span>
-      )}
-      <span className="text-3xl font-bold lg:text-2xl">{title}</span>
-      <span className="mt-3 text-base text-mute">{description}</span>
+    <Link href={href} className="card p-4 transition-all duration-200 hover:shadow-md active:scale-[0.98]">
+      <div className="flex items-center gap-3">
+        <div className={`flex h-10 w-10 items-center justify-center rounded-full ${color}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="text-2xl font-bold text-foreground">{value}</p>
+          <p className="text-sm text-muted-foreground">{label}</p>
+        </div>
+      </div>
     </Link>
+  );
+}
+
+function QuickAction({ icon: Icon, label, desc, href, color }: {
+  icon: React.ElementType;
+  label: string;
+  desc: string;
+  href: string;
+  color: string;
+}) {
+  return (
+    <Link href={href} className="card p-4 transition-all duration-200 hover:shadow-md active:scale-[0.98]">
+      <div className="flex items-center gap-3">
+        <div className={`flex h-10 w-10 items-center justify-center rounded-full ${color}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="font-semibold">{label}</p>
+          <p className="text-sm text-muted-foreground">{desc}</p>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function HomeContent({ userStats }: { userStats: any }) {
+  return (
+    <main className="min-h-screen pb-20">
+      {/* Hero */}
+      <section className="relative overflow-hidden bg-gradient-to-br from-primary/5 via-background to-primary/5">
+        <div className="container mx-auto px-4 py-12 sm:py-16">
+          {userStats ? (
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold">Bonjour, {userStats.username} 👋</h1>
+                <p className="text-muted-foreground">Prêt à jouer ?</p>
+              </div>
+              <Link href="/profile">
+                {userStats.avatarUrl ? (
+                  <img src={userStats.avatarUrl} alt="Avatar" className="h-12 w-12 rounded-full object-cover ring-2 ring-primary/20" loading="lazy" />
+                ) : (
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground font-semibold">
+                    {userStats.username?.[0]?.toUpperCase() ?? "U"}
+                  </div>
+                )}
+              </Link>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center text-center">
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg">
+                <Sparkles className="h-8 w-8" />
+              </div>
+              <h1 className="mb-3 text-3xl font-bold tracking-tight sm:text-4xl">Bienvenue sur Bootroom</h1>
+              <p className="mb-6 max-w-md text-muted-foreground">L'application ultime pour les fans de football</p>
+              <Link href="/quiz" className="btn-primary inline-flex items-center gap-2 rounded-lg px-6 py-3 text-base font-semibold shadow-lg shadow-primary/25">
+                Commencer un quiz <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Stats */}
+      {userStats && (
+        <section className="container mx-auto px-4 py-6">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <StatsCard icon={Trophy} label="Quiz joués" value={userStats.quizzesCount} href="/quiz" color="bg-orange-500/10" />
+            <StatsCard icon={MessageCircle} label="Messages" value={userStats.messagesCount} href="/chat" color="bg-blue-500/10" />
+            <StatsCard icon={Calendar} label="Matchs" value="—" href="/calendar" color="bg-green-500/10" />
+          </div>
+        </section>
+      )}
+
+      {/* Quick Actions */}
+      <section className="container mx-auto px-4 pb-8">
+        <h2 className="mb-4 text-xl font-semibold">Actions rapides</h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <QuickAction icon={Trophy} label="Quiz" desc="Teste tes connaissances" href="/quiz" color="bg-orange-500/10" />
+          <QuickAction icon={MessageCircle} label="Chat" desc="Discute avec la communauté" href="/chat" color="bg-blue-500/10" />
+          <QuickAction icon={Calendar} label="Calendrier" desc="Matchs à venir" href="/calendar" color="bg-green-500/10" />
+          <QuickAction icon={Users} label="Classement" desc="Voir les meilleurs" href="/leaderboard" color="bg-purple-500/10" />
+        </div>
+      </section>
+
+      {/* Leagues */}
+      <section className="container mx-auto px-4 pb-8">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold">Ligues populaires</h2>
+          <Link href="/leagues" className="text-sm font-medium text-primary hover:underline flex items-center gap-1">
+            Voir tout <ArrowRight className="h-3 w-3" />
+          </Link>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {["Premier League", "La Liga", "Serie A", "Bundesliga", "Ligue 1", "Ligue des Champions"].map((league) => (
+            <Link key={league} href={`/leagues/${encodeURIComponent(league.toLowerCase().replace(/\s+/g, "-"))}`} className="card p-4 transition-all duration-200 hover:shadow-md active:scale-[0.98]">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">{league}</span>
+                <ArrowRight className="h-4 w-4 text-muted-foreground" />
+              </div>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <BottomNav />
+    </main>
+  );
+}
+
+function LoadingSkeleton() {
+  return (
+    <main className="min-h-screen pb-20">
+      <section className="bg-gradient-to-br from-primary/5 via-background to-primary/5">
+        <div className="container mx-auto px-4 py-12">
+          <div className="flex flex-col items-center text-center">
+            <div className="mb-4 h-16 w-16 rounded-2xl bg-muted animate-pulse" />
+            <div className="mb-3 h-8 w-48 rounded bg-muted animate-pulse" />
+            <div className="mb-6 h-4 w-64 rounded bg-muted animate-pulse" />
+            <div className="h-12 w-40 rounded-lg bg-muted animate-pulse" />
+          </div>
+        </div>
+      </section>
+      <section className="container mx-auto px-4 py-8">
+        <div className="mb-4 h-6 w-40 rounded bg-muted animate-pulse" />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="card p-4"><div className="flex items-center gap-3"><div className="h-10 w-10 rounded-full bg-muted animate-pulse" /><div className="flex-1"><div className="mb-2 h-4 w-20 rounded bg-muted animate-pulse" /><div className="h-3 w-32 rounded bg-muted animate-pulse" /></div></div></div></div>
+          ))}
+        </div>
+      </section>
+      <BottomNav />
+    </main>
+  );
+}
+
+export default async function HomePage() {
+  const userStats = await getUserStats();
+  return (
+    <Suspense fallback={<LoadingSkeleton />}>
+      <HomeContent userStats={userStats} />
+    </Suspense>
   );
 }
