@@ -101,6 +101,18 @@ textarea {
   .animate-card-in {
     animation: card-in 280ms cubic-bezier(0.16, 1, 0.3, 1);
   }
+
+  .animate-fly-right {
+    animation: fly-right 380ms cubic-bezier(0.4, 0, 1, 1) forwards;
+  }
+
+  .animate-fly-left {
+    animation: fly-left 380ms cubic-bezier(0.4, 0, 1, 1) forwards;
+  }
+
+  .animate-pop-in {
+    animation: pop-in 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
 }
 
 @keyframes card-in {
@@ -111,5 +123,30 @@ textarea {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes fly-right {
+  to {
+    opacity: 0;
+    transform: translate(130%, -8%) rotate(10deg);
+  }
+}
+
+@keyframes fly-left {
+  to {
+    opacity: 0;
+    transform: translate(-130%, -8%) rotate(-10deg);
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
   }
 }

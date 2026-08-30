@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import {
   submitQuizAnswer,
@@ -45,6 +45,10 @@ interface Feedback {
 }
 
 type AnswerState = "correct" | "wrong" | null;
+type ResultPhase = "idle" | "hold" | "flying";
+
+const HOLD_MS = 1100;
+const FLY_MS = 380;
 
 function deriveStreak(history: AnswerState[]): number {
   let streak = 0;
@@ -73,6 +77,8 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Pro
   const [leaderboard, setLeaderboard] = useState<LeaderboardRow[] | null>(null);
   const [seasonLeaderboard, setSeasonLeaderboard] = useState<SeasonLeaderboardRow[] | null>(null);
   const [leaderboardView, setLeaderboardView] = useState<"today" | "season">("today");
+  const [resultPhase, setResultPhase] = useState<ResultPhase>("idle");
+  const holdTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const streak = deriveStreak(history);
 
@@ -82,6 +88,28 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Pro
       getQuizSeasonLeaderboard().then(setSeasonLeaderboard);
     }
   }, [finalScore]);
+
+  // Le résultat s'affiche un court instant sur la carte (couleur + icône), puis elle s'envole
+  // (verte à droite si bonne réponse, rouge à gauche sinon) avant que la suivante n'apparaisse.
+  useEffect(() => {
+    if (resultPhase !== "flying") return;
+    const t = setTimeout(() => {
+      setResultPhase("idle");
+      if (position === 9 && pendingFinalScore != null) {
+        setFinalScore(pendingFinalScore);
+        return;
+      }
+      setSelected(null);
+      setFeedback(null);
+      setPosition((p) => p + 1);
+    }, FLY_MS);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resultPhase]);
+
+  useEffect(() => () => {
+    if (holdTimeout.current) clearTimeout(holdTimeout.current);
+  }, []);
 
   async function handleAnswer(choiceIndex: number) {
     if (submitting || selected !== null) return;
@@ -110,16 +138,15 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Pro
       return next;
     });
     if (res.finalScore != null) setPendingFinalScore(res.finalScore);
+
+    setResultPhase("hold");
+    holdTimeout.current = setTimeout(() => setResultPhase("flying"), HOLD_MS);
   }
 
-  function handleNext() {
-    if (position === 9 && pendingFinalScore != null) {
-      setFinalScore(pendingFinalScore);
-      return;
-    }
-    setSelected(null);
-    setFeedback(null);
-    setPosition((p) => p + 1);
+  function skipHold() {
+    if (resultPhase !== "hold") return;
+    if (holdTimeout.current) clearTimeout(holdTimeout.current);
+    setResultPhase("flying");
   }
 
   if (finalScore != null) {
@@ -209,6 +236,15 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Pro
 
   const progressPct = ((position + (selected !== null ? 1 : 0)) / 10) * 100;
 
+  const cardBackground = feedback
+    ? feedback.isCorrect
+      ? "linear-gradient(135deg, var(--color-good), color-mix(in srgb, var(--color-good) 65%, black))"
+      : "linear-gradient(135deg, var(--color-bad), color-mix(in srgb, var(--color-bad) 65%, black))"
+    : "linear-gradient(135deg, var(--color-accent), var(--color-accent-hover))";
+
+  const flyClass =
+    resultPhase === "flying" ? (feedback?.isCorrect ? "animate-fly-right" : "animate-fly-left") : "";
+
   return (
     <div className="mx-auto w-full max-w-md">
       <div className="relative pt-3">
@@ -227,9 +263,24 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Pro
 
         <div
           key={position}
-          className="animate-card-in relative overflow-hidden rounded-[28px] p-6 text-paper shadow-xl"
-          style={{ background: "linear-gradient(135deg, var(--color-accent), var(--color-accent-hover))" }}
+          onClick={skipHold}
+          className={`animate-card-in relative overflow-hidden rounded-[28px] p-6 text-paper shadow-xl transition-[background] duration-300 ${flyClass} ${
+            resultPhase === "hold" ? "cursor-pointer" : ""
+          }`}
+          style={{ background: cardBackground }}
         >
+          {feedback && (
+            <div
+              className={`absolute right-5 top-5 flex h-14 w-14 items-center justify-center rounded-full bg-paper text-2xl font-black shadow-lg ${
+                resultPhase !== "idle" ? "animate-pop-in" : ""
+              }`}
+              style={{ color: feedback.isCorrect ? "var(--color-good)" : "var(--color-bad)" }}
+              aria-hidden
+            >
+              {feedback.isCorrect ? "✓" : "✕"}
+            </div>
+          )}
+
           <div className="flex items-start justify-between">
             <div>
               <p className="text-xs font-bold uppercase tracking-wide text-paper/70">Score</p>
@@ -296,13 +347,6 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Pro
                   : "Mauvaise réponse."}
               </p>
               {feedback.explanation && <p className="mt-1 text-sm text-paper/80">{feedback.explanation}</p>}
-              <button
-                type="button"
-                onClick={handleNext}
-                className="mt-3 inline-flex items-center justify-center rounded-xl bg-paper px-5 py-2.5 font-bold text-accent transition-colors hover:bg-paper/90"
-              >
-                {position === 9 ? "Voir le résultat" : "Question suivante"}
-              </button>
             </div>
           )}
         </div>
