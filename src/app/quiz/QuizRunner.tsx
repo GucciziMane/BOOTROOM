@@ -236,11 +236,14 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Pro
 
   const progressPct = ((position + (selected !== null ? 1 : 0)) / 10) * 100;
 
-  const cardBackground = feedback
+  // La couleur de résultat est une couche séparée qui s'estompe en fondu (opacity, géré par le
+  // GPU) plutôt qu'une interpolation du dégradé lui-même (background) : animer "background"
+  // force un repaint complet à chaque frame et fait saccader sur mobile.
+  const resultBackground = feedback
     ? feedback.isCorrect
       ? "linear-gradient(135deg, var(--color-good), color-mix(in srgb, var(--color-good) 65%, black))"
       : "linear-gradient(135deg, var(--color-bad), color-mix(in srgb, var(--color-bad) 65%, black))"
-    : "linear-gradient(135deg, var(--color-accent), var(--color-accent-hover))";
+    : undefined;
 
   const flyClass =
     resultPhase === "flying" ? (feedback?.isCorrect ? "animate-fly-right" : "animate-fly-left") : "";
@@ -264,11 +267,20 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Pro
         <div
           key={position}
           onClick={skipHold}
-          className={`animate-card-in relative overflow-hidden rounded-[28px] p-6 text-paper shadow-xl transition-[background] duration-300 ${flyClass} ${
+          className={`animate-card-in relative overflow-hidden rounded-[28px] p-6 text-paper shadow-xl ${flyClass} ${
             resultPhase === "hold" ? "cursor-pointer" : ""
           }`}
-          style={{ background: cardBackground }}
+          style={{
+            background: "linear-gradient(135deg, var(--color-accent), var(--color-accent-hover))",
+            willChange: "transform, opacity",
+          }}
         >
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 transition-opacity duration-300"
+            style={{ background: resultBackground, opacity: resultPhase !== "idle" ? 1 : 0 }}
+          />
+
           {feedback && (
             <div
               className={`absolute right-5 top-5 flex h-14 w-14 items-center justify-center rounded-full bg-paper text-2xl font-black shadow-lg ${
@@ -314,7 +326,7 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Pro
                   type="button"
                   disabled={selected !== null}
                   onClick={() => handleAnswer(i)}
-                  className={`rounded-2xl px-3 py-3 text-center text-sm font-bold transition-all ${
+                  className={`rounded-2xl px-3 py-3 text-center text-sm font-bold transition-colors ${
                     isCorrectChoice
                       ? "bg-good text-paper"
                       : isWrongSelected
@@ -332,8 +344,8 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Pro
 
           <div className="mt-5 h-1.5 w-full overflow-hidden rounded-full bg-paper/25">
             <div
-              className="h-full rounded-full bg-paper transition-[width] duration-300"
-              style={{ width: `${progressPct}%` }}
+              className="h-full w-full origin-left rounded-full bg-paper transition-transform duration-300"
+              style={{ transform: `scaleX(${progressPct / 100})` }}
             />
           </div>
 
