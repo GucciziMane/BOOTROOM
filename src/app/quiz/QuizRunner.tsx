@@ -248,8 +248,18 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Pro
   const flyClass =
     resultPhase === "flying" ? (feedback?.isCorrect ? "animate-fly-right" : "animate-fly-left") : "";
 
+  const nextLogoUrl = questions[position + 1]?.teamLogoUrl;
+
   return (
     <div className="mx-auto w-full max-w-md">
+      {/* Précharge le blason de la question suivante pendant qu'on répond à celle-ci (mêmes
+          width/height que l'<Image> visible plus bas, pour que Next.js réutilise le même cache) :
+          sinon il ne commence à charger qu'à l'affichage de la carte, avec un blanc visible le
+          temps que ça arrive. */}
+      {nextLogoUrl && (
+        <Image src={nextLogoUrl} alt="" width={48} height={48} priority className="hidden" />
+      )}
+
       <div className="relative pt-3">
         {/* La carte suivante occupe déjà tout l'espace derrière l'actuelle (même taille, juste
             décalée de quelques px vers le haut) : quand la carte du dessus s'envole, il y a
