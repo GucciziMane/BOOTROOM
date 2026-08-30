@@ -68,7 +68,11 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="fr" className={`${comicNeue.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col pb-32 lg:pb-0">
         <ClubCrestWatermark enabled={clubTheme.enabled} crestUrl={clubTheme.crestUrl} />
-        {children}
+        {/* position:relative pour peindre au-dessus du filigrane (voir ThemeApplier.tsx) : un
+            z-index négatif sur un élément fixed s'est révélé invisible dans certains moteurs de
+            rendu (recouvert par le fond du body), donc le filigrane utilise z-0 et c'est ce
+            wrapper, plus tardif dans le DOM et lui aussi "positionné", qui passe par-dessus. */}
+        <div className="relative z-10 flex flex-1 flex-col">{children}</div>
         <BottomNav />
         <ThemeApplier
           enabled={clubTheme.enabled}

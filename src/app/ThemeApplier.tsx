@@ -96,7 +96,7 @@ export function ClubCrestWatermark({
 
   return (
     <div
-      className="pointer-events-none fixed inset-0 -z-10 flex items-center justify-center overflow-hidden"
+      className="pointer-events-none fixed inset-0 z-0 flex items-center justify-center overflow-hidden"
       aria-hidden="true"
     >
       <Image
