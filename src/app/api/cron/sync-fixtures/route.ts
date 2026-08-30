@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
 async function updateMatchOdds(supabase: ReturnType<typeof createServiceRoleClient>, seasonId: number) {
   const { data: seasonMatches } = await supabase
     .from("matches")
-    .select("id, home_team_id, away_team_id, status, home_score, away_score")
+    .select("id, home_team_id, away_team_id, status, home_score, away_score, favorite_team_id, odds_tier")
     .eq("season_id", seasonId);
   if (!seasonMatches || seasonMatches.length === 0) return;
 
@@ -126,14 +126,23 @@ async function updateMatchOdds(supabase: ReturnType<typeof createServiceRoleClie
       const away = standingByTeam.get(m.away_team_id);
       if (!home || !away) return [];
       const odds = computeMatchOdds(home, away);
+      // Skip la mise à jour si les cotes n'ont pas bougé : à chaque run la quasi-totalité
+      // des matchs à venir sont inchangés, ça évite des centaines d'écritures inutiles.
+      if (m.favorite_team_id === odds.favoriteTeamId && m.odds_tier === odds.tier) return [];
       return [{ id: m.id, favorite_team_id: odds.favoriteTeamId, odds_tier: odds.tier }];
     });
 
-  for (const u of updates) {
-    await supabase
-      .from("matches")
-      .update({ favorite_team_id: u.favorite_team_id, odds_tier: u.odds_tier })
-      .eq("id", u.id);
+  const CONCURRENCY = 20;
+  for (let i = 0; i < updates.length; i += CONCURRENCY) {
+    const chunk = updates.slice(i, i + CONCURRENCY);
+    await Promise.all(
+      chunk.map((u) =>
+        supabase
+          .from("matches")
+          .update({ favorite_team_id: u.favorite_team_id, odds_tier: u.odds_tier })
+          .eq("id", u.id)
+      )
+    );
   }
 }
 
