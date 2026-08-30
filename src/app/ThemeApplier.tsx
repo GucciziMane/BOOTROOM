@@ -105,7 +105,7 @@ export function ClubCrestWatermark({
         width={520}
         height={520}
         className="h-[70vmin] w-[70vmin] max-w-none object-contain opacity-20"
-        priority={false}
+        priority
       />
     </div>
   );

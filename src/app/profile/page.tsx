@@ -48,8 +48,6 @@ export default async function ProfilePage() {
       </div>
 
       <div className={`mt-4 ${card}`}>
-        <h2 className="mb-1 font-bold">Thème de l&apos;appli</h2>
-        <p className="mb-4 text-sm text-mute">Couleurs de ton club favori, ou thème de base.</p>
         <ThemeModeToggle
           initialUseClubTheme={profile?.use_club_theme ?? false}
           favoriteTeamLogoUrl={favoriteTeam?.logoUrl ?? null}
