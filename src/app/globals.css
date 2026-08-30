@@ -105,7 +105,7 @@ textarea {
    demandé ce réglage exprès. Ce sont aussi des animations porteuses de sens (bonne/mauvaise
    réponse), pas seulement décoratives. */
 .animate-card-in {
-  animation: card-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: card-in 110ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .animate-fly-right {
