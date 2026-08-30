@@ -18,7 +18,7 @@ export default async function QuizPage() {
   const [{ data: existingAnswers }, { data: existingResult }] = await Promise.all([
     admin
       .from("quiz_answers")
-      .select("position, is_correct")
+      .select("position, is_correct, points")
       .eq("user_id", user.id)
       .eq("quiz_date", quizDate)
       .order("position", { ascending: true }),
@@ -39,15 +39,11 @@ export default async function QuizPage() {
 
       <QuizRunner
         questions={publicQuiz}
-        initialAnsweredCount={existingAnswers?.length ?? 0}
-        initialStreak={(() => {
-          let s = 0;
-          for (const a of existingAnswers ?? []) {
-            if (a.is_correct) s++;
-            else s = 0;
-          }
-          return s;
-        })()}
+        initialAnswers={(existingAnswers ?? []).map((a) => ({
+          position: a.position,
+          isCorrect: a.is_correct,
+          points: a.points,
+        }))}
         initialFinalScore={existingResult?.score ?? null}
       />
     </main>

@@ -9,13 +9,18 @@ import {
   type LeaderboardRow,
   type SeasonLeaderboardRow,
 } from "./actions";
-import { buttonPrimary, card } from "@/lib/ui";
+import { card } from "@/lib/ui";
 import type { DailyQuestionPublic } from "@/lib/quiz/daily";
+
+interface InitialAnswer {
+  position: number;
+  isCorrect: boolean;
+  points: number;
+}
 
 interface Props {
   questions: DailyQuestionPublic[];
-  initialAnsweredCount: number;
-  initialStreak: number;
+  initialAnswers: InitialAnswer[];
   initialFinalScore: number | null;
 }
 
@@ -39,9 +44,26 @@ interface Feedback {
   points: number;
 }
 
-export function QuizRunner({ questions, initialAnsweredCount, initialStreak, initialFinalScore }: Props) {
-  const [position, setPosition] = useState(initialAnsweredCount);
-  const [streak, setStreak] = useState(initialStreak);
+type AnswerState = "correct" | "wrong" | null;
+
+function deriveStreak(history: AnswerState[]): number {
+  let streak = 0;
+  for (const state of history) {
+    if (state === "correct") streak++;
+    else if (state === "wrong") streak = 0;
+    else break;
+  }
+  return streak;
+}
+
+export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Props) {
+  const [history, setHistory] = useState<AnswerState[]>(() => {
+    const arr: AnswerState[] = Array.from({ length: 10 }, () => null);
+    for (const a of initialAnswers) arr[a.position] = a.isCorrect ? "correct" : "wrong";
+    return arr;
+  });
+  const [score, setScore] = useState(() => initialAnswers.reduce((sum, a) => sum + a.points, 0));
+  const [position, setPosition] = useState(initialAnswers.length);
   const [selected, setSelected] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [pendingFinalScore, setPendingFinalScore] = useState<number | null>(null);
@@ -51,6 +73,8 @@ export function QuizRunner({ questions, initialAnsweredCount, initialStreak, ini
   const [leaderboard, setLeaderboard] = useState<LeaderboardRow[] | null>(null);
   const [seasonLeaderboard, setSeasonLeaderboard] = useState<SeasonLeaderboardRow[] | null>(null);
   const [leaderboardView, setLeaderboardView] = useState<"today" | "season">("today");
+
+  const streak = deriveStreak(history);
 
   useEffect(() => {
     if (finalScore != null) {
@@ -79,7 +103,12 @@ export function QuizRunner({ questions, initialAnsweredCount, initialStreak, ini
       explanation: res.explanation ?? null,
       points: res.points ?? 0,
     });
-    setStreak(res.streakAfter ?? 0);
+    setScore((s) => s + (res.points ?? 0));
+    setHistory((h) => {
+      const next = [...h];
+      next[position] = res.isCorrect ? "correct" : "wrong";
+      return next;
+    });
     if (res.finalScore != null) setPendingFinalScore(res.finalScore);
   }
 
@@ -178,61 +207,123 @@ export function QuizRunner({ questions, initialAnsweredCount, initialStreak, ini
     );
   }
 
+  const progressPct = ((position + (selected !== null ? 1 : 0)) / 10) * 100;
+
   return (
-    <div className={card}>
-      <div className="mb-4 flex items-center justify-between text-xs font-bold text-mute">
-        <span>
-          Question {position + 1}/10 · {CATEGORY_LABEL[q.category] ?? q.category} · {DIFFICULTY_LABEL[q.difficulty]}
-        </span>
-        {streak >= 2 && <span className="text-good">🔥 Série de {streak}</span>}
-      </div>
+    <div className="mx-auto w-full max-w-md">
+      <div className="relative pt-3">
+        {/* Pile de cartes : deux tranches qui dépassent derrière la carte active, décalées vers le haut
+            (la carte principale a un padding-top qui les laisse apparaître au-dessus d'elle). */}
+        <div
+          aria-hidden
+          className="absolute inset-x-8 top-0 h-10 rounded-t-[22px] opacity-20"
+          style={{ background: "var(--color-accent)" }}
+        />
+        <div
+          aria-hidden
+          className="absolute inset-x-4 top-1.5 h-10 rounded-t-[24px] opacity-40"
+          style={{ background: "var(--color-accent)" }}
+        />
 
-      {q.teamLogoUrl && (
-        <Image src={q.teamLogoUrl} alt="" width={48} height={48} className="mx-auto mb-3 h-12 w-12 object-contain" />
-      )}
+        <div
+          key={position}
+          className="animate-card-in relative overflow-hidden rounded-[28px] p-6 text-paper shadow-xl"
+          style={{ background: "linear-gradient(135deg, var(--color-accent), var(--color-accent-hover))" }}
+        >
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-paper/70">Score</p>
+              <p className="text-4xl font-black leading-none">{score}</p>
+            </div>
+            {streak >= 2 && (
+              <span className="rounded-full bg-paper/15 px-3 py-1 text-xs font-bold">🔥 Série de {streak}</span>
+            )}
+          </div>
 
-      <p className="mb-4 text-lg font-bold">{q.question}</p>
-
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {q.choices.map((choice, i) => {
-          const isSelected = selected === i;
-          const isCorrectChoice = !!feedback && i === feedback.correctIndex;
-          const isWrongSelected = !!feedback && isSelected && !feedback.isCorrect;
-          return (
-            <button
-              key={i}
-              type="button"
-              disabled={selected !== null}
-              onClick={() => handleAnswer(i)}
-              className={`rounded-xl border-2 p-3 text-left font-bold transition-colors ${
-                isCorrectChoice
-                  ? "border-good bg-good/10"
-                  : isWrongSelected
-                    ? "border-bad bg-bad/10"
-                    : isSelected
-                      ? "border-ink"
-                      : "border-line hover:border-ink"
-              }`}
-            >
-              {choice}
-            </button>
-          );
-        })}
-      </div>
-
-      {error && <p className="mt-3 text-sm text-bad">{error}</p>}
-
-      {feedback && (
-        <div className="mt-4">
-          <p className={`font-bold ${feedback.isCorrect ? "text-good" : "text-bad"}`}>
-            {feedback.isCorrect ? `Bonne réponse ! +${feedback.points} pt${feedback.points > 1 ? "s" : ""}` : "Mauvaise réponse."}
+          <p className="mt-4 text-xs font-bold uppercase tracking-wide text-paper/70">
+            Question {position + 1}/10 · {CATEGORY_LABEL[q.category] ?? q.category} · {DIFFICULTY_LABEL[q.difficulty]}
           </p>
-          {feedback.explanation && <p className="mt-1 text-sm text-mute">{feedback.explanation}</p>}
-          <button type="button" onClick={handleNext} className={`mt-3 ${buttonPrimary}`}>
-            {position === 9 ? "Voir le résultat" : "Question suivante"}
-          </button>
+
+          {q.teamLogoUrl && (
+            <div className="mx-auto mt-4 flex h-16 w-16 items-center justify-center rounded-full bg-paper p-2 shadow">
+              <Image src={q.teamLogoUrl} alt="" width={48} height={48} className="h-full w-full object-contain" />
+            </div>
+          )}
+
+          <p className="mt-4 text-xl font-bold leading-snug">{q.question}</p>
+
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            {q.choices.map((choice, i) => {
+              const isSelected = selected === i;
+              const isCorrectChoice = !!feedback && i === feedback.correctIndex;
+              const isWrongSelected = !!feedback && isSelected && !feedback.isCorrect;
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  disabled={selected !== null}
+                  onClick={() => handleAnswer(i)}
+                  className={`rounded-2xl px-3 py-3 text-center text-sm font-bold transition-all ${
+                    isCorrectChoice
+                      ? "bg-good text-paper"
+                      : isWrongSelected
+                        ? "bg-bad text-paper"
+                        : isSelected
+                          ? "bg-paper text-accent ring-2 ring-paper"
+                          : "bg-paper/95 text-accent hover:bg-paper"
+                  }`}
+                >
+                  {choice}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-5 h-1.5 w-full overflow-hidden rounded-full bg-paper/25">
+            <div
+              className="h-full rounded-full bg-paper transition-[width] duration-300"
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+
+          {error && <p className="mt-4 text-sm font-bold text-paper">{error}</p>}
+
+          {feedback && (
+            <div className="mt-4 rounded-2xl bg-paper/10 p-3">
+              <p className="font-bold">
+                {feedback.isCorrect
+                  ? `Bonne réponse ! +${feedback.points} pt${feedback.points > 1 ? "s" : ""}`
+                  : "Mauvaise réponse."}
+              </p>
+              {feedback.explanation && <p className="mt-1 text-sm text-paper/80">{feedback.explanation}</p>}
+              <button
+                type="button"
+                onClick={handleNext}
+                className="mt-3 inline-flex items-center justify-center rounded-xl bg-paper px-5 py-2.5 font-bold text-accent transition-colors hover:bg-paper/90"
+              >
+                {position === 9 ? "Voir le résultat" : "Question suivante"}
+              </button>
+            </div>
+          )}
         </div>
-      )}
+      </div>
+
+      <div className="mt-5 flex justify-center gap-2">
+        {history.map((state, i) => (
+          <span
+            key={i}
+            className={`h-2 w-2 rounded-full transition-colors ${
+              state === "correct"
+                ? "bg-good"
+                : state === "wrong"
+                  ? "bg-bad"
+                  : i === position
+                    ? "bg-accent"
+                    : "border border-mute/40 bg-transparent"
+            }`}
+          />
+        ))}
+      </div>
     </div>
   );
 }
