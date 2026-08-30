@@ -1,7 +1,12 @@
 "use server";
 
-import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+
+// En dur plutôt que dérivé des headers Host/Origin de la requête : ces headers
+// sont fournis par le client et peuvent être falsifiés, ce qui permettrait de
+// glisser un lien de confirmation pointant vers un domaine de phishing dans
+// l'email envoyé par Supabase.
+const APP_URL = "https://bootroom.online";
 
 export interface SignUpState {
   error: string | null;
@@ -17,9 +22,7 @@ export async function signUp(_prevState: SignUpState, formData: FormData): Promi
     return { error: "Pseudo requis.", success: false };
   }
 
-  const headersList = await headers();
-  const host = headersList.get("host") ?? "boot-room.vercel.app";
-  const origin = headersList.get("origin") ?? `${host.startsWith("localhost") ? "http" : "https"}://${host}`;
+  const origin = process.env.NODE_ENV === "development" ? "http://localhost:3000" : APP_URL;
 
   const supabase = await createClient();
   const { error } = await supabase.auth.signUp({

@@ -89,6 +89,13 @@ async function processFinishedMatches(supabase: ServiceClient, config: PointConf
     const { data: goals } = await supabase.from("match_goals").select("player_id").eq("match_id", match.id);
     const actualScorers = new Set((goals ?? []).map((g) => g.player_id).filter((id): id is number => id !== null));
 
+    const { data: existingLedger } = await supabase
+      .from("points_ledger")
+      .select("user_id, source_type")
+      .eq("source_id", match.id)
+      .in("source_type", ["match_score", "match_scorer"]);
+    const alreadyAwarded = new Set((existingLedger ?? []).map((r) => `${r.user_id}:${r.source_type}`));
+
     for (const pred of predictions ?? []) {
       const baseScorePoints = computeMatchScorePoints(
         pred.predicted_home_score,
@@ -122,7 +129,7 @@ async function processFinishedMatches(supabase: ServiceClient, config: PointConf
         scorerPoints = resolveScorerTierPoints(tierRow?.tier, tierPointsMap);
       }
 
-      if (scorePoints > 0) {
+      if (scorePoints > 0 && !alreadyAwarded.has(`${pred.user_id}:match_score`)) {
         await supabase.from("points_ledger").insert({
           user_id: pred.user_id,
           league_id: match.league_id,
@@ -131,7 +138,7 @@ async function processFinishedMatches(supabase: ServiceClient, config: PointConf
           points: scorePoints,
         });
       }
-      if (scorerPoints > 0) {
+      if (scorerPoints > 0 && !alreadyAwarded.has(`${pred.user_id}:match_scorer`)) {
         await supabase.from("points_ledger").insert({
           user_id: pred.user_id,
           league_id: match.league_id,

@@ -64,6 +64,7 @@ body {
   min-height: 100vh;
   margin: 0;
   background:
+    var(--club-gradient),
     radial-gradient(circle at top right, var(--club-primary-soft), transparent 30rem),
     var(--color-cream);
   color: var(--color-ink);
@@ -96,40 +97,4 @@ textarea {
       box-shadow 160ms ease,
       transform 160ms ease;
   }
-}@import "tailwindcss";
-
-:root {
-  --color-cream: #eaeff5;
-  --color-paper: #ffffff;
-  --color-ink: #16202e;
-  --color-mute: #75828f;
-  --color-line: #dbe3ee;
-  --color-accent: #16202e;
-  --color-accent-hover: #23324a;
-  --color-warn-bg: #fbecc9;
-  --color-warn-text: #8a6410;
-  --color-good: #2f9e5c;
-  --color-bad: #d9483c;
-  --font-comic: var(--font-comic-neue), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-}
-
-@theme inline {
-  --color-cream: var(--color-cream);
-  --color-paper: var(--color-paper);
-  --color-ink: var(--color-ink);
-  --color-mute: var(--color-mute);
-  --color-line: var(--color-line);
-  --color-accent: var(--color-accent);
-  --color-accent-hover: var(--color-accent-hover);
-  --color-warn-bg: var(--color-warn-bg);
-  --color-warn-text: var(--color-warn-text);
-  --color-good: var(--color-good);
-  --color-bad: var(--color-bad);
-  --font-sans: var(--font-comic);
-}
-
-body {
-  background: var(--color-cream);
-  color: var(--color-ink);
-  font-family: var(--font-comic);
 }

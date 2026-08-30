@@ -65,10 +65,7 @@ export function matchPlayerByName<P extends { id: number; name: string }>(
   const targetLastName = normalizeName(targetName).split(" ").pop();
   if (!targetLastName) return null;
 
-  const matches = candidates.filter((c) => {
-    const candidateTokens = normalizeName(c.name).split(" ");
-    return candidateTokens.includes(targetLastName) || candidateTokens.pop() === targetLastName;
-  });
+  const matches = candidates.filter((c) => normalizeName(c.name).split(" ").includes(targetLastName));
 
   return matches.length === 1 ? matches[0] : null;
 }
