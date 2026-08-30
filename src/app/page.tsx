@@ -3,10 +3,12 @@ import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/app/login/actions";
 import { getFavoriteTeamLeagueGroups } from "@/lib/favorite-teams";
+import { getClubHomeData } from "@/lib/club-home";
 import { linkMuted } from "@/lib/ui";
 import { FavoriteTeamBadge } from "@/app/profile/FavoriteTeamBadge";
 import { ThemeModeToggle } from "@/app/profile/ThemeModeToggle";
 import { FavoriteTeamOnboarding } from "./FavoriteTeamOnboarding";
+import { ClubHomeDashboard } from "./ClubHomeDashboard";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -30,6 +32,11 @@ export default async function DashboardPage() {
   const favoriteTeamLogoUrl = leagues
     .flatMap((l) => l.teams)
     .find((t) => t.id === profile?.favorite_team_id)?.logoUrl;
+
+  const clubHomeData =
+    profile?.use_club_theme && profile.favorite_team_id
+      ? await getClubHomeData(supabase, profile.favorite_team_id)
+      : null;
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-1 flex-col p-6">
@@ -72,6 +79,22 @@ export default async function DashboardPage() {
         </div>
       </div>
 
+      {clubHomeData ? (
+        <div className="mt-5">
+          <ClubHomeDashboard data={clubHomeData} />
+          <div className="mt-7">
+            <div className="mb-2 text-sm font-bold text-mute">Le reste de l&rsquo;appli</div>
+            <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-6">
+              <QuickLink href="/leagues" emoji="🔮" label="Prédictions" />
+              <QuickLink href="/calendar" emoji="🎯" label="Pronostics" />
+              <QuickLink href="/calendar/classements" emoji="🏆" label="Classements" />
+              <QuickLink href="/leaderboard" emoji="🏅" label="Général" />
+              <QuickLink href="/chat" emoji="🍻" label="Chat" badgeCount={unreadChatCount ?? 0} />
+              <QuickLink href="/quiz" emoji="🧠" label="Quiz" />
+            </div>
+          </div>
+        </div>
+      ) : (
       <div className="flex flex-1 items-center justify-center">
         <div className="grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-6">
           <NavCard
@@ -107,9 +130,37 @@ export default async function DashboardPage() {
           />
         </div>
       </div>
+      )}
 
       {!profile?.favorite_team_id && <FavoriteTeamOnboarding leagues={leagues} />}
     </main>
+  );
+}
+
+function QuickLink({
+  href,
+  emoji,
+  label,
+  badgeCount,
+}: {
+  href: string;
+  emoji: string;
+  label: string;
+  badgeCount?: number;
+}) {
+  return (
+    <Link
+      href={href}
+      className="relative flex flex-col items-center gap-1.5 rounded-2xl border border-line bg-paper px-2 py-3 text-center transition-colors hover:border-ink hover:bg-cream"
+    >
+      {!!badgeCount && (
+        <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-paper">
+          {badgeCount}
+        </span>
+      )}
+      <span className="text-xl">{emoji}</span>
+      <span className="text-[11px] font-bold leading-tight">{label}</span>
+    </Link>
   );
 }
 
