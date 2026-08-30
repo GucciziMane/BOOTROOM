@@ -1,115 +1,104 @@
-import { Suspense } from "react";
-import { BottomNav } from "../BottomNav";
+import Link from "next/link";
+import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
-import { Trophy, Medal, Award, TrendingUp } from "lucide-react";
-
-async function getLeaderboard() {
-  try {
-    const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, username, avatar_url, total_points")
-      .order("total_points", { ascending: false })
-      .limit(50);
-    
-    if (error) throw error;
-    return data || [];
-  } catch {
-    return [];
-  }
-}
-
-function RankBadge({ rank }: { rank: number }) {
-  if (rank === 1) return <Trophy className="h-5 w-5 text-yellow-500" />;
-  if (rank === 2) return <Medal className="h-5 w-5 text-gray-400" />;
-  if (rank === 3) return <Award className="h-5 w-5 text-orange-500" />;
-  return <span className="flex h-5 w-5 items-center justify-center text-sm font-bold text-muted-foreground">{rank}</span>;
-}
-
-function LeaderboardContent({ players }: { players: any[] }) {
-  return (
-    <main className="min-h-screen pb-20">
-      <div className="container mx-auto px-4 py-8">
-        <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold">Classement</h1>
-          <p className="text-muted-foreground">Les meilleurs joueurs de Bootroom</p>
-        </div>
-
-        <div className="card overflow-hidden">
-          <div className="divide-y">
-            {players.map((player, index) => (
-              <div
-                key={player.id}
-                className="flex items-center gap-4 p-4 transition-colors hover:bg-muted/50"
-              >
-                <div className="flex h-8 w-8 items-center justify-center">
-                  <RankBadge rank={index + 1} />
-                </div>
-                
-                {player.avatar_url ? (
-                  <img
-                    src={player.avatar_url}
-                    alt={player.username}
-                    className="h-10 w-10 rounded-full object-cover"
-                    loading="lazy"
-                  />
-                ) : (
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 font-semibold">
-                    {player.username?.[0]?.toUpperCase() ?? "?"}
-                  </div>
-                )}
-                
-                <div className="flex-1">
-                  <p className="font-medium">{player.username}</p>
-                </div>
-                
-                <div className="text-right">
-                  <p className="font-bold text-primary">{player.total_points || 0}</p>
-                  <p className="text-xs text-muted-foreground">points</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <BottomNav />
-    </main>
-  );
-}
-
-function LoadingSkeleton() {
-  return (
-    <main className="min-h-screen pb-20">
-      <div className="container mx-auto px-4 py-8">
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-2 h-8 w-40 rounded bg-muted animate-pulse" />
-          <div className="mx-auto h-4 w-64 rounded bg-muted animate-pulse" />
-        </div>
-        <div className="card">
-          {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-            <div key={i} className="flex items-center gap-4 p-4">
-              <div className="h-8 w-8 rounded bg-muted animate-pulse" />
-              <div className="h-10 w-10 rounded-full bg-muted animate-pulse" />
-              <div className="flex-1">
-                <div className="h-4 w-32 rounded bg-muted animate-pulse" />
-              </div>
-              <div className="h-8 w-16 rounded bg-muted animate-pulse" />
-            </div>
-          ))}
-        </div>
-      </div>
-      <BottomNav />
-    </main>
-  );
-}
+import { linkMuted, listCard } from "@/lib/ui";
+import { FavoriteTeamBadge } from "@/app/profile/FavoriteTeamBadge";
 
 export default async function LeaderboardPage() {
-  const players = await getLeaderboard();
-  
+  const supabase = await createClient();
+
+  const [{ data: profiles }, { data: leagues }, { data: ledgerAll }] = await Promise.all([
+    supabase.from("profiles").select("id, username, avatar_url, favorite_team_id").order("username"),
+    supabase.from("leagues").select("id, name").eq("active", true).order("name"),
+    supabase.from("points_ledger").select("user_id, league_id, points"),
+  ]);
+
+  const favoriteTeamIds = [...new Set((profiles ?? []).map((p) => p.favorite_team_id).filter((id): id is number => id != null))];
+  const { data: favoriteTeams } = await supabase
+    .from("teams")
+    .select("id, logo_url")
+    .in("id", favoriteTeamIds.length > 0 ? favoriteTeamIds : [-1]);
+  const teamLogoById = new Map((favoriteTeams ?? []).map((t) => [t.id, t.logo_url]));
+  const activeLeagueIds = new Set((leagues ?? []).map((l) => l.id));
+  const ledger = (ledgerAll ?? []).filter((row) => !row.league_id || activeLeagueIds.has(row.league_id));
+
+  const totalByUser = new Map<string, number>();
+  const byUserByLeague = new Map<string, Map<number, number>>();
+
+  for (const row of ledger ?? []) {
+    totalByUser.set(row.user_id, (totalByUser.get(row.user_id) ?? 0) + row.points);
+    if (!byUserByLeague.has(row.user_id)) byUserByLeague.set(row.user_id, new Map());
+    const perLeague = byUserByLeague.get(row.user_id)!;
+    if (row.league_id) perLeague.set(row.league_id, (perLeague.get(row.league_id) ?? 0) + row.points);
+  }
+
+  const ranked = (profiles ?? [])
+    .map((p) => ({ ...p, total: totalByUser.get(p.id) ?? 0 }))
+    .sort((a, b) => b.total - a.total);
+
   return (
-    <Suspense fallback={<LoadingSkeleton />}>
-      <LeaderboardContent players={players} />
-    </Suspense>
+    <main className="mx-auto w-full max-w-3xl flex-1 p-6">
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Classement général</h1>
+        <Link href="/" className={`text-sm ${linkMuted}`}>
+          Retour
+        </Link>
+      </div>
+
+      <ul className={`mb-8 ${listCard}`}>
+        {ranked.map((p, i) => (
+          <li key={p.id} className="flex items-center justify-between p-4">
+            <span className="flex items-center gap-4">
+              <span className="w-6 text-mute">{i + 1}</span>
+              <span className="relative h-16 w-16 shrink-0">
+                <span className="relative block h-16 w-16 overflow-hidden rounded-full border-2 border-line bg-cream">
+                  {p.avatar_url ? (
+                    <Image src={p.avatar_url} alt="" fill sizes="64px" className="object-cover" />
+                  ) : (
+                    <span className="flex h-full w-full items-center justify-center text-2xl font-bold text-mute">
+                      {p.username.slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                </span>
+                <FavoriteTeamBadge logoUrl={p.favorite_team_id ? (teamLogoById.get(p.favorite_team_id) ?? null) : null} size={22} />
+              </span>
+              <span className="text-lg font-bold">{p.username}</span>
+            </span>
+            <span className="font-bold">{p.total} pts</span>
+          </li>
+        ))}
+        {ranked.length === 0 && <li className="p-4 text-mute">Personne n&apos;a encore de points.</li>}
+      </ul>
+
+      <h2 className="mb-3 text-lg font-bold">Détail par championnat</h2>
+      <div className="overflow-x-auto rounded-2xl border border-line bg-paper">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-line bg-cream">
+              <th className="p-3 text-left">Joueur</th>
+              {(leagues ?? []).map((l) => (
+                <th key={l.id} className="p-3 text-right">
+                  {l.name}
+                </th>
+              ))}
+              <th className="p-3 text-right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ranked.map((p) => (
+              <tr key={p.id} className="border-b border-line last:border-0">
+                <td className="p-3 font-bold">{p.username}</td>
+                {(leagues ?? []).map((l) => (
+                  <td key={l.id} className="p-3 text-right text-mute">
+                    {byUserByLeague.get(p.id)?.get(l.id) ?? 0}
+                  </td>
+                ))}
+                <td className="p-3 text-right font-bold">{p.total}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </main>
   );
 }
