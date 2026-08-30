@@ -384,20 +384,56 @@ const DYNAMIC_TYPE_POOL: DynamicType[] = [
   "hidden_teammate",
 ];
 
-/** Les 10 questions du jour, complètes (avec la bonne réponse) — usage serveur uniquement. */
-export async function getDailyQuiz(supabase: ServiceClient, quizDate: string): Promise<DailyQuestionFull[]> {
-  const staticByPosition = await pickStaticQuestions(supabase, quizDate);
+interface DynamicRow {
+  position: number;
+  category: string;
+  difficulty: string;
+  question: string;
+  team_logo_url: string | null;
+  choices: unknown;
+  correct_index: number;
+  explanation: string | null;
+}
 
-  const dynamicPositions = SLOT_PLAN.map((slot, i) => (slot.kind === "dynamic" ? i : -1)).filter((i) => i >= 0);
+function rowToQuestion(row: DynamicRow): DailyQuestionFull {
+  return {
+    position: row.position,
+    category: row.category as QuizCategory,
+    difficulty: row.difficulty as QuizDifficulty,
+    question: row.question,
+    teamLogoUrl: row.team_logo_url,
+    choices: row.choices as unknown as string[],
+    correctIndex: row.correct_index,
+    explanation: row.explanation,
+  };
+}
 
-  let dynamicQuestions: Array<DailyQuestionFull | null> = [];
-  if (dynamicPositions.length > 0) {
-    const leagueData = await fetchLeagueData(supabase);
-    const matches = await fetchFinishedMatches(supabase, leagueData.leagueIds, quizDate);
-    const teamsById = new Map(leagueData.teams.map((t) => [t.id, t]));
-    const typeOrder = seededShuffle(DYNAMIC_TYPE_POOL, `${quizDate}-dynamic-order`);
+/** Génère (une seule fois par date) puis fige en base les questions dynamiques du jour, pour que
+ * l'affichage et la validation d'une réponse lisent toujours la même version — voir migration
+ * 0025_quiz_daily_dynamic_cache pour le pourquoi. */
+async function getOrGenerateDynamicQuestions(
+  supabase: ServiceClient,
+  quizDate: string,
+  dynamicPositions: number[]
+): Promise<Map<number, DailyQuestionFull>> {
+  if (dynamicPositions.length === 0) return new Map();
 
-    dynamicQuestions = dynamicPositions.map((position, idx) => {
+  const { data: cached } = await supabase
+    .from("quiz_daily_dynamic")
+    .select("position, category, difficulty, question, team_logo_url, choices, correct_index, explanation")
+    .eq("quiz_date", quizDate);
+
+  if (cached && cached.length >= dynamicPositions.length) {
+    return new Map((cached as DynamicRow[]).map((r) => [r.position, rowToQuestion(r)]));
+  }
+
+  const leagueData = await fetchLeagueData(supabase);
+  const matches = await fetchFinishedMatches(supabase, leagueData.leagueIds, quizDate);
+  const teamsById = new Map(leagueData.teams.map((t) => [t.id, t]));
+  const typeOrder = seededShuffle(DYNAMIC_TYPE_POOL, `${quizDate}-dynamic-order`);
+
+  const generated = dynamicPositions
+    .map((position, idx) => {
       const type = typeOrder[idx % typeOrder.length];
       const seedStr = `${quizDate}-${position}`;
       switch (type) {
@@ -410,13 +446,47 @@ export async function getDailyQuiz(supabase: ServiceClient, quizDate: string): P
         case "guess_match_score":
           return genGuessMatchScore(matches, teamsById, position, seedStr);
       }
-    });
-  }
+    })
+    .filter((q): q is DailyQuestionFull => q !== null);
+
+  if (generated.length === 0) return new Map();
+
+  // upsert + ignoreDuplicates : si deux requêtes génèrent en même temps (première visite du jour),
+  // la base ne garde que la première version insérée pour chaque position — on relit ensuite pour
+  // que tout le monde converge sur cette version-là, y compris le processus qui a "perdu" la course.
+  await supabase.from("quiz_daily_dynamic").upsert(
+    generated.map((q) => ({
+      quiz_date: quizDate,
+      position: q.position,
+      category: q.category,
+      difficulty: q.difficulty,
+      question: q.question,
+      team_logo_url: q.teamLogoUrl ?? null,
+      choices: q.choices,
+      correct_index: q.correctIndex,
+      explanation: q.explanation,
+    })),
+    { onConflict: "quiz_date,position", ignoreDuplicates: true }
+  );
+
+  const { data: finalRows } = await supabase
+    .from("quiz_daily_dynamic")
+    .select("position, category, difficulty, question, team_logo_url, choices, correct_index, explanation")
+    .eq("quiz_date", quizDate);
+
+  return new Map((finalRows as DynamicRow[] | null ?? []).map((r) => [r.position, rowToQuestion(r)]));
+}
+
+/** Les 10 questions du jour, complètes (avec la bonne réponse) — usage serveur uniquement. */
+export async function getDailyQuiz(supabase: ServiceClient, quizDate: string): Promise<DailyQuestionFull[]> {
+  const staticByPosition = await pickStaticQuestions(supabase, quizDate);
+
+  const dynamicPositions = SLOT_PLAN.map((slot, i) => (slot.kind === "dynamic" ? i : -1)).filter((i) => i >= 0);
+  const dynamicByPosition = await getOrGenerateDynamicQuestions(supabase, quizDate, dynamicPositions);
 
   const questions: DailyQuestionFull[] = [];
   for (let position = 0; position < SLOT_PLAN.length; position++) {
-    const dynamicIndex = dynamicPositions.indexOf(position);
-    const q = dynamicIndex >= 0 ? dynamicQuestions[dynamicIndex] : staticByPosition.get(position);
+    const q = dynamicByPosition.get(position) ?? staticByPosition.get(position);
     if (q) questions.push(q);
   }
   return questions;

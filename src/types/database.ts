@@ -347,6 +347,31 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["quiz_results"]["Row"]>;
         Relationships: [];
       };
+      quiz_daily_dynamic: {
+        Row: {
+          quiz_date: string;
+          position: number;
+          category: string;
+          difficulty: string;
+          question: string;
+          team_logo_url: string | null;
+          choices: string[];
+          correct_index: number;
+          explanation: string | null;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["quiz_daily_dynamic"]["Row"]> & {
+          quiz_date: string;
+          position: number;
+          category: string;
+          difficulty: string;
+          question: string;
+          choices: string[];
+          correct_index: number;
+        };
+        Update: Partial<Database["public"]["Tables"]["quiz_daily_dynamic"]["Row"]>;
+        Relationships: [];
+      };
       reminder_log: {
         Row: {
           id: number;
