@@ -1,22 +1,33 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
-  experimental: {
-    // Next.js limite le corps des Server Actions à 1 Mo par défaut : trop petit pour une
-    // vraie photo de profil envoyée depuis un téléphone.
-    serverActions: {
-      bodySizeLimit: "4mb",
-    },
-  },
+const config: NextConfig = {
+  reactStrictMode: true,
+  poweredByHeader: false,
   images: {
-    remotePatterns: [
-      // Photos de profil stockées dans Supabase Storage : on laisse next/image les
-      // redimensionner/compresser à la volée plutôt que de servir le fichier original.
-      { protocol: "https", hostname: "**.supabase.co", pathname: "/storage/v1/object/public/**" },
-      // Blasons des clubs (football-data.org) : idem, affichés des dizaines de fois par page.
-      { protocol: "https", hostname: "crests.football-data.org" },
-    ],
+    formats: ['image/avif', 'image/webp'],
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+    minimumCacheTTL: 60,
+  },
+  compiler: {
+    removeConsole: { exclude: ['error', 'warn'] },
+  },
+  swcMinify: true,
+  async headers() {
+    return [{
+      source: '/:path*',
+      headers: [
+        { key: 'X-DNS-Prefetch-Control', value: 'on' },
+        { key: 'X-Frame-Options', value: 'DENY' },
+        { key: 'X-Content-Type-Options', value: 'nosniff' },
+        { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+      ],
+    }];
+  },
+  experimental: {
+    optimizePackageImports: ['@supabase/supabase-js', 'lucide-react'],
+    webpackBuildWorker: true,
   },
 };
 
-export default nextConfig;
+export default config;

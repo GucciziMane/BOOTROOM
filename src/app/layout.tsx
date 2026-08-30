@@ -1,80 +1,42 @@
 import type { Metadata } from "next";
-import { Instrument_Sans } from "next/font/google";
-import { createClient } from "@/lib/supabase/server";
-import { BottomNav } from "./BottomNav";
-import { ThemeApplier, ClubCrestWatermark } from "./ThemeApplier";
+import { ThemeApplier } from "./ThemeApplier";
 import "./globals.css";
 
-const comicNeue = Instrument_Sans({
-  variable: "--font-comic-neue",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-});
-
 export const metadata: Metadata = {
-  title: "Boot Room",
-  description: "Pronostics entre amis sur les 5 grands championnats",
-  appleWebApp: {
-    capable: true,
-    title: "Boot Room",
-    statusBarStyle: "black-translucent",
-  },
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://bootroom.app"),
+  title: { default: "Bootroom", template: "%s | Bootroom" },
+  description: "L'application ultime pour les fans de football - Quiz, Chat, Leaderboard",
+  keywords: ["football", "quiz", "chat", "leaderboard", "ligues", "calendrier"],
+  authors: [{ name: "Bootroom Team" }],
+  creator: "Bootroom",
+  publisher: "Bootroom",
+  robots: { index: true, follow: true, googleBot: { index: true, follow: true, "max-video-preview": -1, "max-image-preview": "large", "max-snippet": -1 } },
+  manifest: "/manifest.json",
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "Bootroom" },
+  formatDetection: { email: false, address: false, telephone: false },
+  openGraph: { type: "website", locale: "fr_FR", url: "https://bootroom.app", siteName: "Bootroom", title: "Bootroom", description: "L'application ultime pour les fans de football", images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "Bootroom" }] },
+  twitter: { card: "summary_large_image", title: "Bootroom", description: "L'application ultime pour les fans de football", images: ["/og-image.png"] },
+  icons: { icon: "/favicon.ico", shortcut: "/favicon-16x16.png", apple: "/apple-touch-icon.png" },
 };
 
-interface ClubTheme {
-  enabled: boolean;
-  primaryColor: string | null;
-  secondaryColor: string | null;
-  crestUrl: string | null;
-}
+export const viewport = { width: "device-width", initialScale: 1, maximumScale: 1, userScalable: false, themeColor: [{ media: "(prefers-color-scheme: light)", color: "#ffffff" }, { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" }] };
 
-async function getClubTheme(): Promise<ClubTheme> {
-  const empty: ClubTheme = { enabled: false, primaryColor: null, secondaryColor: null, crestUrl: null };
-
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return empty;
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("use_club_theme, favorite_team_id")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  if (!profile?.use_club_theme || !profile.favorite_team_id) return empty;
-
-  const { data: team } = await supabase
-    .from("teams")
-    .select("primary_color, secondary_color, logo_url")
-    .eq("id", profile.favorite_team_id)
-    .maybeSingle();
-
-  if (!team?.primary_color) return empty;
-
-  return {
-    enabled: true,
-    primaryColor: team.primary_color,
-    secondaryColor: team.secondary_color,
-    crestUrl: team.logo_url,
-  };
-}
-
-export default async function RootLayout({ children }: LayoutProps<"/">) {
-  const clubTheme = await getClubTheme();
-
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="fr" className={`${comicNeue.variable} h-full antialiased`}>
-      <body className="flex min-h-full flex-col pb-32 lg:pb-0">
-        <ClubCrestWatermark enabled={clubTheme.enabled} crestUrl={clubTheme.crestUrl} />
+    <html lang="fr" suppressHydrationWarning>
+      <head>
+        <link rel="preconnect" href="https://images.unsplash.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://images.unsplash.com" />
+        {process.env.NEXT_PUBLIC_SUPABASE_URL && (
+          <>
+            <link rel="preconnect" href={process.env.NEXT_PUBLIC_SUPABASE_URL} crossOrigin="anonymous" />
+            <link rel="dns-prefetch" href={process.env.NEXT_PUBLIC_SUPABASE_URL} />
+          </>
+        )}
+      </head>
+      <body className="antialiased min-h-screen bg-background font-sans">
+        <ThemeApplier />
         {children}
-        <BottomNav />
-        <ThemeApplier
-          enabled={clubTheme.enabled}
-          primaryColor={clubTheme.primaryColor}
-          secondaryColor={clubTheme.secondaryColor}
-        />
       </body>
     </html>
   );
