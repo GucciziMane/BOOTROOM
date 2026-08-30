@@ -1,30 +1,77 @@
-/** Assombrit une couleur claire pour garder du texte blanc lisible dessus (boutons pleins). */
+const FALLBACK_COLOR = "#4f46e5";
+
+function normalizeHex(value: string): string {
+  const hex = value.trim().replace(/^#/, "");
+
+  if (/^[0-9a-fA-F]{6}$/.test(hex)) {
+    return `#${hex.toLowerCase()}`;
+  }
+
+  if (/^[0-9a-fA-F]{3}$/.test(hex)) {
+    return `#${hex
+      .split("")
+      .map((character) => character + character)
+      .join("")
+      .toLowerCase()}`;
+  }
+
+  return FALLBACK_COLOR;
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const normalized = normalizeHex(hex);
+
+  return [
+    Number.parseInt(normalized.slice(1, 3), 16),
+    Number.parseInt(normalized.slice(3, 5), 16),
+    Number.parseInt(normalized.slice(5, 7), 16),
+  ];
+}
+
+function rgbToHex(red: number, green: number, blue: number): string {
+  return `#${[red, green, blue]
+    .map((value) =>
+      Math.max(0, Math.min(255, Math.round(value)))
+        .toString(16)
+        .padStart(2, "0")
+    )
+    .join("")}`;
+}
+
+/**
+ * Assombrit une couleur claire afin que du texte blanc reste lisible
+ * lorsqu’elle est utilisée comme fond de bouton.
+ */
 export function ensureReadableOnLight(hex: string): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  if (luminance <= 0.7) return hex;
-  const factor = 0.6;
-  return rgbToHex(Math.round(r * factor), Math.round(g * factor), Math.round(b * factor));
+  const [red, green, blue] = hexToRgb(hex);
+  const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
+
+  if (luminance <= 0.7) {
+    return rgbToHex(red, green, blue);
+  }
+
+  return rgbToHex(red * 0.6, green * 0.6, blue * 0.6);
 }
 
+/**
+ * Assombrit une couleur tout en garantissant une valeur de facteur sûre.
+ * `0` correspond au noir, `1` conserve la couleur originale.
+ */
 export function darken(hex: string, factor: number): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return rgbToHex(Math.round(r * factor), Math.round(g * factor), Math.round(b * factor));
+  const [red, green, blue] = hexToRgb(hex);
+  const safeFactor = Math.max(0, Math.min(1, factor));
+
+  return rgbToHex(red * safeFactor, green * safeFactor, blue * safeFactor);
 }
 
-/** Éclaircit une couleur en la mélangeant avec du blanc (ex : 0.9 = 90% blanc, 10% couleur). */
+/**
+ * Éclaircit une couleur en la mélangeant avec du blanc.
+ * `0` conserve la couleur originale et `1` produit du blanc.
+ */
 export function mixWithWhite(hex: string, whiteRatio: number): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  const mix = (c: number) => c * (1 - whiteRatio) + 255 * whiteRatio;
-  return rgbToHex(Math.round(mix(r)), Math.round(mix(g)), Math.round(mix(b)));
-}
+  const [red, green, blue] = hexToRgb(hex);
+  const ratio = Math.max(0, Math.min(1, whiteRatio));
+  const mix = (channel: number) => channel * (1 - ratio) + 255 * ratio;
 
-function rgbToHex(r: number, g: number, b: number): string {
-  return `#${[r, g, b].map((c) => Math.max(0, Math.min(255, c)).toString(16).padStart(2, "0")).join("")}`;
+  return rgbToHex(mix(red), mix(green), mix(blue));
 }
