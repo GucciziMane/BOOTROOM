@@ -160,7 +160,7 @@ export function ClubHomeDashboard({ data }: { data: ClubHomeData }) {
         <div className="mt-6">
           <div className="mb-2 text-sm font-bold">L&rsquo;effectif</div>
           <div className="-mx-6 flex gap-3 overflow-x-auto px-6 pb-1">
-            {data.squad.slice(0, 12).map((p) => (
+            {data.squad.map((p) => (
               <div key={p.id} className="w-24 shrink-0 rounded-2xl border border-line bg-paper p-3 text-center">
                 <div className="mx-auto flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2" style={{ borderColor: accent, background: darken(data.primaryColor, 0.55) }}>
                   {p.photoUrl ? (
