@@ -9,12 +9,17 @@ export interface SendChatMessageState {
   error: string | null;
 }
 
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"];
+
 export async function sendChatMessage(
   _prevState: SendChatMessageState,
   formData: FormData
 ): Promise<SendChatMessageState> {
   const content = String(formData.get("content") ?? "").trim();
-  if (!content) return { error: null };
+  const image = formData.get("image");
+  const hasImage = image instanceof File && image.size > 0;
+  if (!content && !hasImage) return { error: null };
   if (content.length > 2000) return { error: "Message trop long (2000 caractères max)." };
 
   const supabase = await createClient();
@@ -23,24 +28,48 @@ export async function sendChatMessage(
   } = await supabase.auth.getUser();
   if (!user) return { error: "Non connecté." };
 
-  const { error } = await supabase.from("chat_messages").insert({ user_id: user.id, content });
+  let imageUrl: string | null = null;
+  if (hasImage) {
+    const file = image as File;
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      return { error: "Format d'image non supporté (JPEG, PNG, WEBP, GIF ou HEIC)." };
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      return { error: "Image trop lourde (5 Mo max)." };
+    }
+
+    const ext = file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+    const path = `${user.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const { error: uploadError } = await supabase.storage
+      .from("chat-images")
+      .upload(path, file, { contentType: file.type });
+    if (uploadError) return { error: `Échec de l'envoi de l'image : ${uploadError.message}` };
+
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from("chat-images").getPublicUrl(path);
+    imageUrl = publicUrl;
+  }
+
+  const { error } = await supabase.from("chat_messages").insert({ user_id: user.id, content, image_url: imageUrl });
   if (error) return { error: error.message };
 
   const { data: profiles } = await supabase.from("profiles").select("id, username");
   const senderName = profiles?.find((p) => p.id === user.id)?.username ?? "Quelqu'un";
   const mentionedUserIds = extractMentionedUserIds(content, profiles ?? []).filter((id) => id !== user.id);
+  const pushBody = content || "📷 Photo";
 
   try {
     if (mentionedUserIds.length > 0) {
       await sendPushToUserIds(mentionedUserIds, {
         title: `${senderName} vous a mentionné — 3ème mi-temps`,
-        body: content,
+        body: pushBody,
         url: "/chat",
       });
     }
     await sendPushToOthers([user.id, ...mentionedUserIds], {
       title: `${senderName} — 3ème mi-temps`,
-      body: content,
+      body: pushBody,
       url: "/chat",
     });
   } catch {

@@ -249,11 +249,11 @@ export interface Database {
           id: number;
           user_id: string;
           content: string;
+          image_url: string | null;
           created_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["chat_messages"]["Row"]> & {
           user_id: string;
-          content: string;
         };
         Update: Partial<Database["public"]["Tables"]["chat_messages"]["Row"]>;
         Relationships: [];

@@ -15,7 +15,7 @@ export default async function ChatPage() {
   const [{ data: messages }, { data: profiles }] = await Promise.all([
     supabase
       .from("chat_messages")
-      .select("id, user_id, content, created_at")
+      .select("id, user_id, content, image_url, created_at")
       .order("created_at", { ascending: false })
       .limit(100),
     supabase.from("profiles").select("id, username, avatar_url, favorite_team_id"),
@@ -42,7 +42,7 @@ export default async function ChatPage() {
   const initialMessages = (messages ?? [])
     .slice()
     .reverse()
-    .map((m) => ({ id: m.id, userId: m.user_id, content: m.content, createdAt: m.created_at }));
+    .map((m) => ({ id: m.id, userId: m.user_id, content: m.content, imageUrl: m.image_url, createdAt: m.created_at }));
 
   const { data: reactions } = messages?.length
     ? await supabase

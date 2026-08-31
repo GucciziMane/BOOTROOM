@@ -35,8 +35,11 @@ interface ChatMessage {
   id: number;
   userId: string;
   content: string;
+  imageUrl: string | null;
   createdAt: string;
 }
+
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 interface ProfileInfo {
   username: string;
@@ -75,10 +78,40 @@ export function ChatRoom({
   const [notifications, setNotifications] = useState({ supported: false, on: false });
   const [messageText, setMessageText] = useState("");
   const [mentionQuery, setMentionQuery] = useState<{ query: string; start: number } | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const wasPending = useRef(false);
+
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > MAX_IMAGE_BYTES) {
+      setImageError("Image trop lourde (5 Mo max).");
+      e.target.value = "";
+      return;
+    }
+    setImageError(null);
+    setImageFile(file);
+    setImagePreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+  }
+
+  function clearImage() {
+    setImageFile(null);
+    setImagePreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setImageError(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
 
   const mentionableUsers = Object.entries(profilesById).map(([id, p]) => ({ id, username: p.username }));
   const allUsernames = mentionableUsers.map((u) => u.username);
@@ -214,11 +247,26 @@ export function ChatRoom({
       channel = supabase
         .channel("chat_messages_changes")
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages" }, (payload) => {
-          const row = payload.new as { id: number; user_id: string; content: string; created_at: string };
+          const row = payload.new as {
+            id: number;
+            user_id: string;
+            content: string;
+            image_url: string | null;
+            created_at: string;
+          };
           setMessages((prev) =>
             prev.some((m) => m.id === row.id)
               ? prev
-              : [...prev, { id: row.id, userId: row.user_id, content: row.content, createdAt: row.created_at }]
+              : [
+                  ...prev,
+                  {
+                    id: row.id,
+                    userId: row.user_id,
+                    content: row.content,
+                    imageUrl: row.image_url,
+                    createdAt: row.created_at,
+                  },
+                ]
           );
         })
         .on(
@@ -272,6 +320,7 @@ export function ChatRoom({
     if (wasPending.current && !isPending && !state.error) {
       formRef.current?.reset();
       setMessageText("");
+      clearImage();
     }
     wasPending.current = isPending;
   }, [isPending, state.error]);
@@ -322,25 +371,44 @@ export function ChatRoom({
                 {!isOwn && (
                   <p className="mb-1 px-1 text-[11px] font-bold text-mute">{profile?.username ?? "?"}</p>
                 )}
-                <div
-                  className={`px-3.5 py-2 text-[15px] leading-snug ${
-                    isOwn
-                      ? "rounded-2xl rounded-br-md bg-accent text-paper"
-                      : mentionsMe
-                        ? "rounded-2xl rounded-bl-md bg-accent-soft text-ink ring-1 ring-inset ring-accent"
-                        : "rounded-2xl rounded-bl-md bg-paper text-ink shadow-sm"
-                  }`}
-                >
-                  {splitContentByMentions(m.content, allUsernames).map((part, i) =>
-                    part.isMention ? (
-                      <span key={i} className={`font-bold ${isOwn ? "text-warn-bg" : "text-accent-hover"}`}>
-                        {part.text}
-                      </span>
-                    ) : (
-                      <span key={i}>{part.text}</span>
-                    )
-                  )}
-                </div>
+                {m.imageUrl && (
+                  <a
+                    href={m.imageUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`block overflow-hidden rounded-2xl ${m.content ? "mb-1" : ""} ${isOwn ? "rounded-br-md" : "rounded-bl-md"}`}
+                  >
+                    <Image
+                      src={m.imageUrl}
+                      alt=""
+                      width={280}
+                      height={280}
+                      sizes="280px"
+                      className="h-auto max-h-72 w-full max-w-[240px] object-cover"
+                    />
+                  </a>
+                )}
+                {m.content && (
+                  <div
+                    className={`px-3.5 py-2 text-[15px] leading-snug ${
+                      isOwn
+                        ? "rounded-2xl rounded-br-md bg-accent text-paper"
+                        : mentionsMe
+                          ? "rounded-2xl rounded-bl-md bg-accent-soft text-ink ring-1 ring-inset ring-accent"
+                          : "rounded-2xl rounded-bl-md bg-paper text-ink shadow-sm"
+                    }`}
+                  >
+                    {splitContentByMentions(m.content, allUsernames).map((part, i) =>
+                      part.isMention ? (
+                        <span key={i} className={`font-bold ${isOwn ? "text-warn-bg" : "text-accent-hover"}`}>
+                          {part.text}
+                        </span>
+                      ) : (
+                        <span key={i}>{part.text}</span>
+                      )
+                    )}
+                  </div>
+                )}
                 <div className="relative mt-1 flex items-center gap-1.5 px-1">
                   <p className="text-[10px] text-mute">{formatParisDateTime(m.createdAt)}</p>
                   <button
@@ -394,7 +462,46 @@ export function ChatRoom({
         <div ref={bottomRef} />
       </div>
 
+      {imageError && <p className="px-5 pb-1 text-xs text-bad">{imageError}</p>}
+      {imagePreviewUrl && (
+        <div className="px-4 pb-2">
+          <div className="relative inline-block">
+            {/* eslint-disable-next-line @next/next/no-img-element -- object URL local, non compatible avec le loader next/image */}
+            <img src={imagePreviewUrl} alt="" className="h-20 w-20 rounded-xl object-cover shadow-sm" />
+            <button
+              type="button"
+              onClick={clearImage}
+              aria-label="Retirer l'image"
+              className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-ink text-paper shadow-sm"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
       <form ref={formRef} action={formAction} className="flex items-center gap-2 p-4 pt-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          name="image"
+          accept="image/*"
+          onChange={handleImageChange}
+          className="hidden"
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          aria-label="Ajouter une photo"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-paper text-mute shadow-sm transition-colors hover:text-ink"
+        >
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="5" width="18" height="15" rx="2.5" />
+            <circle cx="9" cy="11" r="2.2" />
+            <path d="M3 17l5-5 3.5 3.5L16 11l5 5" />
+          </svg>
+        </button>
         <div className="relative flex-1">
           {mentionQuery && matchingUsers.length > 0 && (
             <div className="absolute bottom-full left-0 z-10 mb-1 max-h-40 w-48 overflow-y-auto rounded-xl border border-line bg-paper shadow-md">
@@ -416,7 +523,6 @@ export function ChatRoom({
             name="content"
             placeholder="Écris un message... (@ pour mentionner)"
             maxLength={2000}
-            required
             autoComplete="off"
             value={messageText}
             onChange={handleMessageChange}
@@ -425,7 +531,7 @@ export function ChatRoom({
         </div>
         <button
           type="submit"
-          disabled={isPending}
+          disabled={isPending || (!messageText.trim() && !imageFile)}
           aria-label="Envoyer"
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-paper transition-colors hover:bg-accent-hover disabled:opacity-40"
         >
