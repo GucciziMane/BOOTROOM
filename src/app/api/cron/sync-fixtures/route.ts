@@ -3,6 +3,7 @@ import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { footballData, normalizeMatchStatus } from "@/lib/football-data/client";
 import { highlightly, type HlMatch } from "@/lib/highlightly/client";
+import { getEspnScoreboard, ESPN_LEAGUE_SLUG } from "@/lib/espn/client";
 import { teamNamesMatch, matchPlayerByName } from "@/lib/sync/name-match";
 import { computeStandings } from "@/lib/scoring/standings";
 import { computeMatchOdds } from "@/lib/scoring/match-odds";
@@ -32,7 +33,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: leaguesError?.message ?? "leagues introuvables" }, { status: 500 });
   }
 
-  const matchesSummary: Array<{ league: string; matches: number; regressions?: number; error?: string }> = [];
+  const matchesSummary: Array<{
+    league: string;
+    matches: number;
+    regressions?: number;
+    espnRefreshed?: number;
+    error?: string;
+  }> = [];
 
   for (const league of leagues) {
     try {
@@ -45,7 +52,7 @@ export async function GET(request: NextRequest) {
       const seasonId = seasons?.[0]?.id;
       if (!seasonId) throw new Error("aucune saison synchronisée — lancer sync-teams-players d'abord");
 
-      const { data: teams } = await supabase.from("teams").select("id, football_data_id").eq("league_id", league.id);
+      const { data: teams } = await supabase.from("teams").select("id, name, football_data_id").eq("league_id", league.id);
       const teamIdByFdId = new Map((teams ?? []).map((t) => [t.football_data_id, t.id]));
 
       // Nécessaire pour détecter une régression du fournisseur (voir plus bas) : le statut/score
@@ -101,7 +108,15 @@ export async function GET(request: NextRequest) {
 
       await updateMatchOdds(supabase, seasonId);
 
-      matchesSummary.push({ league: league.football_data_code, matches: rows.length, regressions });
+      // football-data.org gratuit annonce lui-même des scores "délayés" (pas du direct) — c'est
+      // documenté sur leur propre page tarifaire, pas un bug de notre synchro. ESPN expose un
+      // endpoint non-officiel, gratuit, sans clé ni limite connue, qui s'est avéré à jour sur les
+      // matchs où football-data.org restait bloqué des heures. On l'utilise pour rafraîchir le
+      // statut/score des matchs récents, football-data.org restant la source du calendrier/
+      // effectifs (pas sensible au délai).
+      const espnRefreshed = await refreshRecentScoresFromEspn(supabase, league.football_data_code, league.id, teams ?? []);
+
+      matchesSummary.push({ league: league.football_data_code, matches: rows.length, regressions, espnRefreshed });
       await sleep(700);
     } catch (err) {
       matchesSummary.push({
@@ -173,6 +188,76 @@ async function updateMatchOdds(supabase: ReturnType<typeof createServiceRoleClie
       )
     );
   }
+}
+
+const ESPN_REFRESH_WINDOW_DAYS = 5;
+
+/**
+ * Recale le statut/score des matchs des derniers jours sur ESPN plutôt que sur football-data.org,
+ * qui les laisse parfois "en cours" ou "pas commencé" bien après la fin réelle (délai du plan
+ * gratuit — voir le commentaire sur son appel plus haut). Mêmes garde-fous que pour
+ * football-data.org : jamais de régression d'un match déjà "finished", et l'appariement se fait
+ * par nom d'équipe (ESPN n'utilise pas nos identifiants).
+ */
+async function refreshRecentScoresFromEspn(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  footballDataCode: string,
+  leagueId: number,
+  leagueTeams: Array<{ id: number; name: string }>
+): Promise<number> {
+  const slug = ESPN_LEAGUE_SLUG[footballDataCode];
+  if (!slug || leagueTeams.length === 0) return 0;
+
+  const to = new Date();
+  const from = new Date(to.getTime() - ESPN_REFRESH_WINDOW_DAYS * 86_400_000);
+  const ymd = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, "");
+
+  let events;
+  try {
+    events = await getEspnScoreboard(slug, ymd(from), ymd(to));
+  } catch {
+    // Endpoint non-officiel : une panne/changement de forme ne doit jamais faire échouer le sync
+    // (football-data.org reste la source de repli pour le statut/score).
+    return 0;
+  }
+  if (events.length === 0) return 0;
+
+  // Toutes les rencontres d'une ligue nationale se jouent entre ses propres équipes : filtrer par
+  // league_id suffit, pas besoin de croiser sur les deux colonnes d'équipe.
+  const { data: dbMatches } = await supabase
+    .from("matches")
+    .select("id, home_team_id, away_team_id, kickoff_at, status")
+    .eq("league_id", leagueId)
+    .gte("kickoff_at", from.toISOString())
+    .lte("kickoff_at", to.toISOString());
+
+  let refreshed = 0;
+  for (const dbMatch of dbMatches ?? []) {
+    if (dbMatch.status === "finished") continue; // jamais de régression, cf. plus haut
+
+    const homeName = leagueTeams.find((t) => t.id === dbMatch.home_team_id)?.name ?? "";
+    const awayName = leagueTeams.find((t) => t.id === dbMatch.away_team_id)?.name ?? "";
+    const dbDate = dbMatch.kickoff_at.slice(0, 10);
+
+    const espnMatch = events.find(
+      (e) =>
+        e.date.slice(0, 10) === dbDate &&
+        teamNamesMatch(e.homeTeam, homeName) &&
+        teamNamesMatch(e.awayTeam, awayName)
+    );
+    if (!espnMatch || espnMatch.status === "scheduled") continue;
+    // dbMatch.status ne peut jamais valoir "finished" ici (cf. le `continue` plus haut), donc rien
+    // à mettre à jour si les deux statuts sont déjà identiques.
+    if (espnMatch.status === dbMatch.status) continue;
+
+    const { error } = await supabase
+      .from("matches")
+      .update({ status: espnMatch.status, home_score: espnMatch.homeScore, away_score: espnMatch.awayScore })
+      .eq("id", dbMatch.id);
+    if (!error) refreshed++;
+  }
+
+  return refreshed;
 }
 
 async function syncGoalEvents(
