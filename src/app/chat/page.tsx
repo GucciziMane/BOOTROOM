@@ -57,14 +57,14 @@ export default async function ChatPage() {
   await markChatAsRead();
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-1 flex-col p-6">
-      <div className="mb-4 flex items-center justify-between">
+    <main className="mx-auto flex h-[calc(100dvh-8rem)] w-full max-w-2xl flex-col overflow-hidden p-6 lg:h-dvh">
+      <div className="mb-4 flex shrink-0 items-center justify-between">
         <h1 className="text-3xl font-bold">3ème mi-temps 🍻</h1>
         <Link href="/" className={`text-sm ${linkMuted}`}>
           Retour
         </Link>
       </div>
-      <div className="flex h-[70vh] flex-col overflow-hidden rounded-[28px] bg-paper/60">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] bg-paper/60">
         <ChatRoom
           initialMessages={initialMessages}
           initialReactions={reactions ?? []}
