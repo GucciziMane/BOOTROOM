@@ -104,3 +104,37 @@ export async function getEspnScoreboard(leagueSlug: string, fromYmd: string, toY
     ];
   });
 }
+
+export interface EspnGoal {
+  teamName: string;
+  scorerName: string;
+  assistName: string | null;
+  minute: number | null;
+}
+
+interface EspnSummaryResponse {
+  keyEvents?: Array<{
+    type: { type: string };
+    team?: { displayName: string };
+    clock?: { displayValue: string };
+    participants?: Array<{ athlete: { displayName: string } }>;
+  }>;
+}
+
+/** Buts (buteur + passeur éventuel) d'un match précis, via son id d'événement ESPN. */
+export async function getEspnMatchGoals(leagueSlug: string, eventId: string): Promise<EspnGoal[]> {
+  const data = await espnFetch<EspnSummaryResponse>(`/${leagueSlug}/summary?event=${eventId}`);
+
+  return (data.keyEvents ?? []).flatMap((e) => {
+    if (e.type.type !== "goal" || !e.team || !e.participants || e.participants.length === 0) return [];
+    const minuteMatch = e.clock?.displayValue?.match(/\d+/);
+    return [
+      {
+        teamName: e.team.displayName,
+        scorerName: e.participants[0].athlete.displayName,
+        assistName: e.participants[1]?.athlete.displayName ?? null,
+        minute: minuteMatch ? Number(minuteMatch[0]) : null,
+      },
+    ];
+  });
+}

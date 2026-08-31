@@ -3,7 +3,7 @@ import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { footballData, normalizeMatchStatus } from "@/lib/football-data/client";
 import { highlightly, type HlMatch } from "@/lib/highlightly/client";
-import { getEspnScoreboard, ESPN_LEAGUE_SLUG } from "@/lib/espn/client";
+import { getEspnScoreboard, getEspnMatchGoals, ESPN_LEAGUE_SLUG } from "@/lib/espn/client";
 import { teamNamesMatch, matchPlayerByName } from "@/lib/sync/name-match";
 import { computeStandings } from "@/lib/scoring/standings";
 import { computeMatchOdds } from "@/lib/scoring/match-odds";
@@ -266,6 +266,7 @@ async function syncGoalEvents(
   startedAt: number
 ) {
   const highlightlyLeagueIdByLeagueId = new Map(leagues.map((l) => [l.id, l.highlightly_league_id]));
+  const espnSlugByLeagueId = new Map(leagues.map((l) => [l.id, ESPN_LEAGUE_SLUG[l.football_data_code]]));
 
   const { data: pendingMatches, error } = await supabase
     .from("matches")
@@ -290,16 +291,85 @@ async function syncGoalEvents(
   }
 
   const matchesByDateAndLeagueCache = new Map<string, HlMatch[] | null>();
+  const espnScoreboardCache = new Map<string, Awaited<ReturnType<typeof getEspnScoreboard>> | null>();
   let matched = 0;
+  let matchedViaEspn = 0;
   let unmatched = 0;
   let outOfWindow = 0;
   let stoppedOnBudget = 0;
+
+  const saveGoals = async (
+    matchId: number,
+    goalRows: Array<{ match_id: number; team_id: number; player_id: number; assist_player_id: number | null; minute: number | null }>
+  ) => {
+    await supabase.from("match_goals").delete().eq("match_id", matchId);
+    if (goalRows.length > 0) {
+      await supabase.from("match_goals").insert(goalRows);
+    }
+    await supabase.from("matches").update({ events_synced_at: new Date().toISOString() }).eq("id", matchId);
+  };
 
   for (const match of pendingMatches) {
     if (Date.now() - startedAt > EVENTS_SYNC_TIME_BUDGET_MS) {
       stoppedOnBudget = pendingMatches.length - matched - unmatched - outOfWindow;
       break;
     }
+
+    const homeName = teamNameById.get(match.home_team_id) ?? "";
+    const awayName = teamNameById.get(match.away_team_id) ?? "";
+    const dateKey = match.kickoff_at.slice(0, 10);
+
+    // ESPN d'abord : pas de quota connu et une bien meilleure couverture historique que le plan
+    // gratuit de Highlightly (confirmé sur des matchs qu'Highlightly ne retrouvait jamais) —
+    // Highlightly reste en secours si ESPN n'a pas ce match précis ou tombe en panne.
+    let matchedThisOne = false;
+    const espnSlug = espnSlugByLeagueId.get(match.league_id);
+    if (espnSlug) {
+      try {
+        const espnCacheKey = `${dateKey}|${espnSlug}`;
+        let dayEvents = espnScoreboardCache.get(espnCacheKey);
+        if (dayEvents === undefined) {
+          try {
+            const ymd = dateKey.replace(/-/g, "");
+            dayEvents = await getEspnScoreboard(espnSlug, ymd, ymd);
+          } catch {
+            dayEvents = null;
+          }
+          espnScoreboardCache.set(espnCacheKey, dayEvents);
+        }
+
+        const espnMatch = (dayEvents ?? []).find(
+          (e) => teamNamesMatch(e.homeTeam, homeName) && teamNamesMatch(e.awayTeam, awayName)
+        );
+
+        if (espnMatch) {
+          const goals = await getEspnMatchGoals(espnSlug, espnMatch.id);
+          const goalRows = goals.flatMap((g) => {
+            const teamId = teamNamesMatch(g.teamName, homeName) ? match.home_team_id : match.away_team_id;
+            const scorer = matchPlayerByName(g.scorerName, playersByTeamId.get(teamId) ?? []);
+            const assist = g.assistName ? matchPlayerByName(g.assistName, playersByTeamId.get(teamId) ?? []) : null;
+            if (!scorer) return [];
+            return [
+              {
+                match_id: match.id,
+                team_id: teamId,
+                player_id: scorer.id,
+                assist_player_id: assist?.id ?? null,
+                minute: g.minute,
+              },
+            ];
+          });
+          await saveGoals(match.id, goalRows);
+          matched++;
+          matchedViaEspn++;
+          matchedThisOne = true;
+        }
+      } catch {
+        // ESPN indisponible pour ce match précis : on retombe sur Highlightly plus bas.
+      }
+    }
+    if (matchedThisOne) continue;
+
     try {
       const highlightlyLeagueId = highlightlyLeagueIdByLeagueId.get(match.league_id);
       if (!highlightlyLeagueId) {
@@ -307,7 +377,6 @@ async function syncGoalEvents(
         continue;
       }
 
-      const dateKey = match.kickoff_at.slice(0, 10);
       const cacheKey = `${dateKey}|${highlightlyLeagueId}`;
       let dayMatches = matchesByDateAndLeagueCache.get(cacheKey);
       if (dayMatches === undefined) {
@@ -325,9 +394,6 @@ async function syncGoalEvents(
         outOfWindow++;
         continue;
       }
-
-      const homeName = teamNameById.get(match.home_team_id) ?? "";
-      const awayName = teamNameById.get(match.away_team_id) ?? "";
 
       // homeTeam/awayTeam peuvent être inversés entre football-data.org et Highlightly pour un
       // même match : on accepte les deux orientations, l'assignation but/passe par événement
@@ -364,16 +430,12 @@ async function syncGoalEvents(
           ];
         });
 
-      await supabase.from("match_goals").delete().eq("match_id", match.id);
-      if (goalRows.length > 0) {
-        await supabase.from("match_goals").insert(goalRows);
-      }
-      await supabase.from("matches").update({ events_synced_at: new Date().toISOString() }).eq("id", match.id);
+      await saveGoals(match.id, goalRows);
       matched++;
     } catch {
       unmatched++;
     }
   }
 
-  return { processed: pendingMatches.length, matched, unmatched, outOfWindow, stoppedOnBudget };
+  return { processed: pendingMatches.length, matched, matchedViaEspn, unmatched, outOfWindow, stoppedOnBudget };
 }
