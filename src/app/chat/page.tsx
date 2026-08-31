@@ -15,7 +15,7 @@ export default async function ChatPage() {
   const [{ data: messages }, { data: profiles }] = await Promise.all([
     supabase
       .from("chat_messages")
-      .select("id, user_id, content, image_url, created_at")
+      .select("id, user_id, content, image_url, is_ephemeral, created_at")
       .order("created_at", { ascending: false })
       .limit(100),
     supabase.from("profiles").select("id, username, avatar_url, favorite_team_id"),
@@ -42,17 +42,35 @@ export default async function ChatPage() {
   const initialMessages = (messages ?? [])
     .slice()
     .reverse()
-    .map((m) => ({ id: m.id, userId: m.user_id, content: m.content, imageUrl: m.image_url, createdAt: m.created_at }));
+    .map((m) => ({
+      id: m.id,
+      userId: m.user_id,
+      content: m.content,
+      imageUrl: m.image_url,
+      isEphemeral: m.is_ephemeral,
+      createdAt: m.created_at,
+    }));
 
-  const { data: reactions } = messages?.length
-    ? await supabase
-        .from("chat_message_reactions")
-        .select("id, message_id, user_id, emoji")
-        .in(
-          "message_id",
-          messages.map((m) => m.id)
-        )
-    : { data: [] };
+  const [{ data: reactions }, { data: views }] = messages?.length
+    ? await Promise.all([
+        supabase
+          .from("chat_message_reactions")
+          .select("id, message_id, user_id, emoji")
+          .in(
+            "message_id",
+            messages.map((m) => m.id)
+          ),
+        supabase
+          .from("chat_message_views")
+          .select("message_id")
+          .eq("user_id", user.id)
+          .in(
+            "message_id",
+            messages.map((m) => m.id)
+          ),
+      ])
+    : [{ data: [] }, { data: [] }];
+  const viewedMessageIds = (views ?? []).map((v) => v.message_id);
 
   await markChatAsRead();
 
@@ -68,6 +86,7 @@ export default async function ChatPage() {
         <ChatRoom
           initialMessages={initialMessages}
           initialReactions={reactions ?? []}
+          initialViewedMessageIds={viewedMessageIds}
           profilesById={profilesById}
           currentUserId={user.id}
         />

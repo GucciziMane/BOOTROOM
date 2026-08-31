@@ -250,12 +250,27 @@ export interface Database {
           user_id: string;
           content: string;
           image_url: string | null;
+          is_ephemeral: boolean;
           created_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["chat_messages"]["Row"]> & {
           user_id: string;
         };
         Update: Partial<Database["public"]["Tables"]["chat_messages"]["Row"]>;
+        Relationships: [];
+      };
+      chat_message_views: {
+        Row: {
+          id: number;
+          message_id: number;
+          user_id: string;
+          viewed_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["chat_message_views"]["Row"]> & {
+          message_id: number;
+          user_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["chat_message_views"]["Row"]>;
         Relationships: [];
       };
       push_subscriptions: {

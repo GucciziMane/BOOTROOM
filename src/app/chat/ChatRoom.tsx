@@ -7,6 +7,7 @@ import {
   subscribeToPush,
   unsubscribeFromPush,
   toggleReaction,
+  markPhotoViewed,
   type SendChatMessageState,
 } from "./actions";
 import { createClient } from "@/lib/supabase/client";
@@ -36,6 +37,7 @@ interface ChatMessage {
   userId: string;
   content: string;
   imageUrl: string | null;
+  isEphemeral: boolean;
   createdAt: string;
 }
 
@@ -59,11 +61,13 @@ const initialState: SendChatMessageState = { error: null };
 export function ChatRoom({
   initialMessages,
   initialReactions,
+  initialViewedMessageIds,
   profilesById,
   currentUserId,
 }: {
   initialMessages: ChatMessage[];
   initialReactions: Array<{ id: number; message_id: number; user_id: string; emoji: string }>;
+  initialViewedMessageIds: number[];
   profilesById: Record<string, ProfileInfo>;
   currentUserId: string;
 }) {
@@ -73,6 +77,8 @@ export function ChatRoom({
       initialReactions.map((r) => [r.id, { id: r.id, messageId: r.message_id, userId: r.user_id, emoji: r.emoji }])
     )
   );
+  const [viewedIds, setViewedIds] = useState<Set<number>>(() => new Set(initialViewedMessageIds));
+  const [openedPhoto, setOpenedPhoto] = useState<ChatMessage | null>(null);
   const [openPickerFor, setOpenPickerFor] = useState<number | null>(null);
   const [state, formAction, isPending] = useActionState(sendChatMessage, initialState);
   const [notifications, setNotifications] = useState({ supported: false, on: false });
@@ -81,36 +87,65 @@ export function ChatRoom({
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
+  const [isEphemeralPick, setIsEphemeralPick] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const formImageInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
   const wasPending = useRef(false);
 
-  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  function processSelectedFile(file: File, ephemeral: boolean) {
     if (file.size > MAX_IMAGE_BYTES) {
       setImageError("Image trop lourde (5 Mo max).");
-      e.target.value = "";
       return;
     }
     setImageError(null);
     setImageFile(file);
+    setIsEphemeralPick(ephemeral);
     setImagePreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return URL.createObjectURL(file);
     });
+    // Les deux boutons (caméra / pellicule) sont des inputs "jetables" hors formulaire : le
+    // fichier retenu est transplanté dans ce champ caché `name="image"`, seul lu à l'envoi.
+    if (formImageInputRef.current) {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      formImageInputRef.current.files = dt.files;
+    }
+  }
+
+  function handleCameraChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) processSelectedFile(file, true);
+  }
+
+  function handleGalleryChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) processSelectedFile(file, false);
   }
 
   function clearImage() {
     setImageFile(null);
+    setIsEphemeralPick(false);
     setImagePreviewUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return null;
     });
     setImageError(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (formImageInputRef.current) formImageInputRef.current.value = "";
+  }
+
+  async function openEphemeralPhoto(m: ChatMessage) {
+    setOpenedPhoto(m);
+    if (!viewedIds.has(m.id)) {
+      setViewedIds((prev) => new Set(prev).add(m.id));
+      await markPhotoViewed(m.id);
+    }
   }
 
   const mentionableUsers = Object.entries(profilesById).map(([id, p]) => ({ id, username: p.username }));
@@ -252,6 +287,7 @@ export function ChatRoom({
             user_id: string;
             content: string;
             image_url: string | null;
+            is_ephemeral: boolean;
             created_at: string;
           };
           setMessages((prev) =>
@@ -264,6 +300,7 @@ export function ChatRoom({
                     userId: row.user_id,
                     content: row.content,
                     imageUrl: row.image_url,
+                    isEphemeral: row.is_ephemeral,
                     createdAt: row.created_at,
                   },
                 ]
@@ -351,6 +388,8 @@ export function ChatRoom({
           }
           const hasReactions = Object.keys(reactionGroups).length > 0;
           const mentionsMe = !isOwn && !!currentUsername && m.content.includes(`@${currentUsername}`);
+          const isLockedEphemeral = m.isEphemeral && m.imageUrl && !isOwn && !viewedIds.has(m.id);
+          const isConsumedEphemeral = m.isEphemeral && m.imageUrl && !isOwn && viewedIds.has(m.id);
           return (
             <div key={m.id} className={`flex items-end gap-2 ${isOwn ? "flex-row-reverse" : ""}`}>
               {!isOwn && (
@@ -371,43 +410,72 @@ export function ChatRoom({
                 {!isOwn && (
                   <p className="mb-1 px-1 text-[11px] font-bold text-mute">{profile?.username ?? "?"}</p>
                 )}
-                {m.imageUrl && (
-                  <a
-                    href={m.imageUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`block overflow-hidden rounded-2xl ${m.content ? "mb-1" : ""} ${isOwn ? "rounded-br-md" : "rounded-bl-md"}`}
+                {isLockedEphemeral ? (
+                  <button
+                    type="button"
+                    onClick={() => openEphemeralPhoto(m)}
+                    className="flex items-center gap-2 rounded-2xl rounded-bl-md bg-accent px-4 py-3 text-paper shadow-sm transition-transform active:scale-95"
                   >
-                    <Image
-                      src={m.imageUrl}
-                      alt=""
-                      width={280}
-                      height={280}
-                      sizes="280px"
-                      className="h-auto max-h-72 w-full max-w-[240px] object-cover"
-                    />
-                  </a>
-                )}
-                {m.content && (
-                  <div
-                    className={`px-3.5 py-2 text-[15px] leading-snug ${
-                      isOwn
-                        ? "rounded-2xl rounded-br-md bg-accent text-paper"
-                        : mentionsMe
-                          ? "rounded-2xl rounded-bl-md bg-accent-soft text-ink ring-1 ring-inset ring-accent"
-                          : "rounded-2xl rounded-bl-md bg-paper text-ink shadow-sm"
-                    }`}
-                  >
-                    {splitContentByMentions(m.content, allUsernames).map((part, i) =>
-                      part.isMention ? (
-                        <span key={i} className={`font-bold ${isOwn ? "text-warn-bg" : "text-accent-hover"}`}>
-                          {part.text}
-                        </span>
-                      ) : (
-                        <span key={i}>{part.text}</span>
-                      )
-                    )}
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="5" width="18" height="15" rx="2.5" />
+                      <circle cx="12" cy="12.5" r="3.5" />
+                    </svg>
+                    <span className="text-sm font-bold">Photo à voir une fois — appuie</span>
+                  </button>
+                ) : isConsumedEphemeral ? (
+                  <div className="flex items-center gap-2 rounded-2xl rounded-bl-md bg-paper px-4 py-3 text-mute shadow-sm">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z" />
+                      <path d="M4 4l16 16" />
+                    </svg>
+                    <span className="text-sm font-semibold">Photo vue</span>
                   </div>
+                ) : (
+                  <>
+                    {m.imageUrl && (
+                      <a
+                        href={m.imageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`relative block overflow-hidden rounded-2xl ${m.content ? "mb-1" : ""} ${isOwn ? "rounded-br-md" : "rounded-bl-md"}`}
+                      >
+                        <Image
+                          src={m.imageUrl}
+                          alt=""
+                          width={280}
+                          height={280}
+                          sizes="280px"
+                          className="h-auto max-h-72 w-full max-w-[240px] object-cover"
+                        />
+                        {m.isEphemeral && isOwn && (
+                          <span className="absolute left-1.5 top-1.5 rounded-full bg-ink/70 px-2 py-0.5 text-[10px] font-bold text-paper">
+                            Vue unique
+                          </span>
+                        )}
+                      </a>
+                    )}
+                    {m.content && (
+                      <div
+                        className={`px-3.5 py-2 text-[15px] leading-snug ${
+                          isOwn
+                            ? "rounded-2xl rounded-br-md bg-accent text-paper"
+                            : mentionsMe
+                              ? "rounded-2xl rounded-bl-md bg-accent-soft text-ink ring-1 ring-inset ring-accent"
+                              : "rounded-2xl rounded-bl-md bg-paper text-ink shadow-sm"
+                        }`}
+                      >
+                        {splitContentByMentions(m.content, allUsernames).map((part, i) =>
+                          part.isMention ? (
+                            <span key={i} className={`font-bold ${isOwn ? "text-warn-bg" : "text-accent-hover"}`}>
+                              {part.text}
+                            </span>
+                          ) : (
+                            <span key={i}>{part.text}</span>
+                          )
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
                 <div className="relative mt-1 flex items-center gap-1.5 px-1">
                   <p className="text-[10px] text-mute">{formatParisDateTime(m.createdAt)}</p>
@@ -468,6 +536,11 @@ export function ChatRoom({
           <div className="relative inline-block">
             {/* eslint-disable-next-line @next/next/no-img-element -- object URL local, non compatible avec le loader next/image */}
             <img src={imagePreviewUrl} alt="" className="h-20 w-20 rounded-xl object-cover shadow-sm" />
+            {isEphemeralPick && (
+              <span className="absolute bottom-1 left-1 rounded-full bg-ink/70 px-1.5 py-0.5 text-[9px] font-bold text-paper">
+                1x
+              </span>
+            )}
             <button
               type="button"
               onClick={clearImage}
@@ -482,18 +555,38 @@ export function ChatRoom({
         </div>
       )}
       <form ref={formRef} action={formAction} className="flex items-center gap-2 p-4 pt-2">
+        <input ref={formImageInputRef} type="file" name="image" className="hidden" />
+        <input type="hidden" name="ephemeral" value={isEphemeralPick ? "1" : "0"} />
         <input
-          ref={fileInputRef}
+          ref={cameraInputRef}
           type="file"
-          name="image"
           accept="image/*"
-          onChange={handleImageChange}
+          capture="environment"
+          onChange={handleCameraChange}
+          className="hidden"
+        />
+        <input
+          ref={galleryInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleGalleryChange}
           className="hidden"
         />
         <button
           type="button"
-          onClick={() => fileInputRef.current?.click()}
-          aria-label="Ajouter une photo"
+          onClick={() => cameraInputRef.current?.click()}
+          aria-label="Prendre une photo (vue une seule fois)"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-paper text-mute shadow-sm transition-colors hover:text-ink"
+        >
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 8h3l1.5-2.5h7L17 8h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
+            <circle cx="12" cy="13.5" r="3.5" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          onClick={() => galleryInputRef.current?.click()}
+          aria-label="Choisir depuis la pellicule"
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-paper text-mute shadow-sm transition-colors hover:text-ink"
         >
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -542,6 +635,34 @@ export function ChatRoom({
         </button>
       </form>
       {state.error && <p className="px-4 pb-4 text-sm text-bad">{state.error}</p>}
+      {openedPhoto?.imageUrl && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 p-4"
+          onClick={() => setOpenedPhoto(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setOpenedPhoto(null)}
+            aria-label="Fermer"
+            className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-paper/20 text-paper"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+          <div className="relative max-h-[80vh] w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <Image
+              src={openedPhoto.imageUrl}
+              alt=""
+              width={800}
+              height={800}
+              sizes="480px"
+              className="h-auto max-h-[80vh] w-full rounded-2xl object-contain"
+            />
+          </div>
+          {openedPhoto.content && <p className="mt-4 max-w-md text-center text-paper">{openedPhoto.content}</p>}
+        </div>
+      )}
     </div>
   );
 }

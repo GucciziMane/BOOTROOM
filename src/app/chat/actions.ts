@@ -51,13 +51,19 @@ export async function sendChatMessage(
     imageUrl = publicUrl;
   }
 
-  const { error } = await supabase.from("chat_messages").insert({ user_id: user.id, content, image_url: imageUrl });
+  // Éphémère seulement pour les photos prises avec l'appareil (bouton caméra) : celles choisies
+  // dans la pellicule restent des photos classiques, comme convenu avec l'utilisateur.
+  const isEphemeral = hasImage && formData.get("ephemeral") === "1";
+
+  const { error } = await supabase
+    .from("chat_messages")
+    .insert({ user_id: user.id, content, image_url: imageUrl, is_ephemeral: isEphemeral });
   if (error) return { error: error.message };
 
   const { data: profiles } = await supabase.from("profiles").select("id, username");
   const senderName = profiles?.find((p) => p.id === user.id)?.username ?? "Quelqu'un";
   const mentionedUserIds = extractMentionedUserIds(content, profiles ?? []).filter((id) => id !== user.id);
-  const pushBody = content || "📷 Photo";
+  const pushBody = isEphemeral ? "📸 Photo à voir une fois" : content || "📷 Photo";
 
   try {
     if (mentionedUserIds.length > 0) {
@@ -132,6 +138,20 @@ export async function toggleReaction(messageId: number, emoji: string): Promise<
   }
 
   revalidatePath("/chat");
+}
+
+/** Enregistre qu'une photo éphémère a été vue par l'utilisateur courant : idempotent (une
+ * contrainte unique message_id+user_id), pour qu'un double appui ne fasse pas d'erreur. */
+export async function markPhotoViewed(messageId: number): Promise<void> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  await supabase
+    .from("chat_message_views")
+    .upsert({ message_id: messageId, user_id: user.id }, { onConflict: "message_id,user_id", ignoreDuplicates: true });
 }
 
 export async function markChatAsRead(): Promise<void> {
