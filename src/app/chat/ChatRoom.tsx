@@ -129,6 +129,13 @@ export function ChatRoom({
       audio: false,
     });
     cameraStreamRef.current = stream;
+    // Nécessaire ici en plus de l'effet ci-dessous : lors d'un changement de caméra, la <video>
+    // est déjà montée et cameraOpen ne change pas, donc l'effet keyé sur [cameraOpen] ne se
+    // redéclenche pas — sans cette ligne l'écran reste noir sur le flux (arrêté) précédent.
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play().catch(() => {});
+    }
     setFacingMode(mode);
     const caps = stream.getVideoTracks()[0]?.getCapabilities?.() as TorchCapabilities | undefined;
     setTorchSupported(!!caps?.torch);
