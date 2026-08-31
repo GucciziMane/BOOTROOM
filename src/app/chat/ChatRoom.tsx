@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import {
   sendChatMessage,
@@ -42,6 +43,15 @@ interface ChatMessage {
 }
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+// Le flash ("torch") n'est pas dans les types DOM standard : capacité expérimentale, supportée
+// seulement sur certains Chrome Android (jamais sur iOS Safari, limitation de la plateforme).
+interface TorchCapabilities extends MediaTrackCapabilities {
+  torch?: boolean;
+}
+interface TorchConstraintSet extends MediaTrackConstraintSet {
+  torch?: boolean;
+}
 
 interface ProfileInfo {
   username: string;
@@ -89,6 +99,9 @@ export function ChatRoom({
   const [imageError, setImageError] = useState<string | null>(null);
   const [isEphemeralPick, setIsEphemeralPick] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
+  const [torchSupported, setTorchSupported] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -99,27 +112,62 @@ export function ChatRoom({
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const wasPending = useRef(false);
 
-  // Caméra arrière filmée en direct dans la page (au lieu de déléguer à l'appli photo native du
+  // Caméra filmée en direct dans la page (au lieu de déléguer à l'appli photo native du
   // téléphone) : certains navigateurs mobiles ignorent capture="environment" ou renvoient une
-  // photo mirroir/pivotée selon le mode utilisé — ici on choisit nous-mêmes la caméra arrière
-  // (facingMode "environment") et on capture l'image telle quelle, sans transformation.
+  // photo mirroir/pivotée selon le mode utilisé — ici on choisit nous-mêmes quelle caméra ouvrir
+  // (avant/arrière) et on maîtrise la capture. La caméra avant est mirée à l'écran (usage normal,
+  // comme un miroir) mais la photo enregistrée est dé-mirée pour rester lisible, contrairement au
+  // souci d'origine.
   function stopCameraStream() {
     cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
     cameraStreamRef.current = null;
   }
 
+  async function startStream(mode: "environment" | "user") {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: mode } },
+      audio: false,
+    });
+    cameraStreamRef.current = stream;
+    setFacingMode(mode);
+    const caps = stream.getVideoTracks()[0]?.getCapabilities?.() as TorchCapabilities | undefined;
+    setTorchSupported(!!caps?.torch);
+    setTorchOn(false);
+  }
+
   async function openCamera() {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-        audio: false,
-      });
-      cameraStreamRef.current = stream;
+      await startStream("environment");
       setCameraOpen(true);
     } catch {
       // Caméra live indisponible (permission refusée, API non supportée...) : on retombe sur le
       // sélecteur caméra natif du téléphone plutôt que de bloquer l'envoi de photo.
       cameraInputRef.current?.click();
+    }
+  }
+
+  async function switchCamera() {
+    const previous = facingMode;
+    const next = previous === "environment" ? "user" : "environment";
+    stopCameraStream();
+    try {
+      await startStream(next);
+    } catch {
+      // Bascule impossible (une seule caméra dispo, permission...) : on retente l'ancienne pour
+      // ne pas rester sans flux, et on ferme si même ça échoue.
+      await startStream(previous).catch(closeCamera);
+    }
+  }
+
+  async function toggleTorch() {
+    const track = cameraStreamRef.current?.getVideoTracks()[0];
+    if (!track) return;
+    try {
+      await track.applyConstraints({ advanced: [{ torch: !torchOn } as TorchConstraintSet] });
+      setTorchOn((v) => !v);
+    } catch {
+      // Contrainte "torch" refusée malgré la capacité annoncée : rien à faire, le bouton reste
+      // visible mais sans effet plutôt que de planter la capture.
     }
   }
 
@@ -136,6 +184,12 @@ export function ChatRoom({
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    if (facingMode === "user") {
+      // La caméra avant est affichée mirée (naturel, comme un miroir) mais on dé-mire la capture
+      // pour que le texte/l'orientation restent lisibles sur la photo envoyée.
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+    }
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     canvas.toBlob(
       (blob) => {
@@ -693,60 +747,99 @@ export function ChatRoom({
         </button>
       </form>
       {state.error && <p className="px-4 pb-4 text-sm text-bad">{state.error}</p>}
-      {openedPhoto?.imageUrl && (
-        <div
-          className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 p-4"
-          onClick={() => setOpenedPhoto(null)}
-        >
-          <button
-            type="button"
+      {openedPhoto?.imageUrl &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 p-4"
             onClick={() => setOpenedPhoto(null)}
-            aria-label="Fermer"
-            className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-paper/20 text-paper"
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
-          <div className="relative max-h-[80vh] w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-            <Image
-              src={openedPhoto.imageUrl}
-              alt=""
-              width={800}
-              height={800}
-              sizes="480px"
-              className="h-auto max-h-[80vh] w-full rounded-2xl object-contain"
-            />
-          </div>
-          {openedPhoto.content && <p className="mt-4 max-w-md text-center text-paper">{openedPhoto.content}</p>}
-        </div>
-      )}
-      {cameraOpen && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black">
-          <video ref={videoRef} autoPlay playsInline muted className="h-full w-full object-cover" />
-          <p className="absolute left-4 top-4 rounded-full bg-black/40 px-3 py-1 text-xs font-semibold text-paper">
-            📸 Photo à voir une fois
-          </p>
-          <button
-            type="button"
-            onClick={closeCamera}
-            aria-label="Fermer la caméra"
-            className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-paper/20 text-paper"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
-          <div className="absolute bottom-8 left-0 right-0 flex items-center justify-center">
             <button
               type="button"
-              onClick={capturePhoto}
-              aria-label="Prendre la photo"
-              className="h-16 w-16 rounded-full border-4 border-paper bg-paper/30 transition-transform active:scale-95"
+              onClick={() => setOpenedPhoto(null)}
+              aria-label="Fermer"
+              className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-paper/20 text-paper"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+            <div className="relative max-h-[80vh] w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+              <Image
+                src={openedPhoto.imageUrl}
+                alt=""
+                width={800}
+                height={800}
+                sizes="480px"
+                className="h-auto max-h-[80vh] w-full rounded-2xl object-contain"
+              />
+            </div>
+            {openedPhoto.content && <p className="mt-4 max-w-md text-center text-paper">{openedPhoto.content}</p>}
+          </div>,
+          document.body
+        )}
+      {cameraOpen &&
+        createPortal(
+          <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className={`h-full w-full object-cover ${facingMode === "user" ? "scale-x-[-1]" : ""}`}
             />
-          </div>
-        </div>
-      )}
+            <p className="absolute left-4 top-4 rounded-full bg-black/40 px-3 py-1 text-xs font-semibold text-paper">
+              📸 Photo à voir une fois
+            </p>
+            <div className="absolute right-4 top-4 flex items-center gap-2">
+              {torchSupported && (
+                <button
+                  type="button"
+                  onClick={toggleTorch}
+                  aria-label={torchOn ? "Désactiver le flash" : "Activer le flash"}
+                  className={`flex h-9 w-9 items-center justify-center rounded-full text-paper ${
+                    torchOn ? "bg-accent" : "bg-paper/20"
+                  }`}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" />
+                  </svg>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={closeCamera}
+                aria-label="Fermer la caméra"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-paper/20 text-paper"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <path d="M6 6l12 12M18 6L6 18" />
+                </svg>
+              </button>
+            </div>
+            <div className="absolute bottom-8 left-0 right-0 flex items-center justify-center">
+              <button
+                type="button"
+                onClick={capturePhoto}
+                aria-label="Prendre la photo"
+                className="h-16 w-16 rounded-full border-4 border-paper bg-paper/30 transition-transform active:scale-95"
+              />
+              <button
+                type="button"
+                onClick={switchCamera}
+                aria-label="Changer de caméra"
+                className="absolute left-1/2 ml-16 flex h-11 w-11 items-center justify-center rounded-full bg-paper/20 text-paper"
+              >
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z" />
+                  <path d="M9 12a3 3 0 1 0 3-3" />
+                  <path d="M9 9V7.5" />
+                  <path d="M9 9H7.5" />
+                </svg>
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
