@@ -1,7 +1,13 @@
 name: Refresh match scores
 on:
+  # GitHub n'exécute pas les cron programmés à l'heure garantie (retard voire abandon possibles
+  # sous charge, c'est documenté, rien à corriger côté config) : un run le 31/08 a par exemple
+  # attendu 5h30 au lieu de 2h. On tourne donc toutes les 30 min plutôt que toutes les 2h pour que
+  # la fenêtre de 2h reste couverte même avec ce genre de retard — tout est idempotent (upserts,
+  # contrainte unique sur points_ledger, garde-fou anti-régression), donc les passages en plus ne
+  # font que revérifier, jamais de doublon.
   schedule:
-    - cron: "0 */2 * * *"
+    - cron: "*/30 * * * *"
   workflow_dispatch: {}
 jobs:
   refresh:
