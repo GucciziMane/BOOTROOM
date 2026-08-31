@@ -88,13 +88,71 @@ export function ChatRoom({
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
   const [isEphemeralPick, setIsEphemeralPick] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const formImageInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
   const wasPending = useRef(false);
+
+  // Caméra arrière filmée en direct dans la page (au lieu de déléguer à l'appli photo native du
+  // téléphone) : certains navigateurs mobiles ignorent capture="environment" ou renvoient une
+  // photo mirroir/pivotée selon le mode utilisé — ici on choisit nous-mêmes la caméra arrière
+  // (facingMode "environment") et on capture l'image telle quelle, sans transformation.
+  function stopCameraStream() {
+    cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
+    cameraStreamRef.current = null;
+  }
+
+  async function openCamera() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false,
+      });
+      cameraStreamRef.current = stream;
+      setCameraOpen(true);
+    } catch {
+      // Caméra live indisponible (permission refusée, API non supportée...) : on retombe sur le
+      // sélecteur caméra natif du téléphone plutôt que de bloquer l'envoi de photo.
+      cameraInputRef.current?.click();
+    }
+  }
+
+  function closeCamera() {
+    stopCameraStream();
+    setCameraOpen(false);
+  }
+
+  function capturePhoto() {
+    const video = videoRef.current;
+    if (!video || video.videoWidth === 0) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) return;
+        processSelectedFile(new File([blob], `photo-${Date.now()}.jpg`, { type: "image/jpeg" }), true);
+        closeCamera();
+      },
+      "image/jpeg",
+      0.9
+    );
+  }
+
+  useEffect(() => {
+    if (cameraOpen && videoRef.current) videoRef.current.srcObject = cameraStreamRef.current;
+  }, [cameraOpen]);
+
+  useEffect(() => stopCameraStream, []);
 
   function processSelectedFile(file: File, ephemeral: boolean) {
     if (file.size > MAX_IMAGE_BYTES) {
@@ -574,7 +632,7 @@ export function ChatRoom({
         />
         <button
           type="button"
-          onClick={() => cameraInputRef.current?.click()}
+          onClick={openCamera}
           aria-label="Prendre une photo (vue une seule fois)"
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-paper text-mute shadow-sm transition-colors hover:text-ink"
         >
@@ -661,6 +719,32 @@ export function ChatRoom({
             />
           </div>
           {openedPhoto.content && <p className="mt-4 max-w-md text-center text-paper">{openedPhoto.content}</p>}
+        </div>
+      )}
+      {cameraOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black">
+          <video ref={videoRef} autoPlay playsInline muted className="h-full w-full object-cover" />
+          <p className="absolute left-4 top-4 rounded-full bg-black/40 px-3 py-1 text-xs font-semibold text-paper">
+            📸 Photo à voir une fois
+          </p>
+          <button
+            type="button"
+            onClick={closeCamera}
+            aria-label="Fermer la caméra"
+            className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-paper/20 text-paper"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+          <div className="absolute bottom-8 left-0 right-0 flex items-center justify-center">
+            <button
+              type="button"
+              onClick={capturePhoto}
+              aria-label="Prendre la photo"
+              className="h-16 w-16 rounded-full border-4 border-paper bg-paper/30 transition-transform active:scale-95"
+            />
+          </div>
         </div>
       )}
     </div>
