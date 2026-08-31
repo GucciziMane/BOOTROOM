@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Instrument_Sans } from "next/font/google";
 import { createClient } from "@/lib/supabase/server";
 import { BottomNav } from "./BottomNav";
@@ -61,24 +62,38 @@ async function getClubTheme(): Promise<ClubTheme> {
   };
 }
 
-export default async function RootLayout({ children }: LayoutProps<"/">) {
+// Composant à part, chargé sous Suspense : le thème de club demande 2-3 allers-retours Supabase
+// séquentiels (auth puis profil puis équipe). Avant, ce await était directement dans RootLayout et
+// bloquait l'affichage de TOUTE la coquille (y compris {children}) derrière ces requêtes sur
+// chaque navigation — un gros contributeur au temps de chargement perçu au lancement de la PWA.
+// Isolé ici, le reste de la page peut s'afficher immédiatement pendant que ça résout.
+async function ClubThemeLayer() {
   const clubTheme = await getClubTheme();
+  return (
+    <>
+      <ClubCrestWatermark enabled={clubTheme.enabled} crestUrl={clubTheme.crestUrl} />
+      <ThemeApplier
+        enabled={clubTheme.enabled}
+        primaryColor={clubTheme.primaryColor}
+        secondaryColor={clubTheme.secondaryColor}
+      />
+    </>
+  );
+}
 
+export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="fr" className={`${comicNeue.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col pb-32 lg:pb-0">
-        <ClubCrestWatermark enabled={clubTheme.enabled} crestUrl={clubTheme.crestUrl} />
+        <Suspense fallback={null}>
+          <ClubThemeLayer />
+        </Suspense>
         {/* position:relative pour peindre au-dessus du filigrane (voir ThemeApplier.tsx) : un
             z-index négatif sur un élément fixed s'est révélé invisible dans certains moteurs de
             rendu (recouvert par le fond du body), donc le filigrane utilise z-0 et c'est ce
             wrapper, plus tardif dans le DOM et lui aussi "positionné", qui passe par-dessus. */}
         <div className="relative z-10 flex flex-1 flex-col">{children}</div>
         <BottomNav />
-        <ThemeApplier
-          enabled={clubTheme.enabled}
-          primaryColor={clubTheme.primaryColor}
-          secondaryColor={clubTheme.secondaryColor}
-        />
       </body>
     </html>
   );
