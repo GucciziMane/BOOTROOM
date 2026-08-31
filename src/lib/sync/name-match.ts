@@ -9,6 +9,17 @@ const SPECIAL_LETTERS: Record<string, string> = {
   ı: "i",
 };
 
+// Formes courtes/anglicisées qu'utilise parfois Highlightly et qui ne partagent aucun token avec
+// le nom complet côté football-data.org (donc ni sous-ensemble, ni sigle) : trouvées en comparant
+// systématiquement les deux sources sur les 5 championnats (ex: Highlightly dit "Rennes FC",
+// nous avons "Stade Rennais FC 1901" — aucun mot en commun sans cet alias).
+const TOKEN_ALIASES: Record<string, string> = {
+  rennes: "rennais", // Rennes FC -> Stade Rennais
+  lyon: "lyonnais", // Lyon -> Olympique Lyonnais
+  munich: "munchen", // Bayern Munich -> Bayern München (accent déjà retiré par ce point-là)
+  estac: "es", // Estac Troyes -> ES Troyes AC
+};
+
 /** Normalise un nom pour comparaison : minuscules, sans accents, sans ponctuation ni suffixes de club. */
 export function normalizeName(raw: string): string {
   return raw
@@ -18,7 +29,10 @@ export function normalizeName(raw: string): string {
     .replace(/[̀-ͯ]/g, "") // accents (marques diacritiques combinantes après NFD)
     .replace(/\b(fc|cf|sc|ac|as|rc|ol|om|psg|club|calcio|cd|ud|sd|uc)\b/g, "")
     .replace(/[^a-z0-9]+/g, " ") // ponctuation (tirets, apostrophes...) -> espace, pour séparer les mots composés
-    .trim();
+    .trim()
+    .split(" ")
+    .map((token) => TOKEN_ALIASES[token] ?? token)
+    .join(" ");
 }
 
 // Mots de liaison ignorés pour la comparaison de sous-ensemble, mais conservés dans le nom
