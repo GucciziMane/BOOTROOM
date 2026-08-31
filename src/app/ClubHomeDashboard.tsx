@@ -41,21 +41,21 @@ export function ClubHomeDashboard({ data }: { data: ClubHomeData }) {
 
         {data.standing && (
           <div className="mt-5 grid grid-cols-3 gap-2">
-            <div className="rounded-2xl bg-white/10 px-2 py-3">
+            <div className="flex flex-col items-center justify-center rounded-2xl bg-white/10 px-2 py-3">
               <div className="text-lg font-extrabold" style={{ color: accent }}>
                 {ORDINAL(data.standing.position)}
               </div>
               <div className="mt-0.5 text-[10px] font-semibold text-white/65">Position</div>
             </div>
-            <div className="rounded-2xl bg-white/10 px-2 py-3">
+            <div className="flex flex-col items-center justify-center rounded-2xl bg-white/10 px-2 py-3">
               <div className="text-lg font-extrabold" style={{ color: accent }}>
                 {data.standing.points}
               </div>
               <div className="mt-0.5 text-[10px] font-semibold text-white/65">Points</div>
             </div>
-            <div className="rounded-2xl bg-white/10 px-2 py-3">
+            <div className="flex flex-col items-center justify-center rounded-2xl bg-white/10 px-2 py-3">
               {data.standing.form.length > 0 ? (
-                <div className="flex items-center justify-center gap-1">
+                <div className="flex items-center justify-center gap-1 py-2">
                   {data.standing.form.map((r, i) => (
                     <span
                       key={i}
@@ -66,7 +66,7 @@ export function ClubHomeDashboard({ data }: { data: ClubHomeData }) {
               ) : (
                 <div className="text-lg font-extrabold text-white/50">&mdash;</div>
               )}
-              <div className="mt-1.5 text-[10px] font-semibold text-white/65">Forme</div>
+              <div className="mt-0.5 text-[10px] font-semibold text-white/65">Forme</div>
             </div>
           </div>
         )}
