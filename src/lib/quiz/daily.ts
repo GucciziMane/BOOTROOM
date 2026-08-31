@@ -238,11 +238,19 @@ async function fetchFinishedMatches(supabase: ServiceClient, leagueIds: number[]
 }
 
 /** "Ces 3 joueurs jouent dans la même équipe, qui est le 4e ?" — généré depuis les vrais effectifs. */
-function genHiddenTeammate(data: LeagueData, position: number, seedStr: string): DailyQuestionFull | null {
-  const eligibleTeams = data.teams.filter((t) => (data.playersByTeam.get(t.id)?.length ?? 0) >= 4);
+function genHiddenTeammate(
+  data: LeagueData,
+  position: number,
+  seedStr: string,
+  excludeTeamIds: Set<number>
+): DailyQuestionFull | null {
+  const eligibleTeams = data.teams.filter(
+    (t) => (data.playersByTeam.get(t.id)?.length ?? 0) >= 4 && !excludeTeamIds.has(t.id)
+  );
   if (eligibleTeams.length === 0) return null;
 
   const team = seededShuffle(eligibleTeams, `${seedStr}-team`)[0];
+  excludeTeamIds.add(team.id);
   const teamPlayers = seededShuffle(data.playersByTeam.get(team.id)!, `${seedStr}-squad`);
   const [p1, p2, p3, hidden] = teamPlayers;
 
@@ -270,11 +278,17 @@ function genHiddenTeammate(data: LeagueData, position: number, seedStr: string):
 }
 
 /** "Quel club est représenté par ce blason ?" — généré depuis les vrais blasons suivis par l'app. */
-function genGuessCrest(data: LeagueData, position: number, seedStr: string): DailyQuestionFull | null {
-  const teamsWithLogo = data.teams.filter((t) => t.logo_url);
+function genGuessCrest(
+  data: LeagueData,
+  position: number,
+  seedStr: string,
+  excludeTeamIds: Set<number>
+): DailyQuestionFull | null {
+  const teamsWithLogo = data.teams.filter((t) => t.logo_url && !excludeTeamIds.has(t.id));
   if (teamsWithLogo.length < 4) return null;
 
   const team = seededShuffle(teamsWithLogo, `${seedStr}-team`)[0];
+  excludeTeamIds.add(team.id);
   const decoys = seededShuffle(
     teamsWithLogo.filter((t) => t.id !== team.id),
     `${seedStr}-decoys`
@@ -296,10 +310,17 @@ function genGuessCrest(data: LeagueData, position: number, seedStr: string): Dai
 }
 
 /** "Dans quel club évolue ce joueur ?" — généré depuis les vrais effectifs. */
-function genGuessPlayerTeam(data: LeagueData, position: number, seedStr: string): DailyQuestionFull | null {
-  if (data.players.length === 0 || data.teams.length < 4) return null;
+function genGuessPlayerTeam(
+  data: LeagueData,
+  position: number,
+  seedStr: string,
+  excludePlayerIds: Set<number>
+): DailyQuestionFull | null {
+  const eligiblePlayers = data.players.filter((p) => !excludePlayerIds.has(p.id));
+  if (eligiblePlayers.length === 0 || data.teams.length < 4) return null;
 
-  const player = seededShuffle(data.players, `${seedStr}-player`)[0];
+  const player = seededShuffle(eligiblePlayers, `${seedStr}-player`)[0];
+  excludePlayerIds.add(player.id);
   const correctTeam = data.teams.find((t) => t.id === player.team_id);
   if (!correctTeam) return null;
 
@@ -328,11 +349,14 @@ function genGuessMatchScore(
   matches: MatchRow[],
   teamsById: Map<number, TeamLite>,
   position: number,
-  seedStr: string
+  seedStr: string,
+  excludeMatchIds: Set<number>
 ): DailyQuestionFull | null {
-  if (matches.length === 0) return null;
+  const eligibleMatches = matches.filter((m) => !excludeMatchIds.has(m.id));
+  if (eligibleMatches.length === 0) return null;
 
-  const match = seededShuffle(matches, `${seedStr}-match`)[0];
+  const match = seededShuffle(eligibleMatches, `${seedStr}-match`)[0];
+  excludeMatchIds.add(match.id);
   const home = teamsById.get(match.home_team_id);
   const away = teamsById.get(match.away_team_id);
   if (!home || !away) return null;
@@ -432,19 +456,27 @@ async function getOrGenerateDynamicQuestions(
   const teamsById = new Map(leagueData.teams.map((t) => [t.id, t]));
   const typeOrder = seededShuffle(DYNAMIC_TYPE_POOL, `${quizDate}-dynamic-order`);
 
+  // Un même type peut tomber sur plusieurs positions le même jour (le sac en contient 2 pour
+  // crest/player-team/match-score) : ces ensembles, partagés entre les appels, empêchent deux
+  // positions du même type de retomber sur la même équipe/joueur/match ce jour-là.
+  const usedTeamIdsForCrest = new Set<number>();
+  const usedTeamIdsForHiddenTeammate = new Set<number>();
+  const usedPlayerIdsForPlayerTeam = new Set<number>();
+  const usedMatchIds = new Set<number>();
+
   const generated = dynamicPositions
     .map((position, idx) => {
       const type = typeOrder[idx % typeOrder.length];
       const seedStr = `${quizDate}-${position}`;
       switch (type) {
         case "hidden_teammate":
-          return genHiddenTeammate(leagueData, position, seedStr);
+          return genHiddenTeammate(leagueData, position, seedStr, usedTeamIdsForHiddenTeammate);
         case "guess_crest":
-          return genGuessCrest(leagueData, position, seedStr);
+          return genGuessCrest(leagueData, position, seedStr, usedTeamIdsForCrest);
         case "guess_player_team":
-          return genGuessPlayerTeam(leagueData, position, seedStr);
+          return genGuessPlayerTeam(leagueData, position, seedStr, usedPlayerIdsForPlayerTeam);
         case "guess_match_score":
-          return genGuessMatchScore(matches, teamsById, position, seedStr);
+          return genGuessMatchScore(matches, teamsById, position, seedStr, usedMatchIds);
       }
     })
     .filter((q): q is DailyQuestionFull => q !== null);
