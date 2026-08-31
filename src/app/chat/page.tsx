@@ -22,11 +22,26 @@ export default async function ChatPage() {
   ]);
 
   const favoriteTeamIds = [...new Set((profiles ?? []).map((p) => p.favorite_team_id).filter((id): id is number => id != null))];
-  const { data: favoriteTeams } = await supabase
-    .from("teams")
-    .select("id, logo_url")
-    .in("id", favoriteTeamIds.length > 0 ? favoriteTeamIds : [-1]);
+
+  // Aucune de ces requêtes ne dépend du résultat d'une autre (favoriteTeams ne dépend que de
+  // `profiles`, reactions/views que de `messages`, markChatAsRead que de `user.id`, déjà connus
+  // à ce stade) : tout part en parallèle plutôt qu'en 3 étapes séquentielles.
+  const messageIds = (messages ?? []).map((m) => m.id);
+  const [{ data: favoriteTeams }, { data: reactions }, { data: views }] = await Promise.all([
+    supabase
+      .from("teams")
+      .select("id, logo_url")
+      .in("id", favoriteTeamIds.length > 0 ? favoriteTeamIds : [-1]),
+    messageIds.length > 0
+      ? supabase.from("chat_message_reactions").select("id, message_id, user_id, emoji").in("message_id", messageIds)
+      : Promise.resolve({ data: [] }),
+    messageIds.length > 0
+      ? supabase.from("chat_message_views").select("message_id").eq("user_id", user.id).in("message_id", messageIds)
+      : Promise.resolve({ data: [] }),
+    markChatAsRead(user.id),
+  ]);
   const teamLogoById = new Map((favoriteTeams ?? []).map((t) => [t.id, t.logo_url]));
+  const viewedMessageIds = (views ?? []).map((v) => v.message_id);
 
   const profilesById = Object.fromEntries(
     (profiles ?? []).map((p) => [
@@ -50,29 +65,6 @@ export default async function ChatPage() {
       isEphemeral: m.is_ephemeral,
       createdAt: m.created_at,
     }));
-
-  const [{ data: reactions }, { data: views }] = messages?.length
-    ? await Promise.all([
-        supabase
-          .from("chat_message_reactions")
-          .select("id, message_id, user_id, emoji")
-          .in(
-            "message_id",
-            messages.map((m) => m.id)
-          ),
-        supabase
-          .from("chat_message_views")
-          .select("message_id")
-          .eq("user_id", user.id)
-          .in(
-            "message_id",
-            messages.map((m) => m.id)
-          ),
-      ])
-    : [{ data: [] }, { data: [] }];
-  const viewedMessageIds = (views ?? []).map((v) => v.message_id);
-
-  await markChatAsRead();
 
   return (
     <main className="mx-auto flex h-[calc(100dvh-8rem)] w-full max-w-2xl flex-col overflow-hidden p-6 lg:h-dvh">

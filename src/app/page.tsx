@@ -16,27 +16,32 @@ export default async function DashboardPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("username, avatar_url, is_admin, chat_last_read_at, favorite_team_id, use_club_theme")
-    .eq("id", user!.id)
-    .single();
-
-  const { count: unreadChatCount } = await supabase
-    .from("chat_messages")
-    .select("id", { count: "exact", head: true })
-    .neq("user_id", user!.id)
-    .gt("created_at", profile?.chat_last_read_at ?? "1970-01-01");
-
-  const leagues = await getFavoriteTeamLeagueGroups(supabase);
+  // Les deux premiers ne dépendent que de `user`, pas l'un de l'autre : lancés en parallèle
+  // plutôt qu'à la suite pour ne pas payer deux allers-retours Supabase l'un après l'autre.
+  const [{ data: profile }, leagues] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("username, avatar_url, is_admin, chat_last_read_at, favorite_team_id, use_club_theme")
+      .eq("id", user!.id)
+      .single(),
+    getFavoriteTeamLeagueGroups(supabase),
+  ]);
   const favoriteTeamLogoUrl = leagues
     .flatMap((l) => l.teams)
     .find((t) => t.id === profile?.favorite_team_id)?.logoUrl;
 
-  const clubHomeData =
+  // Pareil ici : le compteur de messages non lus et les données du club favori dépendent de
+  // `profile` mais pas l'un de l'autre.
+  const [{ count: unreadChatCount }, clubHomeData] = await Promise.all([
+    supabase
+      .from("chat_messages")
+      .select("id", { count: "exact", head: true })
+      .neq("user_id", user!.id)
+      .gt("created_at", profile?.chat_last_read_at ?? "1970-01-01"),
     profile?.use_club_theme && profile.favorite_team_id
-      ? await getClubHomeData(supabase, profile.favorite_team_id)
-      : null;
+      ? getClubHomeData(supabase, profile.favorite_team_id)
+      : Promise.resolve(null),
+  ]);
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-1 flex-col p-6">

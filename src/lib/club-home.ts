@@ -65,18 +65,12 @@ export async function getClubHomeData(supabase: SupaClient, teamId: number): Pro
 
   if (!team?.primary_color) return null;
 
-  const { data: league } = await supabase
-    .from("leagues")
-    .select("name, football_data_code")
-    .eq("id", team.league_id)
-    .maybeSingle();
-
-  const { data: seasons } = await supabase
-    .from("seasons")
-    .select("id")
-    .eq("league_id", team.league_id)
-    .order("year", { ascending: false })
-    .limit(1);
+  // Ni l'une ni l'autre ne dépend du résultat de l'autre (toutes deux ne demandent que
+  // team.league_id) : lancées en parallèle plutôt qu'à la suite.
+  const [{ data: league }, { data: seasons }] = await Promise.all([
+    supabase.from("leagues").select("name, football_data_code").eq("id", team.league_id).maybeSingle(),
+    supabase.from("seasons").select("id").eq("league_id", team.league_id).order("year", { ascending: false }).limit(1),
+  ]);
   const seasonId = seasons?.[0]?.id as number | undefined;
 
   const [{ data: leagueTeams }, { data: seasonMatches }, { data: nextMatchRow }, { data: lastResultRow }, { data: squadRows }] =

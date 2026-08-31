@@ -154,12 +154,9 @@ export async function markPhotoViewed(messageId: number): Promise<void> {
     .upsert({ message_id: messageId, user_id: user.id }, { onConflict: "message_id,user_id", ignoreDuplicates: true });
 }
 
-export async function markChatAsRead(): Promise<void> {
+/** Appelée uniquement depuis la page chat, qui a déjà l'utilisateur courant sous la main : pas
+ * besoin d'un aller-retour getUser() de plus rien que pour le redemander ici. */
+export async function markChatAsRead(userId: string): Promise<void> {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return;
-
-  await supabase.from("profiles").update({ chat_last_read_at: new Date().toISOString() }).eq("id", user.id);
+  await supabase.from("profiles").update({ chat_last_read_at: new Date().toISOString() }).eq("id", userId);
 }
