@@ -11,7 +11,6 @@ import {
 } from "./actions";
 import { createClient } from "@/lib/supabase/client";
 import { FavoriteTeamBadge } from "@/app/profile/FavoriteTeamBadge";
-import { buttonPrimary, input, linkMuted } from "@/lib/ui";
 import { formatParisDateTime } from "@/lib/format-date";
 import { splitContentByMentions } from "@/lib/chat/mentions";
 
@@ -280,13 +279,19 @@ export function ChatRoom({
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {notifications.supported && (
-        <div className="flex justify-end border-b border-line px-4 py-2">
-          <button type="button" onClick={toggleNotifications} className={`text-xs ${linkMuted}`}>
+        <div className="flex justify-end px-4 pt-3">
+          <button
+            type="button"
+            onClick={toggleNotifications}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
+              notifications.on ? "bg-accent-soft text-accent-hover" : `bg-paper text-mute shadow-sm hover:text-ink`
+            }`}
+          >
             {notifications.on ? "🔔 Notifications activées" : "🔕 Activer les notifications"}
           </button>
         </div>
       )}
-      <div className="flex-1 space-y-4 overflow-y-auto p-4">
+      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
         {messages.map((m) => {
           const profile = profilesById[m.userId];
           const isOwn = m.userId === currentUserId;
@@ -295,67 +300,60 @@ export function ChatRoom({
             if (r.messageId !== m.id) continue;
             (reactionGroups[r.emoji] ??= []).push(r.userId);
           }
+          const hasReactions = Object.keys(reactionGroups).length > 0;
           const mentionsMe = !isOwn && !!currentUsername && m.content.includes(`@${currentUsername}`);
           return (
-            <div key={m.id} className={`flex items-start gap-3 ${isOwn ? "flex-row-reverse text-right" : ""}`}>
-              <span className="relative h-8 w-8 shrink-0">
-                <span className="relative block h-8 w-8 overflow-hidden rounded-full border-2 border-line bg-cream">
-                  {profile?.avatarUrl ? (
-                    <Image src={profile.avatarUrl} alt="" fill sizes="32px" className="object-cover" />
-                  ) : (
-                    <span className="flex h-full w-full items-center justify-center text-xs font-bold text-mute">
-                      {(profile?.username ?? "?").slice(0, 1).toUpperCase()}
-                    </span>
-                  )}
+            <div key={m.id} className={`flex items-end gap-2 ${isOwn ? "flex-row-reverse" : ""}`}>
+              {!isOwn && (
+                <span className="relative h-7 w-7 shrink-0">
+                  <span className="relative block h-7 w-7 overflow-hidden rounded-full bg-cream">
+                    {profile?.avatarUrl ? (
+                      <Image src={profile.avatarUrl} alt="" fill sizes="28px" className="object-cover" />
+                    ) : (
+                      <span className="flex h-full w-full items-center justify-center text-xs font-bold text-mute">
+                        {(profile?.username ?? "?").slice(0, 1).toUpperCase()}
+                      </span>
+                    )}
+                  </span>
+                  <FavoriteTeamBadge logoUrl={profile?.favoriteTeamLogoUrl ?? null} size={13} />
                 </span>
-                <FavoriteTeamBadge logoUrl={profile?.favoriteTeamLogoUrl ?? null} size={14} />
-              </span>
-              <div>
-                <p className="text-xs font-bold text-mute">
-                  {profile?.username ?? "?"} · {formatParisDateTime(m.createdAt)}
-                </p>
-                <p
-                  className={`mt-1 inline-block rounded-2xl border px-3 py-2 ${
+              )}
+              <div className={`flex max-w-[75%] flex-col ${isOwn ? "items-end" : "items-start"}`}>
+                {!isOwn && (
+                  <p className="mb-1 px-1 text-[11px] font-bold text-mute">{profile?.username ?? "?"}</p>
+                )}
+                <div
+                  className={`px-3.5 py-2 text-[15px] leading-snug ${
                     isOwn
-                      ? "border-ink bg-ink text-paper"
+                      ? "rounded-2xl rounded-br-md bg-accent text-paper"
                       : mentionsMe
-                        ? "border-accent bg-cream"
-                        : "border-line bg-cream"
+                        ? "rounded-2xl rounded-bl-md bg-accent-soft text-ink ring-1 ring-inset ring-accent"
+                        : "rounded-2xl rounded-bl-md bg-paper text-ink shadow-sm"
                   }`}
                 >
                   {splitContentByMentions(m.content, allUsernames).map((part, i) =>
                     part.isMention ? (
-                      <span key={i} className={`font-bold ${isOwn ? "text-warn-bg" : ""}`}>
+                      <span key={i} className={`font-bold ${isOwn ? "text-warn-bg" : "text-accent-hover"}`}>
                         {part.text}
                       </span>
                     ) : (
                       <span key={i}>{part.text}</span>
                     )
                   )}
-                </p>
-                <div className={`relative mt-1 flex flex-wrap items-center gap-1 ${isOwn ? "justify-end" : ""}`}>
-                  {Object.entries(reactionGroups).map(([emoji, userIds]) => (
-                    <button
-                      key={emoji}
-                      type="button"
-                      onClick={() => toggleReaction(m.id, emoji)}
-                      className={`rounded-full border px-1.5 py-0.5 text-xs ${
-                        userIds.includes(currentUserId) ? "border-ink bg-cream" : "border-line bg-paper"
-                      }`}
-                    >
-                      {emoji} {userIds.length}
-                    </button>
-                  ))}
+                </div>
+                <div className="relative mt-1 flex items-center gap-1.5 px-1">
+                  <p className="text-[10px] text-mute">{formatParisDateTime(m.createdAt)}</p>
                   <button
                     type="button"
                     onClick={() => setOpenPickerFor(openPickerFor === m.id ? null : m.id)}
-                    className="text-xs text-mute"
+                    className="text-[11px] text-mute transition-colors hover:text-ink"
+                    aria-label="Ajouter une réaction"
                   >
                     🙂+
                   </button>
                   {openPickerFor === m.id && (
                     <div
-                      className={`absolute top-full z-10 mt-1 flex gap-1 rounded-xl border border-line bg-paper p-1.5 shadow-sm ${isOwn ? "right-0" : "left-0"}`}
+                      className={`absolute bottom-full z-10 mb-1 flex gap-1 rounded-xl bg-paper p-1.5 shadow-md ${isOwn ? "right-0" : "left-0"}`}
                     >
                       {QUICK_REACTIONS.map((emoji) => (
                         <button
@@ -373,6 +371,22 @@ export function ChatRoom({
                     </div>
                   )}
                 </div>
+                {hasReactions && (
+                  <div className={`-mt-1 flex flex-wrap gap-1 px-1 ${isOwn ? "justify-end" : "justify-start"}`}>
+                    {Object.entries(reactionGroups).map(([emoji, userIds]) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        onClick={() => toggleReaction(m.id, emoji)}
+                        className={`rounded-full px-1.5 py-0.5 text-xs shadow-sm transition-colors ${
+                          userIds.includes(currentUserId) ? "bg-accent-soft text-accent-hover" : "bg-paper text-ink"
+                        }`}
+                      >
+                        {emoji} {userIds.length}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -380,10 +394,10 @@ export function ChatRoom({
         <div ref={bottomRef} />
       </div>
 
-      <form ref={formRef} action={formAction} className="flex gap-2 border-t border-line p-4">
+      <form ref={formRef} action={formAction} className="flex items-center gap-2 p-4 pt-2">
         <div className="relative flex-1">
           {mentionQuery && matchingUsers.length > 0 && (
-            <div className="absolute bottom-full left-0 z-10 mb-1 max-h-40 w-48 overflow-y-auto rounded-xl border border-line bg-paper shadow-sm">
+            <div className="absolute bottom-full left-0 z-10 mb-1 max-h-40 w-48 overflow-y-auto rounded-xl border border-line bg-paper shadow-md">
               {matchingUsers.map((u) => (
                 <button
                   key={u.id}
@@ -406,11 +420,19 @@ export function ChatRoom({
             autoComplete="off"
             value={messageText}
             onChange={handleMessageChange}
-            className={input}
+            className="w-full rounded-full border border-line bg-paper px-4 py-2.5 text-ink shadow-sm placeholder:text-mute focus:border-accent focus:outline-none"
           />
         </div>
-        <button type="submit" disabled={isPending} className={buttonPrimary}>
-          Envoyer
+        <button
+          type="submit"
+          disabled={isPending}
+          aria-label="Envoyer"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-paper transition-colors hover:bg-accent-hover disabled:opacity-40"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 12h14" />
+            <path d="M13 6l6 6-6 6" />
+          </svg>
         </button>
       </form>
       {state.error && <p className="px-4 pb-4 text-sm text-bad">{state.error}</p>}

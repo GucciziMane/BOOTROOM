@@ -64,7 +64,7 @@ export default async function ChatPage() {
           Retour
         </Link>
       </div>
-      <div className="flex h-[70vh] flex-col overflow-hidden rounded-2xl border border-line bg-paper shadow-sm">
+      <div className="flex h-[70vh] flex-col overflow-hidden rounded-[28px] bg-paper/60">
         <ChatRoom
           initialMessages={initialMessages}
           initialReactions={reactions ?? []}
