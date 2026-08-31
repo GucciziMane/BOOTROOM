@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: leaguesError?.message ?? "leagues introuvables" }, { status: 500 });
   }
 
-  const matchesSummary: Array<{ league: string; matches: number; error?: string }> = [];
+  const matchesSummary: Array<{ league: string; matches: number; regressions?: number; error?: string }> = [];
 
   for (const league of leagues) {
     try {
@@ -48,12 +48,36 @@ export async function GET(request: NextRequest) {
       const { data: teams } = await supabase.from("teams").select("id, football_data_id").eq("league_id", league.id);
       const teamIdByFdId = new Map((teams ?? []).map((t) => [t.football_data_id, t.id]));
 
+      // Nécessaire pour détecter une régression du fournisseur (voir plus bas) : le statut/score
+      // qu'on a déjà en base pour chaque match de cette ligue, avant d'appliquer les nouvelles
+      // données.
+      const { data: existingMatches } = await supabase
+        .from("matches")
+        .select("football_data_id, status, home_score, away_score")
+        .eq("league_id", league.id);
+      const existingByFdId = new Map((existingMatches ?? []).map((m) => [m.football_data_id, m]));
+
       const { matches } = await footballData.getCompetitionMatches(league.football_data_code);
 
+      let regressions = 0;
       const rows = matches.flatMap((m) => {
         const homeTeamId = teamIdByFdId.get(m.homeTeam.id);
         const awayTeamId = teamIdByFdId.get(m.awayTeam.id);
         if (!homeTeamId || !awayTeamId) return [];
+
+        const status = normalizeMatchStatus(m.status);
+        const existing = existingByFdId.get(m.id);
+        // football-data.org sert parfois, pour un match précis, une réponse "en arrière" par
+        // rapport à ce qu'on a déjà (ex: un match "finished" avec un score qui redevient
+        // "TIMED"/sans score sur un appel suivant — confirmé en interrogeant leur API en direct,
+        // pas un bug de notre synchro). Un match "finished" ne redevient donc jamais autre chose
+        // ici : on ignore la ligne plutôt que d'effacer un score déjà connu et déjà noté aux
+        // pronostics (points_processed_at ne serait alors plus jamais réévalué pour ce match).
+        if (existing?.status === "finished" && status !== "finished") {
+          regressions++;
+          return [];
+        }
+
         return [
           {
             league_id: league.id,
@@ -62,7 +86,7 @@ export async function GET(request: NextRequest) {
             home_team_id: homeTeamId,
             away_team_id: awayTeamId,
             kickoff_at: m.utcDate,
-            status: normalizeMatchStatus(m.status),
+            status,
             home_score: m.score.fullTime.home,
             away_score: m.score.fullTime.away,
             matchday: m.matchday,
@@ -77,7 +101,7 @@ export async function GET(request: NextRequest) {
 
       await updateMatchOdds(supabase, seasonId);
 
-      matchesSummary.push({ league: league.football_data_code, matches: rows.length });
+      matchesSummary.push({ league: league.football_data_code, matches: rows.length, regressions });
       await sleep(700);
     } catch (err) {
       matchesSummary.push({
