@@ -9,6 +9,10 @@ import { computeMatchOdds } from "@/lib/scoring/match-odds";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const MAX_EVENT_CALLS_PER_RUN = 40; // reste sous le quota de 100 req/jour de Highlightly (1 call/date+championnat + 1 call/match)
+// Le workflow GitHub Actions coupe la requête à 270s (curl --max-time) : on s'arrête avant, pour
+// répondre à temps même si Highlightly est lent ce jour-là, plutôt que de faire échouer tout le
+// run (et avec lui, sans "process scoring" en filet, la distribution des points de ce cycle).
+const EVENTS_SYNC_TIME_BUDGET_MS = 200_000;
 
 /**
  * Sync quotidien : calendrier + résultats (football-data.org), puis pour les matchs
@@ -18,6 +22,7 @@ export async function GET(request: NextRequest) {
   const unauthorized = requireCronSecret(request);
   if (unauthorized) return unauthorized;
 
+  const startedAt = Date.now();
   const supabase = createServiceRoleClient();
   const { data: leagues, error: leaguesError } = await supabase
     .from("leagues")
@@ -83,7 +88,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const eventsSummary = await syncGoalEvents(supabase, leagues);
+  const eventsSummary = await syncGoalEvents(supabase, leagues, startedAt);
 
   return NextResponse.json({ matches: matchesSummary, events: eventsSummary });
 }
@@ -148,7 +153,8 @@ async function updateMatchOdds(supabase: ReturnType<typeof createServiceRoleClie
 
 async function syncGoalEvents(
   supabase: ReturnType<typeof createServiceRoleClient>,
-  leagues: Array<{ id: number; football_data_code: string; highlightly_league_id: number }>
+  leagues: Array<{ id: number; football_data_code: string; highlightly_league_id: number }>,
+  startedAt: number
 ) {
   const highlightlyLeagueIdByLeagueId = new Map(leagues.map((l) => [l.id, l.highlightly_league_id]));
 
@@ -178,8 +184,13 @@ async function syncGoalEvents(
   let matched = 0;
   let unmatched = 0;
   let outOfWindow = 0;
+  let stoppedOnBudget = 0;
 
   for (const match of pendingMatches) {
+    if (Date.now() - startedAt > EVENTS_SYNC_TIME_BUDGET_MS) {
+      stoppedOnBudget = pendingMatches.length - matched - unmatched - outOfWindow;
+      break;
+    }
     try {
       const highlightlyLeagueId = highlightlyLeagueIdByLeagueId.get(match.league_id);
       if (!highlightlyLeagueId) {
@@ -255,5 +266,5 @@ async function syncGoalEvents(
     }
   }
 
-  return { processed: pendingMatches.length, matched, unmatched, outOfWindow };
+  return { processed: pendingMatches.length, matched, unmatched, outOfWindow, stoppedOnBudget };
 }

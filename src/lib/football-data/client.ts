@@ -14,6 +14,9 @@ async function footballDataFetch<T>(path: string): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, {
     headers: { "X-Auth-Token": token },
     next: { revalidate: 3600 },
+    // Sans timeout, une réponse lente de l'API peut à elle seule épuiser tout le budget de
+    // temps du cron (curl --max-time côté GitHub Actions) et faire échouer tout le run.
+    signal: AbortSignal.timeout(20_000),
   });
 
   if (!response.ok) {

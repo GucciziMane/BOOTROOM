@@ -18,6 +18,8 @@ async function highlightlyFetch<T>(path: string, params: Record<string, string |
   const response = await fetch(url, {
     headers: { "x-rapidapi-key": apiKey },
     cache: "no-store",
+    // Idem football-data : un appel qui traîne ne doit pas pouvoir épuiser tout le budget du cron.
+    signal: AbortSignal.timeout(15_000),
   });
 
   if (!response.ok) {

@@ -10,7 +10,11 @@ jobs:
     steps:
       - name: Sync fixtures (scores + événements)
         run: |
-          curl -sf --max-time 290 -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" https://bootroom.online/api/cron/sync-fixtures
+          curl -sf --max-time 270 --retry 2 --retry-delay 5 --retry-connrefused -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" https://bootroom.online/api/cron/sync-fixtures
+      # Toujours lancé, même si le sync a échoué ou a expiré au-dessus : sinon un simple accroc
+      # réseau sur le sync (ça arrive, ~13% des runs) empêche aussi de distribuer les points des
+      # matchs déjà marqués "finished" lors d'un run précédent — les deux étapes sont indépendantes.
       - name: Process scoring
+        if: always()
         run: |
-          curl -sf --max-time 290 -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" https://bootroom.online/api/cron/process-scoring
+          curl -sf --max-time 270 --retry 2 --retry-delay 5 --retry-connrefused -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" https://bootroom.online/api/cron/process-scoring
