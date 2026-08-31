@@ -48,13 +48,16 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
     .order("kickoff_at", { ascending: true });
 
   const allMatches = matches ?? [];
-  const upcoming = allMatches.filter((m) => m.status === "scheduled" || m.status === "live");
+  // "live" à part : mélangé à "à venir", un match déjà en cours (avec un score) donnait
+  // l'impression d'être encore une simple prédiction à faire plutôt qu'un match en train de se jouer.
+  const live = allMatches.filter((m) => m.status === "live");
+  const upcoming = allMatches.filter((m) => m.status === "scheduled");
   const recentFinished = allMatches
     .filter((m) => m.status === "finished")
     .sort((a, b) => b.kickoff_at.localeCompare(a.kickoff_at))
     .slice(0, 10);
 
-  const upcomingMatchIds = upcoming.map((m) => m.id);
+  const upcomingMatchIds = [...live, ...upcoming].map((m) => m.id);
 
   const [
     { data: fullPredictions },
@@ -129,12 +132,24 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
           <h2 className="mb-3 text-lg font-bold">Derniers résultats</h2>
           <ul className={listCard}>
             {recentFinished.map((m) => (
-              <li key={m.id} className="flex items-center justify-between p-3 text-sm">
-                <MatchTeams home={teamLabel(m.home_team_id)} away={teamLabel(m.away_team_id)} />
-                <span className="font-bold">
-                  {m.home_score} – {m.away_score}
-                </span>
-              </li>
+              <ScoreRow key={m.id} home={teamLabel(m.home_team_id)} away={teamLabel(m.away_team_id)} homeScore={m.home_score} awayScore={m.away_score} />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {live.length > 0 && (
+        <section className="mb-8">
+          <h2 className="mb-3 flex items-center gap-2 text-lg font-bold">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-bad opacity-75" />
+              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-bad" />
+            </span>
+            En direct
+          </h2>
+          <ul className={listCard}>
+            {live.map((m) => (
+              <ScoreRow key={m.id} home={teamLabel(m.home_team_id)} away={teamLabel(m.away_team_id)} homeScore={m.home_score} awayScore={m.away_score} />
             ))}
           </ul>
         </section>
@@ -210,20 +225,30 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
   );
 }
 
-function MatchTeams({
+function ScoreRow({
   home,
   away,
+  homeScore,
+  awayScore,
 }: {
   home: { name: string; logoUrl: string | null };
   away: { name: string; logoUrl: string | null };
+  homeScore: number | null;
+  awayScore: number | null;
 }) {
   return (
-    <span className="flex items-center gap-2">
-      {home.logoUrl && <Image src={home.logoUrl} alt="" width={20} height={20} className="h-5 w-5 object-contain" />}
-      <span>{home.name}</span>
-      <span className="text-mute">vs</span>
-      {away.logoUrl && <Image src={away.logoUrl} alt="" width={20} height={20} className="h-5 w-5 object-contain" />}
-      <span>{away.name}</span>
-    </span>
+    <li className="flex items-center gap-3 p-3.5">
+      <div className="flex min-w-0 flex-1 items-center justify-end gap-2.5 text-right">
+        <span className="truncate text-sm font-semibold">{home.name}</span>
+        {home.logoUrl && <Image src={home.logoUrl} alt="" width={28} height={28} className="h-7 w-7 shrink-0 object-contain" />}
+      </div>
+      <span className="shrink-0 rounded-full bg-cream px-3 py-1.5 text-sm font-extrabold tabular-nums">
+        {homeScore ?? "–"} : {awayScore ?? "–"}
+      </span>
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
+        {away.logoUrl && <Image src={away.logoUrl} alt="" width={28} height={28} className="h-7 w-7 shrink-0 object-contain" />}
+        <span className="truncate text-sm font-semibold">{away.name}</span>
+      </div>
+    </li>
   );
 }

@@ -13,7 +13,12 @@ async function footballDataFetch<T>(path: string): Promise<T> {
 
   const response = await fetch(`${BASE_URL}${path}`, {
     headers: { "X-Auth-Token": token },
-    next: { revalidate: 3600 },
+    // Sur Vercel, le cache fetch de Next.js persiste ENTRE les invocations : avec
+    // `next.revalidate`, deux runs du cron dans la même heure pouvaient recevoir la même
+    // réponse mise en cache au lieu du score/statut réellement à jour — mauvais pour des matchs
+    // en direct. La cadence du cron lui-même sert déjà de fenêtre de fraîcheur, inutile d'en
+    // ajouter une deuxième ici.
+    cache: "no-store",
     // Sans timeout, une réponse lente de l'API peut à elle seule épuiser tout le budget de
     // temps du cron (curl --max-time côté GitHub Actions) et faire échouer tout le run.
     signal: AbortSignal.timeout(20_000),
