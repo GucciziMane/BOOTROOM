@@ -67,7 +67,7 @@ export default async function ChatPage() {
     }));
 
   return (
-    <main className="mx-auto flex h-[calc(100dvh-8rem)] w-full max-w-2xl flex-col overflow-hidden p-6 lg:h-dvh">
+    <main className="mx-auto flex h-[calc(100dvh-4.75rem-env(safe-area-inset-bottom))] w-full max-w-2xl flex-col overflow-hidden p-6 lg:h-dvh">
       <div className="mb-4 flex shrink-0 items-center justify-between">
         <h1 className="text-3xl font-bold">3ème mi-temps 🍻</h1>
         <Link href="/" className={`text-sm ${linkMuted}`}>

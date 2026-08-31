@@ -104,6 +104,8 @@ export function ChatRoom({
   const [torchOn, setTorchOn] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const isFirstScroll = useRef(true);
   const inputRef = useRef<HTMLInputElement>(null);
   const formImageInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -469,8 +471,26 @@ export function ChatRoom({
   }, []);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    // "auto" (instant) à l'ouverture : un défilement "smooth" qui démarre avant que les avatars/
+    // photos aient fini de charger peut s'arrêter avant le vrai bas, qui recule encore pendant
+    // l'animation. Les arrivées de nouveaux messages ensuite restent en smooth (plus agréable).
+    bottomRef.current?.scrollIntoView({ behavior: isFirstScroll.current ? "auto" : "smooth" });
+    isFirstScroll.current = false;
   }, [messages.length]);
+
+  useEffect(() => {
+    // Recale en bas si une image (avatar, photo) finit de charger après coup et grandit le
+    // contenu — mais seulement si on n'a pas déjà remonté manuellement dans la conversation.
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    function onImageLoad(e: Event) {
+      if (!(e.target instanceof HTMLImageElement) || !container) return;
+      const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+      if (nearBottom) bottomRef.current?.scrollIntoView({ behavior: "auto" });
+    }
+    container.addEventListener("load", onImageLoad, true);
+    return () => container.removeEventListener("load", onImageLoad, true);
+  }, []);
 
   useEffect(() => {
     if (wasPending.current && !isPending && !state.error) {
@@ -496,7 +516,7 @@ export function ChatRoom({
           </button>
         </div>
       )}
-      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+      <div ref={messagesContainerRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
         {messages.map((m) => {
           const profile = profilesById[m.userId];
           const isOwn = m.userId === currentUserId;
