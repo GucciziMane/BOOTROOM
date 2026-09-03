@@ -98,7 +98,7 @@ export async function getClubHomeData(supabase: SupaClient, teamId: number): Pro
         .order("kickoff_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
-      supabase.from("players").select("id, name, position, photo_url").eq("team_id", teamId),
+      supabase.from("players").select("id, name, position, photo_url").eq("team_id", teamId).is("left_at", null),
     ]);
 
   const teamsById = new Map((leagueTeams ?? []).map((t) => [t.id, t]));

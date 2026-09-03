@@ -80,8 +80,9 @@ export interface Database {
           team_id: number;
           name: string;
           position: Position;
-          football_data_id: number;
+          football_data_id: number | null;
           photo_url: string | null;
+          left_at: string | null;
           updated_at: string;
         };
         Insert: Partial<Database["public"]["Tables"]["players"]["Row"]>;

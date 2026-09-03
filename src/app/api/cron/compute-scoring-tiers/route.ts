@@ -37,7 +37,8 @@ export async function GET(request: NextRequest) {
       const { data: players } = await supabase
         .from("players")
         .select("id, position, team_id")
-        .in("team_id", teamIds);
+        .in("team_id", teamIds)
+        .is("left_at", null);
 
       const { data: finishedMatches } = await supabase
         .from("matches")

@@ -210,6 +210,7 @@ async function fetchLeagueData(supabase: ServiceClient): Promise<LeagueData> {
       "team_id",
       (teams ?? []).map((t) => t.id)
     )
+    .is("left_at", null)
     .order("id", { ascending: true });
 
   const playersByTeam = new Map<number, Array<{ id: number; name: string }>>();

@@ -140,6 +140,9 @@ export async function GET(request: NextRequest) {
         name: p.name,
         position: normalizePosition(p.position),
         football_data_id: p.id,
+        // Repasse actif un joueur qui reviendrait dans l'effectif (retour de prêt...) après avoir
+        // été marqué "parti" par un sync précédent.
+        left_at: null,
         updated_at: new Date().toISOString(),
       }));
 
@@ -149,6 +152,20 @@ export async function GET(request: NextRequest) {
 
       if (playersError) {
         throw new Error(playersError.message);
+      }
+
+      // Marque "parti" (sans supprimer : des buts/pronostics passés référencent peut-être ce
+      // joueur) toute personne qui était dans cet effectif et ne s'y trouve plus dans la réponse
+      // actuelle — le mercato ne se reflétait jamais côté départs avant ce correctif.
+      const teamIds = [...new Set(playerRows.map((p) => p.team_id))];
+      const syncedFdIds = playerRows.map((p) => p.football_data_id);
+      if (teamIds.length > 0) {
+        await supabase
+          .from("players")
+          .update({ left_at: new Date().toISOString() })
+          .in("team_id", teamIds)
+          .is("left_at", null)
+          .not("football_data_id", "in", `(${syncedFdIds.join(",") || "-1"})`);
       }
 
       await sleep(700);

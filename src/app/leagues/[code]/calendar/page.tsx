@@ -73,7 +73,12 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
       .select("match_id, predicted_home_score, predicted_away_score, predicted_scorer_player_id")
       .eq("user_id", user!.id)
       .in("match_id", upcomingMatchIds.length > 0 ? upcomingMatchIds : [-1]),
-    supabase.from("players").select("id, name, team_id").in("team_id", teamIds.length > 0 ? teamIds : [-1]).order("name"),
+    supabase
+      .from("players")
+      .select("id, name, team_id")
+      .in("team_id", teamIds.length > 0 ? teamIds : [-1])
+      .is("left_at", null)
+      .order("name"),
     supabase.from("app_settings").select("value").eq("key", "match_prediction_lock_hours_before_kickoff").single(),
     supabase.from("point_config").select("key, points").in("key", ["match_exact_score", "match_correct_result_no_score"]),
     supabase.from("match_scorer_tier_points").select("tier, points"),
