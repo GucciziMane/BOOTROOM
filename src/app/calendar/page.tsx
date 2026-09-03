@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { formatParisDateTime } from "@/lib/format-date";
 import { linkMuted } from "@/lib/ui";
-import { LEAGUE_FLAG } from "@/lib/country-flags";
+import { LEAGUE_FLAG, LEAGUE_COLOR } from "@/lib/country-flags";
 import { FALLBACK_SCORER_TIER, type OddsTier } from "@/lib/scoring/points";
 import { MatchPredictionCard } from "@/app/leagues/[code]/calendar/MatchPredictionCard";
 import { CalendarTabs } from "./CalendarTabs";
@@ -182,6 +182,7 @@ export default async function CalendarPage() {
                         ? `${LEAGUE_FLAG[league.football_data_code] ?? ""} ${league.name}${m.matchday != null ? ` · J${m.matchday}` : ""}`
                         : undefined
                     }
+                    leagueColor={league ? LEAGUE_COLOR[league.football_data_code] : undefined}
                     matchId={m.id}
                     kickoffAt={m.kickoff_at}
                     homeTeamName={home.name}

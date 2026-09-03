@@ -42,6 +42,8 @@ interface Props {
   };
   /** Affiché uniquement sur une vue qui mélange plusieurs championnats (ex: "prochaine journée"). */
   leagueLabel?: string;
+  /** Idem : bordure de gauche colorée pour repérer le championnat d'un coup d'œil dans la grille. */
+  leagueColor?: string;
 }
 
 const initialState: SaveMatchPredictionState = { error: null, success: false };
@@ -61,6 +63,7 @@ export function MatchPredictionCard({
   locked,
   initial,
   leagueLabel,
+  leagueColor,
 }: Props) {
   const [state, formAction, isPending] = useActionState(saveMatchPrediction, initialState);
   const [homeScore, setHomeScore] = useState(initial.predictedHomeScore != null ? String(initial.predictedHomeScore) : "");
@@ -89,7 +92,10 @@ export function MatchPredictionCard({
   if (locked) {
     const lockedScorer = [...homePlayers, ...awayPlayers].find((p) => p.id === initial.predictedScorerPlayerId);
     return (
-      <div className="rounded-2xl border border-line bg-paper p-4 shadow-sm">
+      <div
+        className="rounded-2xl border border-line bg-paper p-4 shadow-sm"
+        style={leagueColor ? { borderLeftColor: leagueColor, borderLeftWidth: 4 } : undefined}
+      >
         <p className="mb-2 flex items-center justify-between text-xs font-bold text-mute">
           <span>{formatParisDateTime(kickoffAt)}</span>
           {leagueLabel && <span>{leagueLabel}</span>}
@@ -110,7 +116,11 @@ export function MatchPredictionCard({
   }
 
   return (
-    <form action={formAction} className="rounded-2xl border border-line bg-paper p-4 shadow-sm">
+    <form
+      action={formAction}
+      className="rounded-2xl border border-line bg-paper p-4 shadow-sm"
+      style={leagueColor ? { borderLeftColor: leagueColor, borderLeftWidth: 4 } : undefined}
+    >
       <input type="hidden" name="match_id" value={matchId} />
       <input type="hidden" name="league_code" value={leagueCode} />
       <p className="mb-2 flex items-center justify-between text-xs font-bold text-mute">
