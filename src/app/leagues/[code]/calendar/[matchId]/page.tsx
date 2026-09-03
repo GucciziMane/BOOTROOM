@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatParisDateTime } from "@/lib/format-date";
 import { bannerWarn, bannerNeutral, card, linkMuted } from "@/lib/ui";
-import { FALLBACK_SCORER_TIER } from "@/lib/scoring/points";
+import { FALLBACK_SCORER_TIER, FALLBACK_ASSIST_TIER } from "@/lib/scoring/points";
 import { MatchPredictionForm } from "./MatchPredictionForm";
 
 export default async function MatchPage({ params }: PageProps<"/leagues/[code]/calendar/[matchId]">) {
@@ -35,6 +35,8 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
     { data: pointConfigRows },
     { data: scorerTierPointsRows },
     { data: playerTierRows },
+    { data: assistTierPointsRows },
+    { data: playerAssistTierRows },
     { data: resultMultiplierRows },
   ] = await Promise.all([
     supabase.from("teams").select("id, name").in("id", [match.home_team_id, match.away_team_id]),
@@ -50,7 +52,7 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
       .single(),
     supabase
       .from("match_predictions")
-      .select("predicted_home_score, predicted_away_score, predicted_scorer_player_id")
+      .select("predicted_home_score, predicted_away_score, predicted_scorer_player_id, predicted_assist_player_id")
       .eq("user_id", user!.id)
       .eq("match_id", match.id)
       .maybeSingle(),
@@ -60,6 +62,8 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
       .in("key", ["match_exact_score", "match_correct_result_no_score"]),
     supabase.from("match_scorer_tier_points").select("tier, points"),
     supabase.from("player_scoring_tier").select("player_id, tier").eq("season_id", match.season_id),
+    supabase.from("match_assist_tier_points").select("tier, points"),
+    supabase.from("player_assist_tier").select("player_id, tier").eq("season_id", match.season_id),
     supabase.from("match_result_tier_multipliers").select("tier, favorite_multiplier_pct, underdog_multiplier_pct"),
   ]);
   const homeTeam = teams?.find((t) => t.id === match.home_team_id);
@@ -73,12 +77,18 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
   const pointConfigMap = new Map((pointConfigRows ?? []).map((r) => [r.key, r.points]));
   const scorerTierPoints = new Map((scorerTierPointsRows ?? []).map((r) => [r.tier, r.points]));
   const playerTierById = new Map((playerTierRows ?? []).map((r) => [r.player_id, r.tier]));
+  const assistTierPoints = new Map((assistTierPointsRows ?? []).map((r) => [r.tier, r.points]));
+  const playerAssistTierById = new Map((playerAssistTierRows ?? []).map((r) => [r.player_id, r.tier]));
   const scoring = {
     matchExactScore: pointConfigMap.get("match_exact_score") ?? 30,
     matchCorrectResultNoScore: pointConfigMap.get("match_correct_result_no_score") ?? 10,
     scorerTierPoints: Object.fromEntries(scorerTierPoints),
     playerTier: Object.fromEntries(
       [...homePlayers, ...awayPlayers].map((p) => [p.id, playerTierById.get(p.id) ?? FALLBACK_SCORER_TIER])
+    ),
+    assistTierPoints: Object.fromEntries(assistTierPoints),
+    playerAssistTier: Object.fromEntries(
+      [...homePlayers, ...awayPlayers].map((p) => [p.id, playerAssistTierById.get(p.id) ?? FALLBACK_ASSIST_TIER])
     ),
   };
   const resultOdds = {
@@ -145,6 +155,7 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
             predictedHomeScore: existing?.predicted_home_score ?? null,
             predictedAwayScore: existing?.predicted_away_score ?? null,
             predictedScorerPlayerId: existing?.predicted_scorer_player_id ?? null,
+            predictedAssistPlayerId: existing?.predicted_assist_player_id ?? null,
           }}
         />
       )}
@@ -161,6 +172,7 @@ function LockedMatchSummary({
     predicted_home_score: number;
     predicted_away_score: number;
     predicted_scorer_player_id: number | null;
+    predicted_assist_player_id: number | null;
   } | null;
   homePlayers: Array<{ id: number; name: string }>;
   awayPlayers: Array<{ id: number; name: string }>;
@@ -169,6 +181,7 @@ function LockedMatchSummary({
     return <p className="text-mute">Tu n&apos;as pas pronostiqué ce match avant le verrouillage.</p>;
   }
   const scorer = [...homePlayers, ...awayPlayers].find((p) => p.id === existing.predicted_scorer_player_id);
+  const assister = [...homePlayers, ...awayPlayers].find((p) => p.id === existing.predicted_assist_player_id);
 
   return (
     <dl className="space-y-4 text-sm">
@@ -181,6 +194,10 @@ function LockedMatchSummary({
       <div>
         <dt className="text-mute">Buteur pronostiqué</dt>
         <dd className="text-lg font-bold">{scorer?.name ?? "—"}</dd>
+      </div>
+      <div>
+        <dt className="text-mute">Passeur décisif pronostiqué</dt>
+        <dd className="text-lg font-bold">{assister?.name ?? "—"}</dd>
       </div>
     </dl>
   );

@@ -42,6 +42,15 @@ export function resolveScorerTierPoints(tier: number | null | undefined, tierPoi
   return tierPointsMap.get(tier ?? FALLBACK_SCORER_TIER) ?? FALLBACK_SCORER_TIER_POINTS;
 }
 
+/** Tier utilisé quand aucun tier n'a encore été calculé pour un joueur (3 = probabilité moyenne). */
+export const FALLBACK_ASSIST_TIER = 3;
+const FALLBACK_ASSIST_TIER_POINTS = 28;
+
+/** Points passeur si le joueur pronostiqué délivre la passe décisive, selon son tier. */
+export function resolveAssistTierPoints(tier: number | null | undefined, tierPointsMap: Map<number, number>): number {
+  return tierPointsMap.get(tier ?? FALLBACK_ASSIST_TIER) ?? FALLBACK_ASSIST_TIER_POINTS;
+}
+
 /** 1 = équipes proches au classement, 5 = écart de niveau important. */
 export type OddsTier = 1 | 2 | 3 | 4 | 5;
 

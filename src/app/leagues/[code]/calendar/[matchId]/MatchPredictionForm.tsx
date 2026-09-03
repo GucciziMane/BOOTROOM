@@ -15,6 +15,8 @@ interface ScoringInfo {
   matchCorrectResultNoScore: number;
   scorerTierPoints: Record<number, number>;
   playerTier: Record<number, number>;
+  assistTierPoints: Record<number, number>;
+  playerAssistTier: Record<number, number>;
 }
 
 interface ResultOdds {
@@ -39,6 +41,7 @@ interface Props {
     predictedHomeScore: number | null;
     predictedAwayScore: number | null;
     predictedScorerPlayerId: number | null;
+    predictedAssistPlayerId: number | null;
   };
 }
 
@@ -61,9 +64,14 @@ export function MatchPredictionForm({
   const [scorerId, setScorerId] = useState(
     initial.predictedScorerPlayerId != null ? String(initial.predictedScorerPlayerId) : ""
   );
+  const [assistId, setAssistId] = useState(
+    initial.predictedAssistPlayerId != null ? String(initial.predictedAssistPlayerId) : ""
+  );
 
   const scorer = scorerId ? [...homePlayers, ...awayPlayers].find((p) => p.id === Number(scorerId)) : undefined;
   const scorerPoints = scorer ? scoring.scorerTierPoints[scoring.playerTier[scorer.id]] ?? 0 : 0;
+  const assister = assistId ? [...homePlayers, ...awayPlayers].find((p) => p.id === Number(assistId)) : undefined;
+  const assistPoints = assister ? scoring.assistTierPoints[scoring.playerAssistTier[assister.id]] ?? 0 : 0;
 
   const multiplierByTier = new Map(
     Object.entries(resultOdds.multiplierByTier).map(([tier, mult]) => [Number(tier) as OddsTier, mult])
@@ -149,6 +157,32 @@ export function MatchPredictionForm({
         </select>
       </div>
 
+      <div>
+        <label className="mb-1 block text-sm font-bold text-mute">Un passeur décisif (optionnel)</label>
+        <select
+          name="predicted_assist_player_id"
+          value={assistId}
+          onChange={(e) => setAssistId(e.target.value)}
+          className={input}
+        >
+          <option value="">—</option>
+          <optgroup label={homeTeamName}>
+            {homePlayers.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label={awayTeamName}>
+            {awayPlayers.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </optgroup>
+        </select>
+      </div>
+
       <div className="rounded-xl border border-line bg-cream p-4 text-sm">
         <p className="mb-2 font-bold">Points en jeu</p>
         {resultOdds.favoriteTeamId && resultOdds.tier && (
@@ -173,11 +207,17 @@ export function MatchPredictionForm({
               {scorer.name} marque : <strong className="text-ink">+{scorerPoints} pts</strong>
             </li>
           )}
+          {assister && (
+            <li>
+              {assister.name} passeur décisif : <strong className="text-ink">+{assistPoints} pts</strong>
+            </li>
+          )}
         </ul>
-        {scorer && (
+        {(scorer || assister) && (
           <p className="mt-3 border-t border-line pt-3 font-bold">
-            Total si score exact + {scorer.name} buteur :{" "}
-            <span className="text-good">{exactScorePoints + scorerPoints} pts</span>
+            Total si score exact{scorer ? ` + ${scorer.name} buteur` : ""}
+            {assister ? ` + ${assister.name} passeur` : ""} :{" "}
+            <span className="text-good">{exactScorePoints + scorerPoints + assistPoints} pts</span>
           </p>
         )}
       </div>

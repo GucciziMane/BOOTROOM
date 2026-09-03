@@ -7,6 +7,7 @@ export type MatchStatus = "scheduled" | "live" | "finished" | "postponed" | "can
 export type PointsSourceType =
   | "match_score"
   | "match_scorer"
+  | "match_assist"
   | "season_top_scorer"
   | "season_top_assist"
   | "season_top3"
@@ -172,6 +173,25 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["match_scorer_tier_points"]["Row"]>;
         Relationships: [];
       };
+      player_assist_tier: {
+        Row: {
+          id: number;
+          player_id: number;
+          season_id: number;
+          tier: 1 | 2 | 3 | 4 | 5;
+          assists_per_90: number | null;
+          computed_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["player_assist_tier"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["player_assist_tier"]["Row"]>;
+        Relationships: [];
+      };
+      match_assist_tier_points: {
+        Row: { tier: 1 | 2 | 3 | 4 | 5; points: number };
+        Insert: Partial<Database["public"]["Tables"]["match_assist_tier_points"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["match_assist_tier_points"]["Row"]>;
+        Relationships: [];
+      };
       season_top_player_tier_points: {
         Row: { tier: 1 | 2 | 3 | 4 | 5; points: number };
         Insert: Partial<Database["public"]["Tables"]["season_top_player_tier_points"]["Row"]>;
@@ -213,6 +233,7 @@ export interface Database {
           predicted_home_score: number;
           predicted_away_score: number;
           predicted_scorer_player_id: number | null;
+          predicted_assist_player_id: number | null;
           submitted_at: string;
           updated_at: string;
           points_awarded: number | null;

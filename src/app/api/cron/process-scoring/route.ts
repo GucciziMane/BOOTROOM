@@ -5,6 +5,7 @@ import {
   computeMatchScorePoints,
   computeSeasonPositionPoints,
   resolveScorerTierPoints,
+  resolveAssistTierPoints,
   predictedWinnerTeamId,
   applyResultOdds,
   FALLBACK_SCORER_TIER,
@@ -67,6 +68,9 @@ async function processFinishedMatches(supabase: ServiceClient, config: PointConf
   const { data: tierPoints } = await supabase.from("match_scorer_tier_points").select("tier, points");
   const tierPointsMap = new Map((tierPoints ?? []).map((t) => [t.tier, t.points]));
 
+  const { data: assistTierPoints } = await supabase.from("match_assist_tier_points").select("tier, points");
+  const assistTierPointsMap = new Map((assistTierPoints ?? []).map((t) => [t.tier, t.points]));
+
   const { data: resultMultipliers } = await supabase
     .from("match_result_tier_multipliers")
     .select("tier, favorite_multiplier_pct, underdog_multiplier_pct");
@@ -83,17 +87,25 @@ async function processFinishedMatches(supabase: ServiceClient, config: PointConf
 
     const { data: predictions } = await supabase
       .from("match_predictions")
-      .select("id, user_id, predicted_home_score, predicted_away_score, predicted_scorer_player_id")
+      .select(
+        "id, user_id, predicted_home_score, predicted_away_score, predicted_scorer_player_id, predicted_assist_player_id"
+      )
       .eq("match_id", match.id);
 
-    const { data: goals } = await supabase.from("match_goals").select("player_id").eq("match_id", match.id);
+    const { data: goals } = await supabase
+      .from("match_goals")
+      .select("player_id, assist_player_id")
+      .eq("match_id", match.id);
     const actualScorers = new Set((goals ?? []).map((g) => g.player_id).filter((id): id is number => id !== null));
+    const actualAssisters = new Set(
+      (goals ?? []).map((g) => g.assist_player_id).filter((id): id is number => id !== null)
+    );
 
     const { data: existingLedger } = await supabase
       .from("points_ledger")
       .select("user_id, source_type")
       .eq("source_id", match.id)
-      .in("source_type", ["match_score", "match_scorer"]);
+      .in("source_type", ["match_score", "match_scorer", "match_assist"]);
     const alreadyAwarded = new Set((existingLedger ?? []).map((r) => `${r.user_id}:${r.source_type}`));
 
     for (const pred of predictions ?? []) {
@@ -129,6 +141,17 @@ async function processFinishedMatches(supabase: ServiceClient, config: PointConf
         scorerPoints = resolveScorerTierPoints(tierRow?.tier, tierPointsMap);
       }
 
+      let assistPoints = 0;
+      if (pred.predicted_assist_player_id && actualAssisters.has(pred.predicted_assist_player_id)) {
+        const { data: assistTierRow } = await supabase
+          .from("player_assist_tier")
+          .select("tier")
+          .eq("player_id", pred.predicted_assist_player_id)
+          .eq("season_id", match.season_id)
+          .maybeSingle();
+        assistPoints = resolveAssistTierPoints(assistTierRow?.tier, assistTierPointsMap);
+      }
+
       if (scorePoints > 0 && !alreadyAwarded.has(`${pred.user_id}:match_score`)) {
         await supabase.from("points_ledger").insert({
           user_id: pred.user_id,
@@ -147,10 +170,19 @@ async function processFinishedMatches(supabase: ServiceClient, config: PointConf
           points: scorerPoints,
         });
       }
+      if (assistPoints > 0 && !alreadyAwarded.has(`${pred.user_id}:match_assist`)) {
+        await supabase.from("points_ledger").insert({
+          user_id: pred.user_id,
+          league_id: match.league_id,
+          source_type: "match_assist",
+          source_id: match.id,
+          points: assistPoints,
+        });
+      }
 
       await supabase
         .from("match_predictions")
-        .update({ points_awarded: scorePoints + scorerPoints })
+        .update({ points_awarded: scorePoints + scorerPoints + assistPoints })
         .eq("id", pred.id);
     }
 

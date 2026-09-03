@@ -26,6 +26,8 @@ interface Props {
     matchExactScore: number;
     scorerTierPoints: Record<number, number>;
     playerTier: Record<number, number>;
+    assistTierPoints: Record<number, number>;
+    playerAssistTier: Record<number, number>;
   };
   resultOdds: {
     homeTeamId: number;
@@ -39,6 +41,7 @@ interface Props {
     predictedHomeScore: number | null;
     predictedAwayScore: number | null;
     predictedScorerPlayerId: number | null;
+    predictedAssistPlayerId: number | null;
   };
   /** Affiché uniquement sur une vue qui mélange plusieurs championnats (ex: "prochaine journée"). */
   leagueLabel?: string;
@@ -71,9 +74,14 @@ export function MatchPredictionCard({
   const [scorerId, setScorerId] = useState(
     initial.predictedScorerPlayerId != null ? String(initial.predictedScorerPlayerId) : ""
   );
+  const [assistId, setAssistId] = useState(
+    initial.predictedAssistPlayerId != null ? String(initial.predictedAssistPlayerId) : ""
+  );
 
   const scorer = scorerId ? [...homePlayers, ...awayPlayers].find((p) => p.id === Number(scorerId)) : undefined;
   const scorerPoints = scorer ? (scoring.scorerTierPoints[scoring.playerTier[scorer.id]] ?? 0) : 0;
+  const assister = assistId ? [...homePlayers, ...awayPlayers].find((p) => p.id === Number(assistId)) : undefined;
+  const assistPoints = assister ? (scoring.assistTierPoints[scoring.playerAssistTier[assister.id]] ?? 0) : 0;
   const multiplierByTier = new Map(
     Object.entries(resultOdds.multiplierByTier).map(([tier, mult]) => [Number(tier) as OddsTier, mult])
   );
@@ -91,6 +99,7 @@ export function MatchPredictionCard({
 
   if (locked) {
     const lockedScorer = [...homePlayers, ...awayPlayers].find((p) => p.id === initial.predictedScorerPlayerId);
+    const lockedAssist = [...homePlayers, ...awayPlayers].find((p) => p.id === initial.predictedAssistPlayerId);
     return (
       <div
         className="rounded-2xl border border-line bg-paper p-4 shadow-sm"
@@ -109,6 +118,7 @@ export function MatchPredictionCard({
         </div>
         <p className="mt-2 text-center text-xs text-mute">
           {lockedScorer ? `Buteur : ${lockedScorer.name}` : initial.predictedHomeScore == null ? "Non pronostiqué" : "Sans buteur"}
+          {lockedAssist && ` · Passeur : ${lockedAssist.name}`}
           {" · "}Verrouillé
         </p>
       </div>
@@ -175,8 +185,32 @@ export function MatchPredictionCard({
         </optgroup>
       </select>
 
+      <select
+        name="predicted_assist_player_id"
+        value={assistId}
+        onChange={(e) => setAssistId(e.target.value)}
+        className={`mt-2 text-sm ${input}`}
+      >
+        <option value="">Passeur décisif (optionnel)</option>
+        <optgroup label={homeTeamName}>
+          {homePlayers.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </optgroup>
+        <optgroup label={awayTeamName}>
+          {awayPlayers.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </optgroup>
+      </select>
+
       <p className="mt-2 text-center text-xs text-mute">
         Score exact +{exactScorePoints}pts{scorer ? ` · ${scorer.name} +${scorerPoints}pts` : ""}
+        {assister ? ` · ${assister.name} +${assistPoints}pts` : ""}
       </p>
 
       <button type="submit" disabled={isPending} className={`mt-2 w-full text-sm ${buttonPrimary}`}>

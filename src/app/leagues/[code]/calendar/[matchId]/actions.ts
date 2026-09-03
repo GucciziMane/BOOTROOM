@@ -18,6 +18,8 @@ export async function saveMatchPrediction(
   const awayScore = Number(formData.get("predicted_away_score"));
   const scorerRaw = formData.get("predicted_scorer_player_id");
   const scorerId = scorerRaw && scorerRaw !== "" ? Number(scorerRaw) : null;
+  const assistRaw = formData.get("predicted_assist_player_id");
+  const assistId = assistRaw && assistRaw !== "" ? Number(assistRaw) : null;
 
   if (!Number.isInteger(homeScore) || homeScore < 0 || !Number.isInteger(awayScore) || awayScore < 0) {
     return { error: "Le score doit être un nombre entier positif.", success: false };
@@ -36,6 +38,7 @@ export async function saveMatchPrediction(
       predicted_home_score: homeScore,
       predicted_away_score: awayScore,
       predicted_scorer_player_id: scorerId,
+      predicted_assist_player_id: assistId,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "user_id,match_id" }

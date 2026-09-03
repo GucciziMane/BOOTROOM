@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatParisDateTime } from "@/lib/format-date";
 import { linkMuted } from "@/lib/ui";
 import { LEAGUE_FLAG, LEAGUE_COLOR } from "@/lib/country-flags";
-import { FALLBACK_SCORER_TIER, type OddsTier } from "@/lib/scoring/points";
+import { FALLBACK_SCORER_TIER, FALLBACK_ASSIST_TIER, type OddsTier } from "@/lib/scoring/points";
 import { MatchPredictionCard } from "@/app/leagues/[code]/calendar/MatchPredictionCard";
 import { CalendarTabs } from "./CalendarTabs";
 
@@ -88,11 +88,15 @@ export default async function CalendarPage() {
     { data: pointConfigRows },
     { data: scorerTierPointsRows },
     { data: playerTierRows },
+    { data: assistTierPointsRows },
+    { data: playerAssistTierRows },
     { data: resultMultiplierRows },
   ] = await Promise.all([
     supabase
       .from("match_predictions")
-      .select("match_id, predicted_home_score, predicted_away_score, predicted_scorer_player_id")
+      .select(
+        "match_id, predicted_home_score, predicted_away_score, predicted_scorer_player_id, predicted_assist_player_id"
+      )
       .eq("user_id", user!.id)
       .in("match_id", upcomingMatchIds.length > 0 ? upcomingMatchIds : [-1]),
     supabase
@@ -105,6 +109,8 @@ export default async function CalendarPage() {
     supabase.from("point_config").select("key, points").in("key", ["match_exact_score", "match_correct_result_no_score"]),
     supabase.from("match_scorer_tier_points").select("tier, points"),
     supabase.from("player_scoring_tier").select("player_id, tier").in("season_id", seasonIds.length > 0 ? seasonIds : [-1]),
+    supabase.from("match_assist_tier_points").select("tier, points"),
+    supabase.from("player_assist_tier").select("player_id, tier").in("season_id", seasonIds.length > 0 ? seasonIds : [-1]),
     supabase.from("match_result_tier_multipliers").select("tier, favorite_multiplier_pct, underdog_multiplier_pct"),
   ]);
 
@@ -119,8 +125,11 @@ export default async function CalendarPage() {
   const pointConfigMap = new Map((pointConfigRows ?? []).map((r) => [r.key, r.points]));
   const scorerTierPoints = new Map((scorerTierPointsRows ?? []).map((r) => [r.tier, r.points]));
   const playerTierById = new Map((playerTierRows ?? []).map((r) => [r.player_id, r.tier]));
+  const assistTierPoints = new Map((assistTierPointsRows ?? []).map((r) => [r.tier, r.points]));
+  const playerAssistTierById = new Map((playerAssistTierRows ?? []).map((r) => [r.player_id, r.tier]));
   const matchExactScore = pointConfigMap.get("match_exact_score") ?? 30;
   const scorerTierPointsObj = Object.fromEntries(scorerTierPoints);
+  const assistTierPointsObj = Object.fromEntries(assistTierPoints);
   const multiplierByTierObj = Object.fromEntries(
     (resultMultiplierRows ?? []).map((r) => [
       r.tier,
@@ -198,6 +207,10 @@ export default async function CalendarPage() {
                       playerTier: Object.fromEntries(
                         [...homePlayers, ...awayPlayers].map((p) => [p.id, playerTierById.get(p.id) ?? FALLBACK_SCORER_TIER])
                       ),
+                      assistTierPoints: assistTierPointsObj,
+                      playerAssistTier: Object.fromEntries(
+                        [...homePlayers, ...awayPlayers].map((p) => [p.id, playerAssistTierById.get(p.id) ?? FALLBACK_ASSIST_TIER])
+                      ),
                     }}
                     resultOdds={{
                       homeTeamId: m.home_team_id,
@@ -210,6 +223,7 @@ export default async function CalendarPage() {
                       predictedHomeScore: existing?.predicted_home_score ?? null,
                       predictedAwayScore: existing?.predicted_away_score ?? null,
                       predictedScorerPlayerId: existing?.predicted_scorer_player_id ?? null,
+                      predictedAssistPlayerId: existing?.predicted_assist_player_id ?? null,
                     }}
                   />
                 );
