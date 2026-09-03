@@ -162,7 +162,12 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
 
       <section>
         <h2 className="mb-3 text-lg font-bold">À venir</h2>
-        {[...matchdayGroups.entries()].map(([matchdayKey, { matchday, dates }]) => (
+        {[...matchdayGroups.entries()]
+          // Trié par numéro de journée, pas par ordre de rencontre : un match reporté à une date
+          // plus tardive que la journée suivante ferait sinon apparaître les journées dans le
+          // désordre (ex: J6 avant J4/J5 si un match de J4 a été reprogrammé après ceux de J6).
+          .sort(([, a], [, b]) => (a.matchday ?? Infinity) - (b.matchday ?? Infinity))
+          .map(([matchdayKey, { matchday, dates }]) => (
           <div key={matchdayKey} className="mb-6">
             {matchday != null && (
               <div className="mb-3 flex items-center gap-3">
