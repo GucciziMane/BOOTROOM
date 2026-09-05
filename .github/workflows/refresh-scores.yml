@@ -1,13 +1,10 @@
 name: Refresh match scores
 on:
-  # GitHub n'exécute pas les cron programmés à l'heure garantie (retard voire abandon possibles
-  # sous charge, c'est documenté, rien à corriger côté config) : un run le 31/08 a par exemple
-  # attendu 5h30 au lieu de 2h. On tourne donc toutes les 30 min plutôt que toutes les 2h pour que
-  # la fenêtre de 2h reste couverte même avec ce genre de retard — tout est idempotent (upserts,
-  # contrainte unique sur points_ledger, garde-fou anti-régression), donc les passages en plus ne
-  # font que revérifier, jamais de doublon.
-  schedule:
-    - cron: "*/30 * * * *"
+  # Le déclenchement planifié GitHub Actions a été retiré : sur 85 runs observés, l'écart réel
+  # entre deux exécutions programmées toutes les 30 min était en moyenne de 3h35 (jusqu'à 14h dans
+  # le pire cas) — GitHub ne garantit pas l'heure des cron fréquents, ce n'est pas réglable côté
+  # config. QStash (scripts/setup-qstash-schedules.mjs) appelle maintenant ces mêmes endpoints de
+  # façon fiable toutes les 30 min. Ce workflow reste disponible en secours manuel uniquement.
   workflow_dispatch: {}
 jobs:
   refresh:
