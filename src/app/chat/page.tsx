@@ -4,6 +4,8 @@ import { markChatAsRead } from "./actions";
 import { ChatRoom } from "./ChatRoom";
 import { BackLink } from "@/app/BackLink";
 
+const SIGNED_URL_TTL_SECONDS = 60;
+
 export default async function ChatPage() {
   const supabase = await createClient();
   const {
@@ -53,6 +55,20 @@ export default async function ChatPage() {
     ])
   );
 
+  // Résolution en URL signée uniquement pour les images "affichables directement" (normales, ou
+  // éphémères mais envoyées par l'utilisateur courant) : jamais pour une photo éphémère de
+  // quelqu'un d'autre pas encore vue, dont le chemin ne doit apparaître nulle part dans la page
+  // tant que l'utilisateur n'a pas explicitement tapé dessus (cf. getChatImageUrl côté client).
+  const directlyDisplayable = (messages ?? []).filter(
+    (m) => m.image_url && (!m.is_ephemeral || m.user_id === user.id)
+  );
+  const pathsToSign = directlyDisplayable.map((m) => m.image_url as string);
+  const { data: signedUrls } =
+    pathsToSign.length > 0
+      ? await supabase.storage.from("chat-images").createSignedUrls(pathsToSign, SIGNED_URL_TTL_SECONDS)
+      : { data: [] as { path: string | null; signedUrl: string }[] };
+  const signedUrlByPath = new Map((signedUrls ?? []).map((s) => [s.path, s.signedUrl]));
+
   const initialMessages = (messages ?? [])
     .slice()
     .reverse()
@@ -60,7 +76,8 @@ export default async function ChatPage() {
       id: m.id,
       userId: m.user_id,
       content: m.content,
-      imageUrl: m.image_url,
+      hasImage: m.image_url != null,
+      imageUrl: m.image_url ? (signedUrlByPath.get(m.image_url) ?? null) : null,
       isEphemeral: m.is_ephemeral,
       createdAt: m.created_at,
     }));

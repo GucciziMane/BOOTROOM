@@ -8,7 +8,7 @@ import {
   subscribeToPush,
   unsubscribeFromPush,
   toggleReaction,
-  markPhotoViewed,
+  getChatImageUrl,
   type SendChatMessageState,
 } from "./actions";
 import { createClient } from "@/lib/supabase/client";
@@ -37,6 +37,11 @@ interface ChatMessage {
   id: number;
   userId: string;
   content: string;
+  // Séparé de imageUrl : une photo éphémère de quelqu'un d'autre a hasImage=true dès l'arrivée du
+  // message (pour afficher le bouton "appuie pour voir"), mais imageUrl reste null tant qu'elle
+  // n'a pas été résolue à la demande (cf. getChatImageUrl) — jamais avant, sans quoi le chemin de
+  // stockage se retrouverait dans la page avant même que l'utilisateur ait tapé dessus.
+  hasImage: boolean;
   imageUrl: string | null;
   isEphemeral: boolean;
   createdAt: string;
@@ -262,11 +267,13 @@ export function ChatRoom({
   }
 
   async function openEphemeralPhoto(m: ChatMessage) {
-    setOpenedPhoto(m);
-    if (!viewedIds.has(m.id)) {
-      setViewedIds((prev) => new Set(prev).add(m.id));
-      await markPhotoViewed(m.id);
-    }
+    // Marquée vue dès le tap (pas seulement après résolution) : un deuxième tap pendant la
+    // résolution ne doit pas relancer un second appel qui la consommerait une deuxième fois.
+    setViewedIds((prev) => new Set(prev).add(m.id));
+    const url = await getChatImageUrl(m.id);
+    // Rien à afficher si null (déjà consommée ailleurs, erreur réseau) : le badge "Photo vue"
+    // s'affiche déjà via isConsumedEphemeral, pas besoin d'un message d'erreur en plus ici.
+    if (url) setOpenedPhoto({ ...m, imageUrl: url });
   }
 
   const mentionableUsers = Object.entries(profilesById).map(([id, p]) => ({ id, username: p.username }));
@@ -411,6 +418,12 @@ export function ChatRoom({
             is_ephemeral: boolean;
             created_at: string;
           };
+          // image_url est un chemin de stockage privé (bucket privé, cf. migration 0030), jamais
+          // une URL utilisable telle quelle : on l'affiche d'abord sans image, puis on résout une
+          // URL signée à part — seulement pour une image "directement affichable" (normale, ou
+          // éphémère envoyée par moi). Une photo éphémère de quelqu'un d'autre reste non résolue
+          // ici : elle ne le sera qu'au tap, via ce même getChatImageUrl (cf. openEphemeralPhoto).
+          const needsEagerResolution = row.image_url && (!row.is_ephemeral || row.user_id === currentUserId);
           setMessages((prev) =>
             prev.some((m) => m.id === row.id)
               ? prev
@@ -420,12 +433,19 @@ export function ChatRoom({
                     id: row.id,
                     userId: row.user_id,
                     content: row.content,
-                    imageUrl: row.image_url,
+                    hasImage: row.image_url != null,
+                    imageUrl: null,
                     isEphemeral: row.is_ephemeral,
                     createdAt: row.created_at,
                   },
                 ]
           );
+          if (needsEagerResolution) {
+            getChatImageUrl(row.id).then((url) => {
+              if (!url) return;
+              setMessages((prev) => prev.map((m) => (m.id === row.id ? { ...m, imageUrl: url } : m)));
+            });
+          }
         })
         .on(
           "postgres_changes",
@@ -468,6 +488,9 @@ export function ChatRoom({
       cancelled = true;
       if (channel) supabase.removeChannel(channel);
     };
+    // currentUserId est un prop stable pour la durée de la session (l'utilisateur connecté ne
+    // change pas sans démonter la page) : pas besoin de resouscrire au canal s'il "changeait".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -527,8 +550,8 @@ export function ChatRoom({
           }
           const hasReactions = Object.keys(reactionGroups).length > 0;
           const mentionsMe = !isOwn && !!currentUsername && m.content.includes(`@${currentUsername}`);
-          const isLockedEphemeral = m.isEphemeral && m.imageUrl && !isOwn && !viewedIds.has(m.id);
-          const isConsumedEphemeral = m.isEphemeral && m.imageUrl && !isOwn && viewedIds.has(m.id);
+          const isLockedEphemeral = m.isEphemeral && m.hasImage && !isOwn && !viewedIds.has(m.id);
+          const isConsumedEphemeral = m.isEphemeral && m.hasImage && !isOwn && viewedIds.has(m.id);
           return (
             <div key={m.id} className={`flex items-end gap-2 ${isOwn ? "flex-row-reverse" : ""}`}>
               {!isOwn && (
@@ -635,7 +658,7 @@ export function ChatRoom({
                           key={emoji}
                           type="button"
                           onClick={() => {
-                            toggleReaction(m.id, emoji);
+                            toggleReaction(m.id, emoji).catch(() => {});
                             setOpenPickerFor(null);
                           }}
                           className="text-lg transition-transform hover:scale-125"
@@ -652,7 +675,7 @@ export function ChatRoom({
                       <button
                         key={emoji}
                         type="button"
-                        onClick={() => toggleReaction(m.id, emoji)}
+                        onClick={() => toggleReaction(m.id, emoji).catch(() => {})}
                         className={`rounded-full px-1.5 py-0.5 text-xs shadow-sm transition-colors ${
                           userIds.includes(currentUserId) ? "bg-accent-soft text-accent-hover" : "bg-paper text-ink"
                         }`}

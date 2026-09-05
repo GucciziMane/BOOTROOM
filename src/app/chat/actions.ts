@@ -43,12 +43,12 @@ export async function sendChatMessage(
     const { error: uploadError } = await supabase.storage
       .from("chat-images")
       .upload(path, file, { contentType: file.type });
-    if (uploadError) return { error: `Échec de l'envoi de l'image : ${uploadError.message}` };
+    if (uploadError) return { error: "Échec de l'envoi de l'image, réessaie." };
 
-    const {
-      data: { publicUrl },
-    } = supabase.storage.from("chat-images").getPublicUrl(path);
-    imageUrl = publicUrl;
+    // Le bucket est privé (voir migration 0030) : on stocke le CHEMIN, jamais une URL — l'affichage
+    // passe systématiquement par getChatImageUrl ci-dessous, qui génère une URL signée à la demande
+    // (et applique la règle "une seule vue" pour les photos éphémères).
+    imageUrl = path;
   }
 
   // Éphémère seulement pour les photos prises avec l'appareil (bouton caméra) : celles choisies
@@ -58,7 +58,7 @@ export async function sendChatMessage(
   const { error } = await supabase
     .from("chat_messages")
     .insert({ user_id: user.id, content, image_url: imageUrl, is_ephemeral: isEphemeral });
-  if (error) return { error: error.message };
+  if (error) return { error: "Échec de l'envoi, réessaie." };
 
   const { data: profiles } = await supabase.from("profiles").select("id, username");
   const senderName = profiles?.find((p) => p.id === user.id)?.username ?? "Quelqu'un";
@@ -140,18 +140,52 @@ export async function toggleReaction(messageId: number, emoji: string): Promise<
   revalidatePath("/chat");
 }
 
-/** Enregistre qu'une photo éphémère a été vue par l'utilisateur courant : idempotent (une
- * contrainte unique message_id+user_id), pour qu'un double appui ne fasse pas d'erreur. */
-export async function markPhotoViewed(messageId: number): Promise<void> {
+const SIGNED_URL_TTL_SECONDS = 60;
+
+/**
+ * Résout le chemin de stockage d'une image de chat en URL signée à courte durée de vie — jamais
+ * d'URL publique fixe (bucket privé, cf. migration 0030). Pour une photo éphémère vue par
+ * quelqu'un d'autre que l'expéditeur, enregistre la vue et refuse d'en générer une seconde : c'est
+ * ici, pas côté client, que la règle "une seule vue" est réellement appliquée.
+ *
+ * Appelée pour toute image affichable directement (message pas encore éphémère-consommé) : à la
+ * fois pour la résolution "en arrière-plan" des photos normales/déjà miennes, et à la demande
+ * (au tap) pour ouvrir une photo éphémère envoyée par quelqu'un d'autre.
+ */
+export async function getChatImageUrl(messageId: number): Promise<string | null> {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) return;
+  if (!user) return null;
 
-  await supabase
-    .from("chat_message_views")
-    .upsert({ message_id: messageId, user_id: user.id }, { onConflict: "message_id,user_id", ignoreDuplicates: true });
+  const { data: message } = await supabase
+    .from("chat_messages")
+    .select("user_id, image_url, is_ephemeral")
+    .eq("id", messageId)
+    .maybeSingle();
+  if (!message?.image_url) return null;
+
+  if (message.is_ephemeral && message.user_id !== user.id) {
+    const { data: existingView } = await supabase
+      .from("chat_message_views")
+      .select("id")
+      .eq("message_id", messageId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (existingView) return null; // déjà consommée
+
+    const { error: insertError } = await supabase
+      .from("chat_message_views")
+      .insert({ message_id: messageId, user_id: user.id });
+    // Contrainte unique violée : un onglet dupliqué vient de consommer la vue en même temps.
+    if (insertError) return null;
+  }
+
+  const { data, error } = await supabase.storage
+    .from("chat-images")
+    .createSignedUrl(message.image_url, SIGNED_URL_TTL_SECONDS);
+  return error ? null : data.signedUrl;
 }
 
 /** Appelée uniquement depuis la page chat, qui a déjà l'utilisateur courant sous la main : pas
