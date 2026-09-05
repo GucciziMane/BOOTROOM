@@ -54,6 +54,7 @@ export default async function LeaderboardPage() {
           <li key={p.id}>
             <Link
               href={`/leaderboard/${p.id}`}
+              transitionTypes={["nav-forward"]}
               className="flex items-center justify-between gap-3 p-4 transition-colors hover:bg-cream"
             >
               <span className="flex items-center gap-4">

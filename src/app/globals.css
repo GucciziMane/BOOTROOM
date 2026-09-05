@@ -184,3 +184,52 @@ textarea {
     animation-delay: 0s !important;
   }
 }
+
+/* Glissement directionnel pour les navigations "liste -> détail" (ex: classement -> profil d'un
+   joueur) : les onglets de la barre du bas sont des sections sœurs (le fondu ci-dessus leur va
+   mieux), mais entrer/sortir d'une page de détail doit se lire comme "j'avance"/"je reviens" —
+   voir les template.tsx de chaque section concernée, qui posent enter/exit à partir de ces classes,
+   et BackLink qui tague ses liens "nav-back". */
+::view-transition-old(.nav-forward) {
+  --slide-offset: -24px;
+  animation:
+    150ms ease-in both view-transition-fade reverse,
+    400ms ease-in-out both view-transition-slide reverse;
+}
+::view-transition-new(.nav-forward) {
+  --slide-offset: 24px;
+  animation:
+    210ms ease-out 150ms both view-transition-fade,
+    400ms ease-in-out both view-transition-slide;
+}
+
+::view-transition-old(.nav-back) {
+  --slide-offset: 24px;
+  animation:
+    150ms ease-in both view-transition-fade reverse,
+    400ms ease-in-out both view-transition-slide reverse;
+}
+::view-transition-new(.nav-back) {
+  --slide-offset: -24px;
+  animation:
+    210ms ease-out 150ms both view-transition-fade,
+    400ms ease-in-out both view-transition-slide;
+}
+
+@keyframes view-transition-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes view-transition-slide {
+  from {
+    translate: var(--slide-offset);
+  }
+  to {
+    translate: 0;
+  }
+}

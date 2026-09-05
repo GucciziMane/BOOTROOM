@@ -33,6 +33,7 @@ export default async function CalendarStandingsPage() {
           <li key={league.id}>
             <Link
               href={`/calendar/classements/${league.football_data_code}`}
+              transitionTypes={["nav-forward"]}
               className="flex items-center gap-3 p-4 transition-colors hover:bg-cream"
             >
               {league.logo_url && (
