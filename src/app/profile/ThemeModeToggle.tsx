@@ -27,15 +27,20 @@ export function ThemeModeToggle({
     setError(null);
     setUseClubTheme(next);
     startTransition(async () => {
-      const formData = new FormData();
-      formData.set("use_club_theme", next ? "1" : "0");
-      const res = await setThemeMode({ error: null, success: false }, formData);
-      if (res.error) {
-        setError(res.error);
+      try {
+        const formData = new FormData();
+        formData.set("use_club_theme", next ? "1" : "0");
+        const res = await setThemeMode({ error: null, success: false }, formData);
+        if (res.error) {
+          setError(res.error);
+          setUseClubTheme(!next);
+          return;
+        }
+        router.refresh();
+      } catch {
+        setError("Erreur réseau, réessaie.");
         setUseClubTheme(!next);
-        return;
       }
-      router.refresh();
     });
   }
 

@@ -39,7 +39,7 @@ export function AvatarForm({
         <FavoriteTeamBadge logoUrl={favoriteTeamLogoUrl ?? null} size={36} />
       </div>
 
-      <label className="cursor-pointer text-sm font-bold text-ink underline decoration-2 underline-offset-2">
+      <label className="cursor-pointer rounded-xl border-2 border-ink bg-paper px-4 py-2 text-sm font-bold text-ink transition-colors hover:bg-cream active:scale-[0.97]">
         Choisir une photo
         <input
           type="file"

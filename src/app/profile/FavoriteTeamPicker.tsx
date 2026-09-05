@@ -34,14 +34,20 @@ export function FavoriteTeamPicker({
     setError(null);
     setSelected(teamId);
     startTransition(async () => {
-      const formData = new FormData();
-      formData.set("team_id", String(teamId));
-      const res = await setFavoriteTeam({ error: null, success: false }, formData);
-      if (res.error) {
-        setError(res.error);
-        return;
+      try {
+        const formData = new FormData();
+        formData.set("team_id", String(teamId));
+        const res = await setFavoriteTeam({ error: null, success: false }, formData);
+        if (res.error) {
+          setError(res.error);
+          return;
+        }
+        onSaved?.(teamId);
+      } catch {
+        // Une exception (réseau, timeout) ne doit pas planter toute la page pour un simple choix
+        // de club favori : on affiche une erreur récupérable à la place.
+        setError("Erreur réseau, réessaie.");
       }
-      onSaved?.(teamId);
     });
   }
 
