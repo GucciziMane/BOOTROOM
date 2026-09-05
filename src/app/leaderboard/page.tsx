@@ -45,12 +45,17 @@ export default async function LeaderboardPage() {
         </Link>
       </div>
 
+      <p className="mb-4 text-sm text-mute">
+        Clique sur un joueur pour voir tous ses pronostics passés : score prédit, score réel, points gagnés, et si
+        son buteur/passeur pronostiqué s&apos;est vérifié.
+      </p>
+
       <ul className={`mb-8 ${listCard}`}>
         {ranked.map((p, i) => (
           <li key={p.id}>
             <Link
               href={`/leaderboard/${p.id}`}
-              className="flex items-center justify-between p-4 transition-colors hover:bg-cream"
+              className="flex items-center justify-between gap-3 p-4 transition-colors hover:bg-cream"
             >
               <span className="flex items-center gap-4">
                 <span className="w-6 text-mute">{i + 1}</span>
@@ -68,7 +73,12 @@ export default async function LeaderboardPage() {
                 </span>
                 <span className="text-lg font-bold">{p.username}</span>
               </span>
-              <span className="font-bold">{p.total} pts</span>
+              <span className="flex items-center gap-2">
+                <span className="font-bold">{p.total} pts</span>
+                <span aria-hidden className="text-mute">
+                  ›
+                </span>
+              </span>
             </Link>
           </li>
         ))}
