@@ -81,39 +81,78 @@ async function processFinishedMatches(supabase: ServiceClient, config: PointConf
     ])
   );
 
-  let processed = 0;
-  for (const match of matches) {
-    if (match.home_score === null || match.away_score === null) continue;
+  const finishedMatches = matches.filter((m) => m.home_score !== null && m.away_score !== null);
+  if (finishedMatches.length === 0) return { processed: 0 };
 
-    const { data: predictions } = await supabase
-      .from("match_predictions")
-      .select(
-        "id, user_id, predicted_home_score, predicted_away_score, predicted_scorer_player_id, predicted_assist_player_id"
-      )
-      .eq("match_id", match.id);
+  const matchIds = finishedMatches.map((m) => m.id);
+  const seasonIds = [...new Set(finishedMatches.map((m) => m.season_id))];
 
-    const { data: goals } = await supabase
-      .from("match_goals")
-      .select("player_id, assist_player_id")
-      .eq("match_id", match.id);
-    const actualScorers = new Set((goals ?? []).map((g) => g.player_id).filter((id): id is number => id !== null));
-    const actualAssisters = new Set(
-      (goals ?? []).map((g) => g.assist_player_id).filter((id): id is number => id !== null)
-    );
+  // Tout précalculé en 5 requêtes groupées plutôt que jusqu'à 5 requêtes PAR match (+ jusqu'à 2
+  // de plus par pronostic) : à MAX_MATCHES_PER_RUN=100 matchs et quelques amis chacun, l'ancienne
+  // version pouvait dépasser le millier d'allers-retours DB séquentiels dans un seul run de cron.
+  const [{ data: allPredictions }, { data: allGoals }, { data: existingLedger }, { data: scorerTierRows }, { data: assistTierRows }] =
+    await Promise.all([
+      supabase
+        .from("match_predictions")
+        .select(
+          "id, match_id, user_id, predicted_home_score, predicted_away_score, predicted_scorer_player_id, predicted_assist_player_id"
+        )
+        .in("match_id", matchIds),
+      supabase.from("match_goals").select("match_id, player_id, assist_player_id").in("match_id", matchIds),
+      supabase
+        .from("points_ledger")
+        .select("user_id, source_type, source_id")
+        .in("source_id", matchIds)
+        .in("source_type", ["match_score", "match_scorer", "match_assist"]),
+      supabase.from("player_scoring_tier").select("player_id, tier").in("season_id", seasonIds),
+      supabase.from("player_assist_tier").select("player_id, tier").in("season_id", seasonIds),
+    ]);
 
-    const { data: existingLedger } = await supabase
-      .from("points_ledger")
-      .select("user_id, source_type")
-      .eq("source_id", match.id)
-      .in("source_type", ["match_score", "match_scorer", "match_assist"]);
-    const alreadyAwarded = new Set((existingLedger ?? []).map((r) => `${r.user_id}:${r.source_type}`));
+  const predictionsByMatch = new Map<number, NonNullable<typeof allPredictions>>();
+  for (const p of allPredictions ?? []) {
+    if (!predictionsByMatch.has(p.match_id)) predictionsByMatch.set(p.match_id, []);
+    predictionsByMatch.get(p.match_id)!.push(p);
+  }
+  const scorersByMatch = new Map<number, Set<number>>();
+  const assistersByMatch = new Map<number, Set<number>>();
+  for (const g of allGoals ?? []) {
+    if (g.player_id != null) {
+      if (!scorersByMatch.has(g.match_id)) scorersByMatch.set(g.match_id, new Set());
+      scorersByMatch.get(g.match_id)!.add(g.player_id);
+    }
+    if (g.assist_player_id != null) {
+      if (!assistersByMatch.has(g.match_id)) assistersByMatch.set(g.match_id, new Set());
+      assistersByMatch.get(g.match_id)!.add(g.assist_player_id);
+    }
+  }
+  const alreadyAwarded = new Set((existingLedger ?? []).map((r) => `${r.source_id}:${r.user_id}:${r.source_type}`));
+  // Un même joueur n'a qu'un seul tier par saison en pratique (une seule ligue à la fois) : la clé
+  // ne porte que sur player_id, pas besoin du season_id ici contrairement à une lecture par match.
+  const scorerTierByPlayer = new Map((scorerTierRows ?? []).map((r) => [r.player_id, r.tier]));
+  const assistTierByPlayer = new Map((assistTierRows ?? []).map((r) => [r.player_id, r.tier]));
 
-    for (const pred of predictions ?? []) {
+  const ledgerInserts: Array<{ user_id: string; league_id: number; source_type: PointsSourceType; source_id: number; points: number }> = [];
+  const predictionUpdates: Array<{
+    id: number;
+    user_id: string;
+    match_id: number;
+    predicted_home_score: number;
+    predicted_away_score: number;
+    points_awarded: number;
+  }> = [];
+
+  for (const match of finishedMatches) {
+    const homeScore = match.home_score as number;
+    const awayScore = match.away_score as number;
+    const actualScorers = scorersByMatch.get(match.id) ?? new Set();
+    const actualAssisters = assistersByMatch.get(match.id) ?? new Set();
+
+    for (const pred of predictionsByMatch.get(match.id) ?? []) {
       const baseScorePoints = computeMatchScorePoints(
         pred.predicted_home_score,
         pred.predicted_away_score,
-        match.home_score,
-        match.away_score,
+        homeScore,
+        awayScore,
         config
       );
       const winnerTeamId = predictedWinnerTeamId(
@@ -130,67 +169,45 @@ async function processFinishedMatches(supabase: ServiceClient, config: PointConf
         resultMultiplierMap
       );
 
-      let scorerPoints = 0;
-      if (pred.predicted_scorer_player_id && actualScorers.has(pred.predicted_scorer_player_id)) {
-        const { data: tierRow } = await supabase
-          .from("player_scoring_tier")
-          .select("tier")
-          .eq("player_id", pred.predicted_scorer_player_id)
-          .eq("season_id", match.season_id)
-          .maybeSingle();
-        scorerPoints = resolveScorerTierPoints(tierRow?.tier, tierPointsMap);
+      const scorerPoints =
+        pred.predicted_scorer_player_id && actualScorers.has(pred.predicted_scorer_player_id)
+          ? resolveScorerTierPoints(scorerTierByPlayer.get(pred.predicted_scorer_player_id), tierPointsMap)
+          : 0;
+      const assistPoints =
+        pred.predicted_assist_player_id && actualAssisters.has(pred.predicted_assist_player_id)
+          ? resolveAssistTierPoints(assistTierByPlayer.get(pred.predicted_assist_player_id), assistTierPointsMap)
+          : 0;
+
+      const toAward: Array<[PointsSourceType, number]> = [
+        ["match_score", scorePoints],
+        ["match_scorer", scorerPoints],
+        ["match_assist", assistPoints],
+      ];
+      for (const [sourceType, points] of toAward) {
+        if (points > 0 && !alreadyAwarded.has(`${match.id}:${pred.user_id}:${sourceType}`)) {
+          ledgerInserts.push({ user_id: pred.user_id, league_id: match.league_id, source_type: sourceType, source_id: match.id, points });
+        }
       }
 
-      let assistPoints = 0;
-      if (pred.predicted_assist_player_id && actualAssisters.has(pred.predicted_assist_player_id)) {
-        const { data: assistTierRow } = await supabase
-          .from("player_assist_tier")
-          .select("tier")
-          .eq("player_id", pred.predicted_assist_player_id)
-          .eq("season_id", match.season_id)
-          .maybeSingle();
-        assistPoints = resolveAssistTierPoints(assistTierRow?.tier, assistTierPointsMap);
-      }
-
-      if (scorePoints > 0 && !alreadyAwarded.has(`${pred.user_id}:match_score`)) {
-        await supabase.from("points_ledger").insert({
-          user_id: pred.user_id,
-          league_id: match.league_id,
-          source_type: "match_score",
-          source_id: match.id,
-          points: scorePoints,
-        });
-      }
-      if (scorerPoints > 0 && !alreadyAwarded.has(`${pred.user_id}:match_scorer`)) {
-        await supabase.from("points_ledger").insert({
-          user_id: pred.user_id,
-          league_id: match.league_id,
-          source_type: "match_scorer",
-          source_id: match.id,
-          points: scorerPoints,
-        });
-      }
-      if (assistPoints > 0 && !alreadyAwarded.has(`${pred.user_id}:match_assist`)) {
-        await supabase.from("points_ledger").insert({
-          user_id: pred.user_id,
-          league_id: match.league_id,
-          source_type: "match_assist",
-          source_id: match.id,
-          points: assistPoints,
-        });
-      }
-
-      await supabase
-        .from("match_predictions")
-        .update({ points_awarded: scorePoints + scorerPoints + assistPoints })
-        .eq("id", pred.id);
+      predictionUpdates.push({
+        id: pred.id,
+        user_id: pred.user_id,
+        match_id: match.id,
+        predicted_home_score: pred.predicted_home_score,
+        predicted_away_score: pred.predicted_away_score,
+        points_awarded: scorePoints + scorerPoints + assistPoints,
+      });
     }
-
-    await supabase.from("matches").update({ points_processed_at: new Date().toISOString() }).eq("id", match.id);
-    processed++;
   }
 
-  return { processed };
+  if (ledgerInserts.length > 0) await supabase.from("points_ledger").insert(ledgerInserts);
+  if (predictionUpdates.length > 0) await supabase.from("match_predictions").upsert(predictionUpdates, { onConflict: "id" });
+  await supabase
+    .from("matches")
+    .update({ points_processed_at: new Date().toISOString() })
+    .in("id", matchIds);
+
+  return { processed: finishedMatches.length };
 }
 
 async function processFinishedSeasons(supabase: ServiceClient, config: PointConfig) {
@@ -248,8 +265,8 @@ async function processFinishedSeasons(supabase: ServiceClient, config: PointConf
         if (g.assist_player_id) assistsByPlayer.set(g.assist_player_id, (assistsByPlayer.get(g.assist_player_id) ?? 0) + 1);
       }
     }
-    const actualTopScorerId = topEntry(goalsByPlayer);
-    const actualTopAssistId = topEntry(assistsByPlayer);
+    const actualTopScorerIds = topEntries(goalsByPlayer);
+    const actualTopAssistIds = topEntries(assistsByPlayer);
 
     const { data: existingLedger } = await supabase
       .from("points_ledger")
@@ -283,12 +300,12 @@ async function processFinishedSeasons(supabase: ServiceClient, config: PointConf
         });
       };
 
-      if (actualTopScorerId && pred.top_scorer_player_id === actualTopScorerId) {
-        const tier = await getPlayerTier(supabase, actualTopScorerId, season.id);
+      if (pred.top_scorer_player_id && actualTopScorerIds.has(pred.top_scorer_player_id)) {
+        const tier = await getPlayerTier(supabase, pred.top_scorer_player_id, season.id);
         await award("season_top_scorer", tierPointsMap.get(tier) ?? 150);
       }
-      if (actualTopAssistId && pred.top_assist_player_id === actualTopAssistId) {
-        const tier = await getPlayerTier(supabase, actualTopAssistId, season.id);
+      if (pred.top_assist_player_id && actualTopAssistIds.has(pred.top_assist_player_id)) {
+        const tier = await getPlayerTier(supabase, pred.top_assist_player_id, season.id);
         await award("season_top_assist", tierPointsMap.get(tier) ?? 150);
       }
 
@@ -325,16 +342,15 @@ async function processFinishedSeasons(supabase: ServiceClient, config: PointConf
   return { processed: results.length, results };
 }
 
-function topEntry(counts: Map<number, number>): number | null {
-  let bestId: number | null = null;
+/** Tous les joueurs à égalité au sommet (jamais un seul choisi arbitrairement en cas d'égalité) :
+ * quiconque a pronostiqué l'un d'eux touche les points, chacun sur la base de son propre tier. */
+function topEntries(counts: Map<number, number>): Set<number> {
   let bestCount = 0;
-  for (const [id, count] of counts) {
-    if (count > bestCount) {
-      bestCount = count;
-      bestId = id;
-    }
+  for (const count of counts.values()) {
+    if (count > bestCount) bestCount = count;
   }
-  return bestId;
+  if (bestCount === 0) return new Set();
+  return new Set([...counts.entries()].filter(([, count]) => count === bestCount).map(([id]) => id));
 }
 
 async function getPlayerTier(
