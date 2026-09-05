@@ -15,6 +15,9 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "**.supabase.co", pathname: "/storage/v1/object/public/**" },
       // Blasons des clubs (football-data.org) : idem, affichés des dizaines de fois par page.
       { protocol: "https", hostname: "crests.football-data.org" },
+      // Photos de joueurs, résolues depuis l'image d'infobox Wikipédia de chaque joueur
+      // (scripts/fetch-wikipedia-squads.mjs) — servies par Wikimedia, pas par Wikipédia lui-même.
+      { protocol: "https", hostname: "upload.wikimedia.org" },
     ],
   },
 };

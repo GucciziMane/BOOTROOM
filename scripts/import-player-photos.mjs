@@ -1,3 +1,7 @@
+// Contrairement à import-wikipedia-squads.mjs (qui insère/mets à jour/supprime tout l'effectif),
+// ce script ne touche QUE photo_url sur des joueurs déjà en base, appariés par nom — jamais
+// d'insertion ni de suppression. Objectif : ajouter les photos sans risquer d'effacer un joueur
+// réel à cause d'un souci de parsing sur une page Wikipédia précise.
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 
@@ -22,71 +26,41 @@ async function importFile(path) {
   const summary = [];
 
   for (const t of teams) {
-    const { data: teamRow, error: teamErr } = await supabase
-      .from("teams")
-      .select("id")
-      .eq("name", t.team)
-      .maybeSingle();
-
+    const { data: teamRow, error: teamErr } = await supabase.from("teams").select("id").eq("name", t.team).maybeSingle();
     if (teamErr || !teamRow) {
       summary.push({ team: t.team, error: "team not found in DB" });
       continue;
     }
     const teamId = teamRow.id;
 
-    const { data: existing } = await supabase.from("players").select("id, name").eq("team_id", teamId);
+    const { data: existing } = await supabase.from("players").select("id, name").eq("team_id", teamId).is("left_at", null);
     const existingByNorm = new Map((existing ?? []).map((p) => [normalize(p.name), p]));
-    const matchedIds = new Set();
+
     let updated = 0;
-    let inserted = 0;
+    let noPhoto = 0;
+    let unmatched = 0;
 
     for (const p of t.players) {
+      if (!p.photoUrl) {
+        noPhoto++;
+        continue;
+      }
       const norm = normalize(p.name);
       let match = existingByNorm.get(norm);
-
       if (!match) {
         const lastName = norm.split(" ").pop();
         const candidates = (existing ?? []).filter((e) => normalize(e.name).split(" ").pop() === lastName);
         if (candidates.length === 1) match = candidates[0];
       }
-
-      if (match) {
-        matchedIds.add(match.id);
-        await supabase
-          .from("players")
-          .update({ name: p.name, position: p.position, photo_url: p.photoUrl ?? null, updated_at: new Date().toISOString() })
-          .eq("id", match.id);
-        updated++;
-      } else {
-        const { data: insertedRow, error: insertErr } = await supabase
-          .from("players")
-          .insert({
-            team_id: teamId,
-            name: p.name,
-            position: p.position,
-            photo_url: p.photoUrl ?? null,
-            football_data_id: null,
-            updated_at: new Date().toISOString(),
-          })
-          .select("id")
-          .single();
-        if (!insertErr && insertedRow) {
-          matchedIds.add(insertedRow.id);
-          inserted++;
-        }
+      if (!match) {
+        unmatched++;
+        continue;
       }
+      await supabase.from("players").update({ photo_url: p.photoUrl }).eq("id", match.id);
+      updated++;
     }
 
-    const staleIds = (existing ?? []).filter((e) => !matchedIds.has(e.id)).map((e) => e.id);
-    let deleted = 0;
-    let deleteBlocked = 0;
-    for (const id of staleIds) {
-      const { error: delErr } = await supabase.from("players").delete().eq("id", id);
-      if (delErr) deleteBlocked++;
-      else deleted++;
-    }
-
-    summary.push({ team: t.team, updated, inserted, deleted, deleteBlocked });
+    summary.push({ team: t.team, updated, noPhoto, unmatched });
   }
 
   return summary;

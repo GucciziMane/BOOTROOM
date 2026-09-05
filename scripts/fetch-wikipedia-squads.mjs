@@ -86,9 +86,62 @@ function parsePlayers(wikitext) {
     const display = link ? (link[1].includes("|") ? link[1].split("|")[1] : link[1]) : fields.name;
     const cleanName = display.replace(/\(.*\)$/, "").trim(); // drop disambiguation "(footballer, born 2003)"
     if (!cleanName || cleanName.includes("[[") || cleanName.includes("]]")) continue;
-    players.push({ name: cleanName, position: pos });
+    // Le titre de la page (avant le "|") sert à retrouver la photo de la fiche joueur ensuite ;
+    // sans lien wiki (nom en texte brut, joueur trop obscur pour avoir un article), pas de photo possible.
+    const wikiTitle = link ? link[1].split("|")[0].trim() : null;
+    players.push({ name: cleanName, position: pos, wikiTitle });
   }
   return players;
+}
+
+/**
+ * Résout les photos de joueurs via l'API "pageimages" de Wikipédia (l'image d'infobox que
+ * Wikipédia associe déjà à chaque article) plutôt que via Wikidata : pour une personne vivante,
+ * les règles de contenu non-libre de Wikipédia (WP:NFCC) interdisent une photo "fair use" dès
+ * qu'une photo libre est possible, donc la quasi-totalité des portraits de footballeurs en
+ * activité sur Wikipédia sont déjà des photos Commons sous licence libre — cette API renvoie
+ * directement l'URL utilisable, sans étape Wikidata en plus.
+ */
+async function fetchPhotos(wikiTitles) {
+  const photoByTitle = new Map();
+  const titles = [...new Set(wikiTitles)];
+  const BATCH = 50; // limite de l'API MediaWiki pour "titles" en anonyme
+
+  for (let i = 0; i < titles.length; i += BATCH) {
+    const batch = titles.slice(i, i + BATCH);
+    try {
+      const data = await mwApi({
+        action: "query",
+        titles: batch.join("|"),
+        prop: "pageimages",
+        piprop: "original",
+        redirects: "1",
+      });
+      const pages = data.query?.pages ?? {};
+      // "redirects"/"normalized" font correspondre le titre demandé (ex: lien wiki avec espaces
+      // insécables ou variante de casse) au titre final de la page réellement retournée.
+      const canonicalByRequested = new Map();
+      for (const r of data.query?.redirects ?? []) canonicalByRequested.set(r.from, r.to);
+      for (const n of data.query?.normalized ?? []) canonicalByRequested.set(n.from, n.to);
+
+      const imageByCanonical = new Map();
+      for (const page of Object.values(pages)) {
+        if (page.original?.source) imageByCanonical.set(page.title, page.original.source);
+      }
+      for (const requested of batch) {
+        let canonical = requested;
+        // Une page peut être normalisée PUIS redirigée : suivre la chaîne au besoin.
+        while (canonicalByRequested.has(canonical)) canonical = canonicalByRequested.get(canonical);
+        const url = imageByCanonical.get(canonical);
+        if (url) photoByTitle.set(requested, url);
+      }
+    } catch {
+      // Panne ponctuelle de l'API : ce lot de joueurs restera simplement sans photo, pas bloquant.
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+
+  return photoByTitle;
 }
 
 async function fetchTeamSquad(dbName, wikiPage) {
@@ -126,6 +179,18 @@ for (const { dbName, wikiPage } of TEAMS) {
   }
   await new Promise((r) => setTimeout(r, 200)); // rester poli avec l'API Wikipédia
 }
+
+const allWikiTitles = results.flatMap((r) => r.players.map((p) => p.wikiTitle).filter(Boolean));
+console.log(`\nRésolution des photos pour ${allWikiTitles.length} joueurs (avec fiche Wikipédia)...`);
+const photoByTitle = await fetchPhotos(allWikiTitles);
+for (const r of results) {
+  for (const p of r.players) {
+    p.photoUrl = p.wikiTitle ? (photoByTitle.get(p.wikiTitle) ?? null) : null;
+  }
+}
+const withPhoto = results.reduce((sum, r) => sum + r.players.filter((p) => p.photoUrl).length, 0);
+const totalPlayers = results.reduce((sum, r) => sum + r.players.length, 0);
+console.log(`${withPhoto}/${totalPlayers} joueurs avec une photo trouvée.`);
 
 writeFileSync(outPath, JSON.stringify(results, null, 2));
 console.log(`\n${results.length} équipes OK, ${failures.length} échecs.`);
