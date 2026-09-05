@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
 import { Instrument_Sans } from "next/font/google";
 import { createClient } from "@/lib/supabase/server";
@@ -20,6 +20,15 @@ export const metadata: Metadata = {
     title: "Boot Room",
     statusBarStyle: "black-translucent",
   },
+};
+
+// viewportFit "cover" : sans ça, iOS ignore les encoches/coins arrondis et les env(safe-area-inset-*)
+// utilisés par BottomNav/le padding-top ci-dessous valent 0 — le contenu se retrouve alors sous la
+// barre de statut ou derrière l'indicateur d'accueil, ce qui trahit immédiatement un site web
+// plaqué dans un cadre plutôt qu'une vraie appli installée.
+export const viewport: Viewport = {
+  themeColor: "#211c14",
+  viewportFit: "cover",
 };
 
 interface ClubTheme {
@@ -84,7 +93,7 @@ async function ClubThemeLayer() {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="fr" className={`${comicNeue.variable} h-full antialiased`}>
-      <body className="flex min-h-full flex-col pb-32 lg:pb-0">
+      <body className="flex min-h-full flex-col pb-32 pt-[env(safe-area-inset-top)] lg:pb-0">
         <Suspense fallback={null}>
           <ClubThemeLayer />
         </Suspense>

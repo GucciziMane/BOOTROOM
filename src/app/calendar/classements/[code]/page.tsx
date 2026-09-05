@@ -1,9 +1,8 @@
-import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { linkMuted } from "@/lib/ui";
 import { computeStandings } from "@/lib/scoring/standings";
+import { BackLink } from "@/app/BackLink";
 
 const TOP_N = 10;
 
@@ -87,9 +86,7 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
     <main className="mx-auto w-full max-w-3xl flex-1 p-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-3xl font-bold">{league.name}</h1>
-        <Link href="/calendar/classements" className={`text-sm ${linkMuted}`}>
-          Retour
-        </Link>
+        <BackLink href="/calendar/classements" />
       </div>
 
       <section className="mb-10 overflow-x-auto rounded-2xl border border-line bg-paper">

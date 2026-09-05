@@ -1,9 +1,9 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatParisDateTime } from "@/lib/format-date";
-import { bannerWarn, bannerNeutral, card, linkMuted } from "@/lib/ui";
+import { bannerWarn, bannerNeutral, card } from "@/lib/ui";
 import { FALLBACK_SCORER_TIER, FALLBACK_ASSIST_TIER } from "@/lib/scoring/points";
+import { BackLink } from "@/app/BackLink";
 import { MatchPredictionForm } from "./MatchPredictionForm";
 
 export default async function MatchPage({ params }: PageProps<"/leagues/[code]/calendar/[matchId]">) {
@@ -116,9 +116,7 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
         <h1 className="text-xl font-bold">
           {homeTeam?.name} vs {awayTeam?.name}
         </h1>
-        <Link href={`/leagues/${code}/calendar`} className={`text-sm ${linkMuted}`}>
-          Retour
-        </Link>
+        <BackLink href={`/leagues/${code}/calendar`} />
       </div>
 
       <p className="mb-6 text-sm text-mute">Coup d&apos;envoi : {formatParisDateTime(match.kickoff_at)}</p>

@@ -1,10 +1,10 @@
-import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatParisDateTime } from "@/lib/format-date";
-import { linkMuted, listCard } from "@/lib/ui";
+import { listCard } from "@/lib/ui";
 import { FALLBACK_SCORER_TIER, FALLBACK_ASSIST_TIER, type OddsTier } from "@/lib/scoring/points";
+import { BackLink } from "@/app/BackLink";
 import { MatchPredictionCard } from "./MatchPredictionCard";
 
 export default async function CalendarPage({ params }: PageProps<"/leagues/[code]/calendar">) {
@@ -136,9 +136,7 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
     <main className="mx-auto w-full max-w-3xl flex-1 p-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-3xl font-bold">{league.name} — Calendrier</h1>
-        <Link href="/calendar" className={`text-sm ${linkMuted}`}>
-          Retour
-        </Link>
+        <BackLink href="/calendar" />
       </div>
 
       {recentFinished.length > 0 && (

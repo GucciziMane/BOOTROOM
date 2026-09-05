@@ -1,9 +1,8 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { markChatAsRead } from "./actions";
 import { ChatRoom } from "./ChatRoom";
-import { linkMuted } from "@/lib/ui";
+import { BackLink } from "@/app/BackLink";
 
 export default async function ChatPage() {
   const supabase = await createClient();
@@ -70,9 +69,7 @@ export default async function ChatPage() {
     <main className="mx-auto flex h-[calc(100dvh-4.75rem-env(safe-area-inset-bottom))] w-full max-w-2xl flex-col overflow-hidden p-6 lg:h-dvh">
       <div className="mb-4 flex shrink-0 items-center justify-between">
         <h1 className="text-3xl font-bold">3ème mi-temps 🍻</h1>
-        <Link href="/" className={`text-sm ${linkMuted}`}>
-          Retour
-        </Link>
+        <BackLink href="/" />
       </div>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] bg-paper/60">
         <ChatRoom

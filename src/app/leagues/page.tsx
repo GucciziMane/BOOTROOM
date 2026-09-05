@@ -2,8 +2,9 @@ import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import { formatParisDateTime } from "@/lib/format-date";
-import { bannerWarn, linkMuted, listCard } from "@/lib/ui";
+import { bannerWarn, listCard } from "@/lib/ui";
 import { LEAGUE_FLAG } from "@/lib/country-flags";
+import { BackLink } from "@/app/BackLink";
 
 export default async function LeaguesPage() {
   const supabase = await createClient();
@@ -30,9 +31,7 @@ export default async function LeaguesPage() {
     <main className="mx-auto w-full max-w-3xl flex-1 p-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-3xl font-bold">Championnats</h1>
-        <Link href="/" className={`text-sm ${linkMuted}`}>
-          Retour
-        </Link>
+        <BackLink href="/" />
       </div>
 
       <p className="mb-3 text-sm text-mute">
@@ -73,7 +72,7 @@ export default async function LeaguesPage() {
                   ) : locked ? (
                     <span className="text-mute">Verrouillé</span>
                   ) : (
-                    <span className="text-ink underline decoration-2 underline-offset-2">À faire</span>
+                    <span className="rounded-full bg-accent-soft px-2.5 py-1 text-xs text-accent">À faire</span>
                   )}
                 </div>
               </Link>

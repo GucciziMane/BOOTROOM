@@ -1,8 +1,9 @@
 import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
-import { linkMuted, listCard } from "@/lib/ui";
+import { listCard } from "@/lib/ui";
 import { LEAGUE_FLAG } from "@/lib/country-flags";
+import { BackLink } from "@/app/BackLink";
 import { CalendarTabs } from "../CalendarTabs";
 
 export default async function CalendarStandingsPage() {
@@ -18,9 +19,7 @@ export default async function CalendarStandingsPage() {
     <main className="mx-auto w-full max-w-3xl flex-1 p-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-3xl font-bold">Pronostics</h1>
-        <Link href="/" className={`text-sm ${linkMuted}`}>
-          Retour
-        </Link>
+        <BackLink href="/" />
       </div>
 
       <CalendarTabs active="classements" />

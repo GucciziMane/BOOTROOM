@@ -1,8 +1,7 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 import { getDailyQuiz, parisDateString, stripAnswer } from "@/lib/quiz/daily";
-import { linkMuted } from "@/lib/ui";
+import { BackLink } from "@/app/BackLink";
 import { QuizRunner } from "./QuizRunner";
 
 export default async function QuizPage() {
@@ -32,9 +31,7 @@ export default async function QuizPage() {
     <main className="mx-auto w-full max-w-2xl flex-1 p-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-3xl font-bold">Quiz du jour 🧠</h1>
-        <Link href="/" className={`text-sm ${linkMuted}`}>
-          Retour
-        </Link>
+        <BackLink href="/" />
       </div>
 
       <QuizRunner

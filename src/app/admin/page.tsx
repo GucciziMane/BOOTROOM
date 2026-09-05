@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { linkMuted, listCard } from "@/lib/ui";
+import { listCard } from "@/lib/ui";
+import { BackLink } from "@/app/BackLink";
 import { DeleteUserButton } from "./DeleteUserButton";
 import { RefreshScoresButton } from "./RefreshScoresButton";
 
@@ -28,9 +28,7 @@ export default async function AdminPage() {
     <main className="mx-auto w-full max-w-2xl flex-1 p-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-3xl font-bold">Administration</h1>
-        <Link href="/" className={`text-sm ${linkMuted}`}>
-          Retour
-        </Link>
+        <BackLink href="/" />
       </div>
 
       <h2 className="mb-3 text-lg font-bold">Scores &amp; points</h2>

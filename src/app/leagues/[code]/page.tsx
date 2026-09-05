@@ -1,8 +1,8 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatParisDateTime } from "@/lib/format-date";
-import { bannerWarn, bannerNeutral, linkMuted, card } from "@/lib/ui";
+import { bannerWarn, bannerNeutral, card } from "@/lib/ui";
+import { BackLink } from "@/app/BackLink";
 import { SeasonPredictionForm, type PlayerOption, type TeamOption } from "./SeasonPredictionForm";
 
 export default async function LeagueSeasonPage({ params }: PageProps<"/leagues/[code]">) {
@@ -69,9 +69,7 @@ export default async function LeagueSeasonPage({ params }: PageProps<"/leagues/[
     <main className="mx-auto w-full max-w-2xl flex-1 p-6">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-3xl font-bold">{league.name}</h1>
-        <Link href="/leagues" className={`text-sm ${linkMuted}`}>
-          Retour
-        </Link>
+        <BackLink href="/leagues" />
       </div>
 
       <div className={`mb-6 ${locked ? bannerNeutral : bannerWarn}`}>

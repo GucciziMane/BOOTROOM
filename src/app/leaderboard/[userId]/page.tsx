@@ -1,9 +1,8 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { linkMuted } from "@/lib/ui";
 import { getPredictionHistory } from "@/lib/predictions";
 import { PredictionHistoryList } from "@/app/calendar/mes-pronos/PredictionHistoryList";
+import { BackLink } from "@/app/BackLink";
 
 export default async function PlayerPredictionsPage({ params }: PageProps<"/leaderboard/[userId]">) {
   const { userId } = await params;
@@ -24,9 +23,7 @@ export default async function PlayerPredictionsPage({ params }: PageProps<"/lead
     <main className="mx-auto w-full max-w-3xl flex-1 p-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-3xl font-bold">{isSelf ? "Mes pronostics" : `Pronostics de ${profile.username}`}</h1>
-        <Link href="/leaderboard" className={`text-sm ${linkMuted}`}>
-          Retour au classement
-        </Link>
+        <BackLink href="/leaderboard">Retour au classement</BackLink>
       </div>
 
       <section>

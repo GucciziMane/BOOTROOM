@@ -1,8 +1,9 @@
 import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
-import { linkMuted, listCard } from "@/lib/ui";
+import { listCard } from "@/lib/ui";
 import { FavoriteTeamBadge } from "@/app/profile/FavoriteTeamBadge";
+import { BackLink } from "@/app/BackLink";
 
 export default async function LeaderboardPage() {
   const supabase = await createClient();
@@ -40,9 +41,7 @@ export default async function LeaderboardPage() {
     <main className="mx-auto w-full max-w-3xl flex-1 p-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-3xl font-bold">Classement général</h1>
-        <Link href="/" className={`text-sm ${linkMuted}`}>
-          Retour
-        </Link>
+        <BackLink href="/" />
       </div>
 
       <p className="mb-4 text-sm text-mute">

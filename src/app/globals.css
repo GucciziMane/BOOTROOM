@@ -72,6 +72,11 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  /* Empêche le "pull to refresh" du navigateur/Chrome PWA quand on tire depuis le haut d'une page
+     déjà en haut de son scroll : sans ça, un geste normal (remonter vite en haut d'une liste)
+     déclenche parfois un rechargement complet façon page web, ce qu'une appli installée ne fait
+     jamais. */
+  overscroll-behavior-y: contain;
 }
 
 button,
@@ -153,5 +158,29 @@ textarea {
   to {
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+/* Transition entre les sections principales (barre du bas) — voir src/app/template.tsx : sans ça,
+   changer d'onglet est un cut sec (écran blanc puis contenu), le signe le plus flagrant d'un site
+   web classique plutôt que d'une appli. Le fondu par défaut de la View Transitions API suffit ici,
+   pas besoin de garder l'ancien contenu visible plus longtemps qu'une appli native ne le ferait. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 180ms;
+}
+
+/* Le calque de transition intercepte les clics pendant son animation : sans ça, un tap juste après
+   avoir changé d'onglet (très courant vu la durée courte ci-dessus) atterrirait dans le vide. */
+::view-transition {
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  ::view-transition-group(*) {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
   }
 }

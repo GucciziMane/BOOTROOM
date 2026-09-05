@@ -1,7 +1,6 @@
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { linkMuted } from "@/lib/ui";
 import { getPredictionHistory } from "@/lib/predictions";
+import { BackLink } from "@/app/BackLink";
 import { CalendarTabs } from "../CalendarTabs";
 import { PredictionHistoryList } from "./PredictionHistoryList";
 
@@ -18,9 +17,7 @@ export default async function MyPredictionsPage() {
     <main className="mx-auto w-full max-w-3xl flex-1 p-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-3xl font-bold">Pronostics</h1>
-        <Link href="/" className={`text-sm ${linkMuted}`}>
-          Retour
-        </Link>
+        <BackLink href="/" />
       </div>
 
       <CalendarTabs active="mine" />

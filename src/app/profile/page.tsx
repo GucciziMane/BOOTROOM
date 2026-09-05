@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getFavoriteTeamLeagueGroups } from "@/lib/favorite-teams";
-import { card, linkMuted } from "@/lib/ui";
+import { card } from "@/lib/ui";
+import { BackLink } from "@/app/BackLink";
 import { AvatarForm } from "./AvatarForm";
 import { ProfileFavoriteTeam } from "./ProfileFavoriteTeam";
 import { ThemeModeToggle } from "./ThemeModeToggle";
@@ -25,9 +25,7 @@ export default async function ProfilePage() {
     <main className="mx-auto w-full max-w-md flex-1 p-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-3xl font-bold">Mon profil</h1>
-        <Link href="/" className={`text-sm ${linkMuted}`}>
-          Retour
-        </Link>
+        <BackLink href="/" />
       </div>
 
       <div className={card}>
