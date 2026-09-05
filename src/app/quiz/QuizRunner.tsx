@@ -8,6 +8,7 @@ import {
   getQuizSeasonLeaderboard,
   type LeaderboardRow,
   type SeasonLeaderboardRow,
+  type SubmitAnswerResult,
 } from "./actions";
 import { card } from "@/lib/ui";
 import type { DailyQuestionPublic } from "@/lib/quiz/daily";
@@ -61,8 +62,12 @@ function deriveStreak(history: AnswerState[]): number {
 }
 
 export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Props) {
+  // questions.length et non 10 en dur : un jour où une question dynamique n'a pas pu être générée,
+  // le quiz du jour compte moins de 10 questions (cf. src/lib/quiz/daily.ts) — sans ça, la dernière
+  // question ne serait jamais reconnue comme la fin du quiz.
+  const totalQuestions = questions.length;
   const [history, setHistory] = useState<AnswerState[]>(() => {
-    const arr: AnswerState[] = Array.from({ length: 10 }, () => null);
+    const arr: AnswerState[] = Array.from({ length: totalQuestions }, () => null);
     for (const a of initialAnswers) arr[a.position] = a.isCorrect ? "correct" : "wrong";
     return arr;
   });
@@ -79,6 +84,11 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Pro
   const [leaderboardView, setLeaderboardView] = useState<"today" | "season">("today");
   const [resultPhase, setResultPhase] = useState<ResultPhase>("idle");
   const holdTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Verrou synchrone : contrairement à `submitting` (state React, appliqué après un re-render),
+  // ce ref est lu/écrit immédiatement. Sur mobile, un double-tap déclenche deux `handleAnswer`
+  // avant que le re-render qui désactive les boutons n'ait eu lieu, envoyant deux réponses pour la
+  // même position (la 2e violait la contrainte unique côté serveur et remontait une erreur brute).
+  const answeringLock = useRef(false);
 
   const streak = deriveStreak(history);
 
@@ -95,7 +105,8 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Pro
     if (resultPhase !== "flying") return;
     const t = setTimeout(() => {
       setResultPhase("idle");
-      if (position === 9 && pendingFinalScore != null) {
+      answeringLock.current = false;
+      if (position === totalQuestions - 1 && pendingFinalScore != null) {
         setFinalScore(pendingFinalScore);
         return;
       }
@@ -112,16 +123,30 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Pro
   }, []);
 
   async function handleAnswer(choiceIndex: number) {
-    if (submitting || selected !== null) return;
+    if (answeringLock.current || submitting || selected !== null) return;
+    answeringLock.current = true;
     setSelected(choiceIndex);
     setSubmitting(true);
     setError(null);
-    const res = await submitQuizAnswer(position, choiceIndex);
+
+    let res: SubmitAnswerResult;
+    try {
+      res = await submitQuizAnswer(position, choiceIndex);
+    } catch {
+      // Une exception (réseau, timeout serveur) ne doit jamais planter toute la page : on repasse
+      // en état "pas encore répondu" pour permettre de retaper une réponse.
+      setSubmitting(false);
+      setSelected(null);
+      answeringLock.current = false;
+      setError("Erreur réseau, réessaie.");
+      return;
+    }
     setSubmitting(false);
 
     if (res.error || res.correctIndex === undefined) {
       setError(res.error ?? "Erreur inconnue.");
       setSelected(null);
+      answeringLock.current = false;
       return;
     }
 
@@ -234,7 +259,7 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Pro
     );
   }
 
-  const progressPct = ((position + (selected !== null ? 1 : 0)) / 10) * 100;
+  const progressPct = ((position + (selected !== null ? 1 : 0)) / totalQuestions) * 100;
 
   // La couleur de résultat est une couche séparée qui s'estompe en fondu (opacity, géré par le
   // GPU) plutôt qu'une interpolation du dégradé lui-même (background) : animer "background"
@@ -315,7 +340,8 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Pro
             </div>
 
             <p className="mt-4 text-xs font-bold uppercase tracking-wide text-paper/70">
-              Question {position + 1}/10 · {CATEGORY_LABEL[q.category] ?? q.category} · {DIFFICULTY_LABEL[q.difficulty]}
+              Question {position + 1}/{totalQuestions} · {CATEGORY_LABEL[q.category] ?? q.category} ·{" "}
+              {DIFFICULTY_LABEL[q.difficulty]}
             </p>
 
             {q.teamLogoUrl && (

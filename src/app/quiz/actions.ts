@@ -63,15 +63,44 @@ export async function submitQuizAnswer(position: number, choiceIndex: number): P
     is_correct: isCorrect,
     points,
   });
-  if (error) return { error: error.message };
+  if (error) {
+    // 23505 = violation de la contrainte unique (user_id, quiz_date, position) : un double envoi
+    // réseau (retry, double-tap) a déjà inséré cette réponse avant celui-ci. On renvoie le résultat
+    // déjà enregistré plutôt que l'erreur Postgres brute, pour que le double envoi soit sans effet
+    // visible côté joueur au lieu de casser l'affichage.
+    if (error.code === "23505") {
+      const { data: existing } = await admin
+        .from("quiz_answers")
+        .select("is_correct, points")
+        .eq("user_id", user.id)
+        .eq("quiz_date", quizDate)
+        .eq("position", position)
+        .maybeSingle();
+      if (existing) {
+        return {
+          error: null,
+          isCorrect: existing.is_correct,
+          correctIndex: question.correctIndex,
+          explanation: question.explanation,
+          points: existing.points,
+          streakAfter: existing.is_correct ? streak + 1 : 0,
+          finalScore: null,
+        };
+      }
+    }
+    return { error: error.message };
+  }
 
+  // quiz.length et non 10 en dur : un jour où une question dynamique n'a pas pu être générée (pas
+  // assez de matchs/joueurs éligibles), le quiz du jour compte moins de 10 questions — sans ça,
+  // personne ne pourrait jamais l'y terminer ni apparaître au classement de ce jour-là.
   let finalScore: number | null = null;
-  if (position === 9) {
-    // Pas besoin de relire quiz_answers : `answered` (positions 0-8) + la réponse qu'on vient
-    // d'insérer couvrent déjà les 10 questions.
+  if (position === quiz.length - 1) {
+    // Pas besoin de relire quiz_answers : `answered` (positions précédentes) + la réponse qu'on
+    // vient d'insérer couvrent déjà toutes les questions du jour.
     const totalPoints = answered.reduce((sum, a) => sum + a.points, 0) + points;
     const correctCount = answered.filter((a) => a.is_correct).length + (isCorrect ? 1 : 0);
-    const bonus = correctCount === 10 ? 3 : 0;
+    const bonus = correctCount === quiz.length ? 3 : 0;
     finalScore = totalPoints + bonus;
 
     await admin

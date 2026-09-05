@@ -448,7 +448,13 @@ async function getOrGenerateDynamicQuestions(
     .select("position, category, difficulty, question, team_logo_url, choices, correct_index, explanation")
     .eq("quiz_date", quizDate);
 
-  if (cached && cached.length >= dynamicPositions.length) {
+  // >0 et non >= dynamicPositions.length : si un slot échoue à se générer (pas assez de matchs/
+  // joueurs éligibles ce jour-là), la génération reste figée telle quelle pour le reste de la
+  // journée plutôt que de réessayer à chaque appel. Sinon, une régénération partielle peut piocher
+  // dans des données qui ont changé entre-temps (sync-fixtures tourne désormais toutes les 30 min)
+  // et produire un tirage différent de celui déjà affiché à quelqu'un en train de répondre — la
+  // "bonne réponse" mise en avant ne correspondrait alors plus à la question qu'il a vue.
+  if (cached && cached.length > 0) {
     return new Map((cached as DynamicRow[]).map((r) => [r.position, rowToQuestion(r)]));
   }
 
