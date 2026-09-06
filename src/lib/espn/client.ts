@@ -115,6 +115,7 @@ export interface EspnGoal {
 interface EspnSummaryResponse {
   keyEvents?: Array<{
     type: { type: string };
+    scoringPlay?: boolean;
     team?: { displayName: string };
     clock?: { displayValue: string };
     participants?: Array<{ athlete: { displayName: string } }>;
@@ -126,7 +127,14 @@ export async function getEspnMatchGoals(leagueSlug: string, eventId: string): Pr
   const data = await espnFetch<EspnSummaryResponse>(`/${leagueSlug}/summary?event=${eventId}`);
 
   return (data.keyEvents ?? []).flatMap((e) => {
-    if (e.type.type !== "goal" || !e.team || !e.participants || e.participants.length === 0) return [];
+    // ESPN distingue le TYPE de but ("goal", "goal---header", "goal---volley", "own-goal",
+    // "penalty---scored"...) : ne retenir que le libellé exact "goal" en ignorait la plupart en
+    // silence (confirmé sur un match réel : le seul but d'un 1-0 était "goal---header", donc
+    // jamais enregistré, et n'importe quel pronostic buteur/passeur sur ce match était compté
+    // perdant à tort). "scoringPlay" est le champ qu'ESPN pose lui-même sur TOUT événement qui
+    // change le score, quel que soit son type exact — bien plus robuste qu'une liste de libellés
+    // à maintenir à la main.
+    if (!e.scoringPlay || !e.team || !e.participants || e.participants.length === 0) return [];
     const minuteMatch = e.clock?.displayValue?.match(/\d+/);
     return [
       {
