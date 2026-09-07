@@ -18,6 +18,7 @@ export interface LiveMatchDto {
   status: "live" | "finished";
   kickoffAt: string;
   liveClock: string | null;
+  leagueCode: string;
   leagueFlag: string;
   leagueColor: string;
   homeTeamName: string;
@@ -92,6 +93,7 @@ export async function getLiveMatches(supabase: SupabaseClient<Database>): Promis
       status: m.status as "live" | "finished",
       kickoffAt: m.kickoff_at,
       liveClock: m.live_clock,
+      leagueCode: leagueCode ?? "",
       leagueFlag: leagueCode ? (LEAGUE_FLAG[leagueCode] ?? "") : "",
       leagueColor: leagueCode ? (LEAGUE_COLOR[leagueCode] ?? "#888") : "#888",
       homeTeamName: home?.name ?? "?",

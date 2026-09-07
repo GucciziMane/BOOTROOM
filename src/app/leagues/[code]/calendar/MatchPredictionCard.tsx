@@ -7,6 +7,12 @@ import { buttonPrimary, input } from "@/lib/ui";
 import { applyResultOdds, predictedWinnerTeamId, type OddsTier, type ResultTierMultiplier } from "@/lib/scoring/points";
 import { formatParisDateTime } from "@/lib/format-date";
 import { LEAGUE_BACKGROUND } from "@/lib/league-background";
+import {
+  getLeagueCardStyle,
+  leagueCardTeamTextClass,
+  leagueCardTeamPlaceholderClass,
+  LeagueCardBackground,
+} from "@/lib/league-card-theme";
 
 interface PlayerOption {
   id: number;
@@ -108,16 +114,9 @@ export function MatchPredictionCard({
 
   // Habillage à part par championnat (image de fond fournie par l'utilisateur) plutôt qu'une
   // carte identique pour tous : demandé explicitement pour que chaque championnat se distingue
-  // d'un coup d'œil dans "prochaine journée" comme dans le calendrier dédié. "light" gère le cas
-  // d'une image à fond clair (le voile doit rester clair, texte sombre) plutôt que le traitement
-  // par défaut (voile sombre, texte blanc) pensé pour une image déjà sombre/saturée.
+  // d'un coup d'œil, sur toutes les cartes de match de l'appli (voir league-card-theme.tsx).
   const background = LEAGUE_BACKGROUND[leagueCode];
-  const theme = background ? (background.light ? "light" : "dark") : "none";
-  const textFaint = theme === "light" ? "text-mute" : theme === "dark" ? "text-white/70" : "text-mute";
-  const textStrong = theme === "light" ? "text-ink" : theme === "dark" ? "text-white" : "";
-  const cardClassName =
-    theme === "none" ? "rounded-2xl border border-line bg-paper p-4 shadow-sm" : "relative overflow-hidden rounded-2xl p-4 shadow-md";
-  const cardStyle = theme === "none" && leagueColor ? { borderLeftColor: leagueColor, borderLeftWidth: 4 } : undefined;
+  const { theme, cardClassName, cardStyle, textFaint, textStrong } = getLeagueCardStyle(leagueCode, leagueColor);
 
   // Bouton assorti à l'image plutôt que le violet par défaut de l'appli, quand la compétition en
   // définit un — via des custom properties CSS (pas une couleur inline directe) pour que
@@ -135,7 +134,7 @@ export function MatchPredictionCard({
     const lockedAssist = [...homePlayers, ...awayPlayers].find((p) => p.id === initial.predictedAssistPlayerId);
     return (
       <div className={cardClassName} style={cardStyle}>
-        {background && <LeagueThemedBackground image={background.image} light={theme === "light"} />}
+        {background && <LeagueCardBackground image={background.image} light={theme === "light"} />}
         <p className={`relative mb-2 flex items-center justify-between text-xs font-bold ${textFaint}`}>
           <span>{formatParisDateTime(kickoffAt)}</span>
           {live ? (
@@ -171,7 +170,7 @@ export function MatchPredictionCard({
 
   return (
     <form action={formAction} className={cardClassName} style={cardStyle}>
-      {background && <LeagueThemedBackground image={background.image} light={theme === "light"} />}
+      {background && <LeagueCardBackground image={background.image} light={theme === "light"} />}
       <input type="hidden" name="match_id" value={matchId} />
       <input type="hidden" name="league_code" value={leagueCode} />
       <p className={`relative mb-2 flex items-center justify-between text-xs font-bold ${textFaint}`}>
@@ -267,34 +266,15 @@ export function MatchPredictionCard({
   );
 }
 
-function LeagueThemedBackground({ image, light }: { image: string; light: boolean }) {
-  return (
-    <>
-      <Image src={image} alt="" fill sizes="(min-width: 640px) 50vw, 100vw" className="object-cover" />
-      {light ? (
-        // Fond déjà clair : un voile blanc translucide suffit à isoler le texte sombre du motif,
-        // pas besoin d'assombrir (qui écraserait ses couleurs au lieu de les préserver).
-        <div className="absolute inset-0 bg-gradient-to-b from-white/55 via-white/40 to-white/65" />
-      ) : (
-        // Overlay neutre (noir) plutôt qu'une teinte fixe : chaque championnat garde sa propre
-        // couleur de marque en dessous plutôt que de virer vers une teinte imposée.
-        <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/55 to-black/80" />
-      )}
-    </>
-  );
-}
-
 function TeamBadge({ name, logoUrl, theme }: { name: string; logoUrl: string | null; theme: "none" | "dark" | "light" }) {
   return (
     <span className="flex w-20 flex-col items-center gap-1.5 text-center">
       {logoUrl ? (
         <Image src={logoUrl} alt="" width={40} height={40} className="h-10 w-10 shrink-0 object-contain" />
       ) : (
-        <span className={`block h-10 w-10 shrink-0 rounded-full ${theme === "dark" ? "bg-white/20" : "bg-cream"}`} />
+        <span className={`block h-10 w-10 shrink-0 rounded-full ${leagueCardTeamPlaceholderClass(theme)}`} />
       )}
-      <span className={`text-[11px] font-bold leading-tight ${theme === "dark" ? "text-white" : theme === "light" ? "text-ink" : ""}`}>
-        {name}
-      </span>
+      <span className={`text-[11px] font-bold leading-tight ${leagueCardTeamTextClass(theme)}`}>{name}</span>
     </span>
   );
 }

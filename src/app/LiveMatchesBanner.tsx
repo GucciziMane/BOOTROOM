@@ -3,6 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import type { LiveMatchDto } from "@/lib/live-matches";
+import {
+  getLeagueCardStyle,
+  leagueCardTeamTextClass,
+  leagueCardTeamPlaceholderClass,
+  LeagueCardBackground,
+} from "@/lib/league-card-theme";
+import { LEAGUE_BACKGROUND } from "@/lib/league-background";
 
 // Poll plutôt que Supabase Realtime : le back (cron live-tick) n'écrit de toute façon qu'une
 // fois par minute, donc un polling à ce rythme reste largement "en direct" à l'échelle humaine,
@@ -57,13 +64,13 @@ export function LiveMatchesBanner({ initialMatches }: { initialMatches: LiveMatc
 function LiveMatchCard({ match }: { match: LiveMatchDto }) {
   const homeGoals = match.goals.filter((g) => g.teamSide === "home");
   const awayGoals = match.goals.filter((g) => g.teamSide === "away");
+  const background = LEAGUE_BACKGROUND[match.leagueCode];
+  const { theme, cardClassName, cardStyle, textFaint, textStrong } = getLeagueCardStyle(match.leagueCode, match.leagueColor, "p-3");
 
   return (
-    <div
-      className="w-64 shrink-0 rounded-2xl border border-line bg-paper p-3 shadow-sm"
-      style={{ borderLeftColor: match.leagueColor, borderLeftWidth: 4 }}
-    >
-      <div className="mb-2 flex items-center justify-between text-xs font-bold text-mute">
+    <div className={`w-64 shrink-0 ${cardClassName}`} style={cardStyle}>
+      {background && <LeagueCardBackground image={background.image} light={theme === "light"} />}
+      <div className={`relative mb-2 flex items-center justify-between text-xs font-bold ${textFaint}`}>
         <span>{match.leagueFlag}</span>
         {match.status === "live" ? (
           <span className="text-bad">{match.liveClock ?? "En cours"}</span>
@@ -72,16 +79,16 @@ function LiveMatchCard({ match }: { match: LiveMatchDto }) {
         )}
       </div>
 
-      <div className="flex items-center justify-between gap-2">
-        <TeamRow name={match.homeTeamName} logoUrl={match.homeLogoUrl} />
-        <span className="shrink-0 text-lg font-bold">
+      <div className="relative flex items-center justify-between gap-2">
+        <TeamRow name={match.homeTeamName} logoUrl={match.homeLogoUrl} theme={theme} />
+        <span className={`shrink-0 text-lg font-bold ${textStrong}`}>
           {match.homeScore ?? 0} – {match.awayScore ?? 0}
         </span>
-        <TeamRow name={match.awayTeamName} logoUrl={match.awayLogoUrl} reverse />
+        <TeamRow name={match.awayTeamName} logoUrl={match.awayLogoUrl} theme={theme} reverse />
       </div>
 
       {match.goals.length > 0 && (
-        <div className="mt-2 flex justify-between gap-2 text-[11px] leading-tight text-mute">
+        <div className={`relative mt-2 flex justify-between gap-2 text-[11px] leading-tight ${textFaint}`}>
           <div>
             {homeGoals.map((g, i) => (
               <div key={i}>
@@ -104,15 +111,25 @@ function LiveMatchCard({ match }: { match: LiveMatchDto }) {
   );
 }
 
-function TeamRow({ name, logoUrl, reverse }: { name: string; logoUrl: string | null; reverse?: boolean }) {
+function TeamRow({
+  name,
+  logoUrl,
+  theme,
+  reverse,
+}: {
+  name: string;
+  logoUrl: string | null;
+  theme: "none" | "dark" | "light";
+  reverse?: boolean;
+}) {
   return (
     <span className={`flex min-w-0 flex-1 items-center gap-1.5 ${reverse ? "flex-row-reverse text-right" : ""}`}>
       {logoUrl ? (
         <Image src={logoUrl} alt="" width={20} height={20} className="h-5 w-5 shrink-0 object-contain" />
       ) : (
-        <span className="block h-5 w-5 shrink-0 rounded-full bg-cream" />
+        <span className={`block h-5 w-5 shrink-0 rounded-full ${leagueCardTeamPlaceholderClass(theme)}`} />
       )}
-      <span className="truncate text-xs font-bold">{name}</span>
+      <span className={`truncate text-xs font-bold ${leagueCardTeamTextClass(theme)}`}>{name}</span>
     </span>
   );
 }
