@@ -6,6 +6,7 @@ import { saveMatchPrediction, type SaveMatchPredictionState } from "./[matchId]/
 import { buttonPrimary, input } from "@/lib/ui";
 import { applyResultOdds, predictedWinnerTeamId, type OddsTier, type ResultTierMultiplier } from "@/lib/scoring/points";
 import { formatParisDateTime } from "@/lib/format-date";
+import { LEAGUE_BACKGROUND_IMAGE } from "@/lib/league-background";
 
 interface PlayerOption {
   id: number;
@@ -105,10 +106,11 @@ export function MatchPredictionCard({
     multiplierByTier
   );
 
-  // Habillage à part pour la C1 (photo du stade en fond) plutôt qu'une carte identique aux
-  // championnats domestiques : demandé explicitement pour que ces matchs se distinguent d'un
-  // coup d'œil dans "prochaine journée" comme dans le calendrier dédié.
-  const isChampionsLeague = leagueCode === "CL";
+  // Habillage à part par championnat (image de fond fournie par l'utilisateur) plutôt qu'une
+  // carte identique pour tous : demandé explicitement pour que chaque championnat se distingue
+  // d'un coup d'œil dans "prochaine journée" comme dans le calendrier dédié.
+  const backgroundImage = LEAGUE_BACKGROUND_IMAGE[leagueCode];
+  const hasThemedBackground = !!backgroundImage;
 
   if (locked) {
     const lockedScorer = [...homePlayers, ...awayPlayers].find((p) => p.id === initial.predictedScorerPlayerId);
@@ -116,14 +118,14 @@ export function MatchPredictionCard({
     return (
       <div
         className={
-          isChampionsLeague
+          hasThemedBackground
             ? "relative overflow-hidden rounded-2xl p-4 shadow-md"
             : "rounded-2xl border border-line bg-paper p-4 shadow-sm"
         }
-        style={!isChampionsLeague && leagueColor ? { borderLeftColor: leagueColor, borderLeftWidth: 4 } : undefined}
+        style={!hasThemedBackground && leagueColor ? { borderLeftColor: leagueColor, borderLeftWidth: 4 } : undefined}
       >
-        {isChampionsLeague && <ChampionsLeagueBackground />}
-        <p className={`relative mb-2 flex items-center justify-between text-xs font-bold ${isChampionsLeague ? "text-white/70" : "text-mute"}`}>
+        {hasThemedBackground && <LeagueThemedBackground image={backgroundImage} />}
+        <p className={`relative mb-2 flex items-center justify-between text-xs font-bold ${hasThemedBackground ? "text-white/70" : "text-mute"}`}>
           <span>{formatParisDateTime(kickoffAt)}</span>
           {live ? (
             <span className="flex items-center gap-1 text-bad">
@@ -138,15 +140,15 @@ export function MatchPredictionCard({
           )}
         </p>
         <div className="relative flex items-center justify-center gap-3">
-          <TeamBadge name={homeTeamName} logoUrl={homeLogoUrl} light={isChampionsLeague} />
-          <span className={`text-lg font-bold ${isChampionsLeague ? "text-white" : ""}`}>
+          <TeamBadge name={homeTeamName} logoUrl={homeLogoUrl} light={hasThemedBackground} />
+          <span className={`text-lg font-bold ${hasThemedBackground ? "text-white" : ""}`}>
             {live ? (live.homeScore ?? 0) : (initial.predictedHomeScore ?? "–")}
             {" – "}
             {live ? (live.awayScore ?? 0) : (initial.predictedAwayScore ?? "–")}
           </span>
-          <TeamBadge name={awayTeamName} logoUrl={awayLogoUrl} light={isChampionsLeague} />
+          <TeamBadge name={awayTeamName} logoUrl={awayLogoUrl} light={hasThemedBackground} />
         </div>
-        <p className={`relative mt-2 text-center text-xs ${isChampionsLeague ? "text-white/70" : "text-mute"}`}>
+        <p className={`relative mt-2 text-center text-xs ${hasThemedBackground ? "text-white/70" : "text-mute"}`}>
           {live && <span>Ton prono : {initial.predictedHomeScore ?? "–"}-{initial.predictedAwayScore ?? "–"} · </span>}
           {lockedScorer ? `Buteur : ${lockedScorer.name}` : initial.predictedHomeScore == null ? "Non pronostiqué" : "Sans buteur"}
           {lockedAssist && ` · Passeur : ${lockedAssist.name}`}
@@ -160,22 +162,22 @@ export function MatchPredictionCard({
     <form
       action={formAction}
       className={
-        isChampionsLeague
+        hasThemedBackground
           ? "relative overflow-hidden rounded-2xl p-4 shadow-md"
           : "rounded-2xl border border-line bg-paper p-4 shadow-sm"
       }
-      style={!isChampionsLeague && leagueColor ? { borderLeftColor: leagueColor, borderLeftWidth: 4 } : undefined}
+      style={!hasThemedBackground && leagueColor ? { borderLeftColor: leagueColor, borderLeftWidth: 4 } : undefined}
     >
-      {isChampionsLeague && <ChampionsLeagueBackground />}
+      {hasThemedBackground && <LeagueThemedBackground image={backgroundImage} />}
       <input type="hidden" name="match_id" value={matchId} />
       <input type="hidden" name="league_code" value={leagueCode} />
-      <p className={`relative mb-2 flex items-center justify-between text-xs font-bold ${isChampionsLeague ? "text-white/70" : "text-mute"}`}>
+      <p className={`relative mb-2 flex items-center justify-between text-xs font-bold ${hasThemedBackground ? "text-white/70" : "text-mute"}`}>
         <span>{formatParisDateTime(kickoffAt)}</span>
         {leagueLabel && <span>{leagueLabel}</span>}
       </p>
 
       <div className="relative flex items-center justify-center gap-2">
-        <TeamBadge name={homeTeamName} logoUrl={homeLogoUrl} light={isChampionsLeague} />
+        <TeamBadge name={homeTeamName} logoUrl={homeLogoUrl} light={hasThemedBackground} />
         <input
           type="number"
           name="predicted_home_score"
@@ -185,7 +187,7 @@ export function MatchPredictionCard({
           onChange={(e) => setHomeScore(e.target.value)}
           className={`w-12 text-center font-bold ${input}`}
         />
-        <span className={isChampionsLeague ? "text-white/70" : "text-mute"}>–</span>
+        <span className={hasThemedBackground ? "text-white/70" : "text-mute"}>–</span>
         <input
           type="number"
           name="predicted_away_score"
@@ -195,7 +197,7 @@ export function MatchPredictionCard({
           onChange={(e) => setAwayScore(e.target.value)}
           className={`w-12 text-center font-bold ${input}`}
         />
-        <TeamBadge name={awayTeamName} logoUrl={awayLogoUrl} light={isChampionsLeague} />
+        <TeamBadge name={awayTeamName} logoUrl={awayLogoUrl} light={hasThemedBackground} />
       </div>
 
       <select
@@ -244,7 +246,7 @@ export function MatchPredictionCard({
         </optgroup>
       </select>
 
-      <p className={`relative mt-2 text-center text-xs ${isChampionsLeague ? "text-white/70" : "text-mute"}`}>
+      <p className={`relative mt-2 text-center text-xs ${hasThemedBackground ? "text-white/70" : "text-mute"}`}>
         Score exact +{exactScorePoints}pts{scorer ? ` · ${scorer.name} +${scorerPoints}pts` : ""}
         {assister ? ` · ${assister.name} +${assistPoints}pts` : ""}
       </p>
@@ -257,17 +259,14 @@ export function MatchPredictionCard({
   );
 }
 
-function ChampionsLeagueBackground() {
+function LeagueThemedBackground({ image }: { image: string }) {
   return (
     <>
-      <Image
-        src="/champions-league-stadium.jpg"
-        alt=""
-        fill
-        sizes="(min-width: 640px) 50vw, 100vw"
-        className="object-cover"
-      />
-      <div className="absolute inset-0 bg-gradient-to-b from-[#050b1f]/35 via-[#0b1339]/55 to-[#050b1f]/85" />
+      <Image src={image} alt="" fill sizes="(min-width: 640px) 50vw, 100vw" className="object-cover" />
+      {/* Overlay neutre (noir) plutôt que la teinte bleu nuit d'origine (pensée pour la seule
+       * photo de stade C1) : chaque championnat garde sa propre couleur de marque en dessous
+       * plutôt que de virer vers le bleu quel que soit son image de fond. */}
+      <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/55 to-black/80" />
     </>
   );
 }
