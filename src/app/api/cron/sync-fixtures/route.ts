@@ -456,6 +456,7 @@ async function syncGoalEvents(
       const goalRows = events
         .filter((e) => e.type === "Goal")
         .flatMap((e) => {
+          if (!e.player) return [];
           const teamId = teamNamesMatch(e.team.name, homeName) ? match.home_team_id : match.away_team_id;
           const scorer = matchPlayerByName(e.player, playersByTeamId.get(teamId) ?? []);
           const assist = e.assist ? matchPlayerByName(e.assist, playersByTeamId.get(teamId) ?? []) : null;
@@ -471,10 +472,28 @@ async function syncGoalEvents(
           ];
         });
 
-      // Highlightly ne fournit pas de garantie sur l'ordre entrant/sortant de ses events
-      // "Substitution" (jamais vérifié comme pour ESPN) : on n'enregistre que les buts via ce
-      // relais, la garantie buteur/passeur ne s'appliquera simplement pas sur ces matchs-là.
-      await saveMatchEvents(match.id, goalRows);
+      // "player" = joueur SORTANT, "substituted" = joueur ENTRANT (vérifié en croisant les
+      // remplacements d'un vrai match contre les données ESPN du même match — voir HlEvent).
+      const subRows = events
+        .filter((e) => e.type === "Substitution")
+        .flatMap((e) => {
+          const teamId = teamNamesMatch(e.team.name, homeName) ? match.home_team_id : match.away_team_id;
+          const candidates = playersByTeamId.get(teamId) ?? [];
+          const playerOut = e.player ? matchPlayerByName(e.player, candidates) : null;
+          const playerIn = e.substituted ? matchPlayerByName(e.substituted, candidates) : null;
+          if (!playerOut && !playerIn) return [];
+          return [
+            {
+              match_id: match.id,
+              team_id: teamId,
+              player_out_id: playerOut?.id ?? null,
+              player_in_id: playerIn?.id ?? null,
+              minute: parseInt(e.time, 10),
+            },
+          ];
+        });
+
+      await saveMatchEvents(match.id, goalRows, subRows);
       matched++;
     } catch {
       unmatched++;

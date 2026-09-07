@@ -39,10 +39,18 @@ export interface HlMatch {
 export interface HlEvent {
   time: string;
   team: { id: number; name: string };
-  player: string;
-  playerId: number;
+  // Pour un but : buteur. Pour un remplacement : joueur SORTANT (vérifié en croisant plusieurs
+  // remplacements d'un vrai match contre les données ESPN du même match — jamais documenté par
+  // Highlightly lui-même). Nullable : constaté null sur un remplacement précis d'un vrai match,
+  // sans qu'on sache pourquoi (source tierce, pas notre bug).
+  player: string | null;
+  playerId: number | null;
+  // Pour un but : passeur éventuel. Pour un remplacement, ce champ ne sert pas — le joueur
+  // ENTRANT est porté par `substituted` (nom seul, pas d'id disponible côté Highlightly pour lui).
   assist: string | null;
   assistingPlayerId: number | null;
+  /** Joueur ENTRANT d'un remplacement (nom seul). Absent/non pertinent pour tout autre type d'event. */
+  substituted?: string | null;
   type: "Goal" | "Yellow Card" | "Red Card" | "Substitution" | "Var";
 }
 
