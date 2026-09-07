@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { useActionState, useEffect, useMemo, useOptimistic, useRef, useState } from "react";
 import Image from "next/image";
 import { saveSeasonPrediction, type SaveSeasonPredictionState } from "./actions";
 import { buttonPrimary, card, input } from "@/lib/ui";
@@ -263,9 +263,19 @@ export function SeasonPredictionForm({ leagueCode, seasonId, teams, players, tea
   // Coupe à élimination directe : pas de flop3/équipe surprise/équipe flop (aucun sens sans
   // classement final), remplacés par un pronostic de finale — voir FinalPredictionSection.
   const isCup = leagueCode === "CL";
+  // Confirmation affichée dès le tap plutôt qu'après l'aller-retour serveur — voir la même
+  // technique sur MatchPredictionCard.
+  const [optimisticSaved, setOptimisticSaved] = useOptimistic(
+    state.success,
+    (_current: boolean, next: boolean) => next
+  );
+  async function optimisticFormAction(formData: FormData) {
+    setOptimisticSaved(true);
+    formAction(formData);
+  }
 
   return (
-    <form action={formAction} className={`space-y-8 ${card}`}>
+    <form action={optimisticFormAction} className={`space-y-8 ${card}`}>
       <input type="hidden" name="season_id" value={seasonId} />
       <input type="hidden" name="league_code" value={leagueCode} />
 
@@ -349,10 +359,10 @@ export function SeasonPredictionForm({ leagueCode, seasonId, teams, players, tea
       )}
 
       {state.error && <p className="text-sm text-bad">{state.error}</p>}
-      {state.success && <p className="text-sm text-good">Pronostics enregistrés.</p>}
+      {optimisticSaved && !state.error && <p className="text-sm text-good">Pronostics enregistrés.</p>}
 
       <button type="submit" disabled={isPending} className={buttonPrimary}>
-        {isPending ? "Enregistrement..." : "Enregistrer mes pronostics"}
+        {optimisticSaved && !state.error ? "Enregistré ✓" : isPending ? "Enregistrement..." : "Enregistrer mes pronostics"}
       </button>
     </form>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import {
@@ -75,6 +75,19 @@ interface Reaction {
   emoji: string;
 }
 
+/** Message envoyé par moi, affiché avant même que le serveur ait confirmé l'insertion — sinon il
+ * n'apparaît qu'au retour de l'événement Realtime, un aller-retour de plus après la réponse de
+ * l'action elle-même, perceptible sur un chat. Retiré dès que le vrai message (même auteur, même
+ * contenu) arrive par Realtime ; si l'envoi échoue, retiré directement dans handleSendMessage. */
+interface PendingMessage {
+  tempId: number;
+  content: string;
+  hasImage: boolean;
+  imageUrl: string | null;
+  isEphemeral: boolean;
+  createdAt: string;
+}
+
 const initialState: SendChatMessageState = { error: null };
 
 export function ChatRoom({
@@ -99,7 +112,9 @@ export function ChatRoom({
   const [viewedIds, setViewedIds] = useState<Set<number>>(() => new Set(initialViewedMessageIds));
   const [openedPhoto, setOpenedPhoto] = useState<ChatMessage | null>(null);
   const [openPickerFor, setOpenPickerFor] = useState<number | null>(null);
-  const [state, formAction, isPending] = useActionState(sendChatMessage, initialState);
+  const [pendingMessages, setPendingMessages] = useState<PendingMessage[]>([]);
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false);
   const [notifications, setNotifications] = useState({ supported: false, on: false });
   const [messageText, setMessageText] = useState("");
   const [mentionQuery, setMentionQuery] = useState<{ query: string; start: number } | null>(null);
@@ -121,7 +136,6 @@ export function ChatRoom({
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
-  const wasPending = useRef(false);
 
   // Caméra filmée en direct dans la page (au lieu de déléguer à l'appli photo native du
   // téléphone) : certains navigateurs mobiles ignorent capture="environment" ou renvoient une
@@ -446,6 +460,19 @@ export function ChatRoom({
                   },
                 ]
           );
+          // Le vrai message vient d'arriver : la bulle optimiste correspondante (voir
+          // handleSendMessage) n'a plus lieu d'être — on retire la plus ancienne qui matche
+          // (contenu + présence d'image), au cas où plusieurs envois seraient encore en vol.
+          if (row.user_id === currentUserId) {
+            setPendingMessages((prev) => {
+              const index = prev.findIndex(
+                (p) => p.content === row.content && p.hasImage === (row.image_url != null)
+              );
+              if (index === -1) return prev;
+              if (prev[index].imageUrl) URL.revokeObjectURL(prev[index].imageUrl);
+              return [...prev.slice(0, index), ...prev.slice(index + 1)];
+            });
+          }
           if (needsEagerResolution) {
             getChatImageUrl(row.id).then((url) => {
               if (!url) return;
@@ -505,7 +532,7 @@ export function ChatRoom({
     // l'animation. Les arrivées de nouveaux messages ensuite restent en smooth (plus agréable).
     bottomRef.current?.scrollIntoView({ behavior: isFirstScroll.current ? "auto" : "smooth" });
     isFirstScroll.current = false;
-  }, [messages.length]);
+  }, [messages.length, pendingMessages.length]);
 
   useEffect(() => {
     // Recale en bas si une image (avatar, photo) finit de charger après coup et grandit le
@@ -521,14 +548,45 @@ export function ChatRoom({
     return () => container.removeEventListener("load", onImageLoad, true);
   }, []);
 
-  useEffect(() => {
-    if (wasPending.current && !isPending && !state.error) {
+  /** Ajoute une bulle "envoi en cours" avant même que le serveur confirme, pour un chat qui se
+   * sent instantané — voir la définition de PendingMessage. L'image utilise sa propre object URL
+   * (indépendante de celle du composeur, révoquée par clearImage() au reset normal) pour ne pas
+   * casser l'aperçu optimiste pendant la fenêtre entre la réponse de l'action et l'arrivée
+   * Realtime du vrai message.
+   *
+   * Appelle directement l'action serveur (pas useActionState) : on a besoin du résultat dans
+   * cette même fonction pour décider quoi faire de la bulle optimiste (la retirer si ça échoue,
+   * la laisser sinon jusqu'à ce que Realtime livre le vrai message) — un aller-retour qu'un effet
+   * observant un state réactif ne peut faire qu'après un rendu supplémentaire. */
+  async function handleSendMessage(formData: FormData) {
+    const content = String(formData.get("content") ?? "").trim();
+    if (!content && !imageFile) return;
+
+    const pendingEntry: PendingMessage = {
+      tempId: Date.now() + Math.random(),
+      content,
+      hasImage: !!imageFile,
+      imageUrl: imageFile ? URL.createObjectURL(imageFile) : null,
+      isEphemeral: isEphemeralPick,
+      createdAt: new Date().toISOString(),
+    };
+    setPendingMessages((prev) => [...prev, pendingEntry]);
+    setSendError(null);
+    setIsSending(true);
+
+    const result = await sendChatMessage(initialState, formData);
+
+    setIsSending(false);
+    if (result.error) {
+      setSendError(result.error);
+      if (pendingEntry.imageUrl) URL.revokeObjectURL(pendingEntry.imageUrl);
+      setPendingMessages((prev) => prev.filter((p) => p.tempId !== pendingEntry.tempId));
+    } else {
       formRef.current?.reset();
       setMessageText("");
       clearImage();
     }
-    wasPending.current = isPending;
-  }, [isPending, state.error]);
+  }
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -719,6 +777,29 @@ export function ChatRoom({
             </div>
           );
         })}
+        {pendingMessages.map((p) => (
+          <div key={p.tempId} className="flex items-end justify-end gap-2">
+            <div className="flex max-w-[75%] flex-col items-end opacity-60">
+              {p.imageUrl && (
+                <div className={`relative overflow-hidden rounded-2xl rounded-br-md ${p.content ? "mb-1" : ""}`}>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- object URL local, non compatible avec le loader next/image */}
+                  <img src={p.imageUrl} alt="" className="h-auto max-h-72 w-full max-w-[240px] object-cover" />
+                  {p.isEphemeral && (
+                    <span className="absolute left-1.5 top-1.5 rounded-full bg-ink/70 px-2 py-0.5 text-[10px] font-bold text-paper">
+                      Vue unique
+                    </span>
+                  )}
+                </div>
+              )}
+              {p.content && (
+                <div className="rounded-2xl rounded-br-md bg-accent px-3.5 py-2 text-[15px] leading-snug text-paper">
+                  {p.content}
+                </div>
+              )}
+              <p className="mt-1 px-1 text-[10px] text-mute">Envoi…</p>
+            </div>
+          </div>
+        ))}
         <div ref={bottomRef} />
       </div>
 
@@ -746,7 +827,7 @@ export function ChatRoom({
           </div>
         </div>
       )}
-      <form ref={formRef} action={formAction} className="flex items-center gap-2 p-4 pt-2">
+      <form ref={formRef} action={handleSendMessage} className="flex items-center gap-2 p-4 pt-2">
         <input ref={formImageInputRef} type="file" name="image" className="hidden" />
         <input type="hidden" name="ephemeral" value={isEphemeralPick ? "1" : "0"} />
         <input
@@ -816,7 +897,7 @@ export function ChatRoom({
         </div>
         <button
           type="submit"
-          disabled={isPending || (!messageText.trim() && !imageFile)}
+          disabled={isSending || (!messageText.trim() && !imageFile)}
           aria-label="Envoyer"
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-paper transition-colors hover:bg-accent-hover disabled:opacity-40"
         >
@@ -826,7 +907,7 @@ export function ChatRoom({
           </svg>
         </button>
       </form>
-      {state.error && <p className="px-4 pb-4 text-sm text-bad">{state.error}</p>}
+      {sendError && <p className="px-4 pb-4 text-sm text-bad">{sendError}</p>}
       {openedPhoto?.imageUrl &&
         createPortal(
           <div

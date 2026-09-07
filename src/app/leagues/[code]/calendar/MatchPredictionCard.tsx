@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, type CSSProperties } from "react";
+import { useActionState, useOptimistic, useState, type CSSProperties } from "react";
 import Image from "next/image";
 import { saveMatchPrediction, type SaveMatchPredictionState } from "./[matchId]/actions";
 import { buttonPrimary, input } from "@/lib/ui";
@@ -84,6 +84,17 @@ export function MatchPredictionCard({
   live,
 }: Props) {
   const [state, formAction, isPending] = useActionState(saveMatchPrediction, initialState);
+  // Affiché dès le tap plutôt qu'à la réponse du serveur (upsert + 3 revalidatePath, quelques
+  // centaines de ms) : ça se sent instantané, et repasse tout seul à l'échec puisque optimisticSaved
+  // suit state.success, qui lui ne bougera jamais si le serveur a refusé le pronostic.
+  const [optimisticSaved, setOptimisticSaved] = useOptimistic(
+    state.success,
+    (_current: boolean, next: boolean) => next
+  );
+  async function optimisticFormAction(formData: FormData) {
+    setOptimisticSaved(true);
+    formAction(formData);
+  }
   const [homeScore, setHomeScore] = useState(initial.predictedHomeScore != null ? String(initial.predictedHomeScore) : "");
   const [awayScore, setAwayScore] = useState(initial.predictedAwayScore != null ? String(initial.predictedAwayScore) : "");
   const [scorerId, setScorerId] = useState(
@@ -169,7 +180,7 @@ export function MatchPredictionCard({
   }
 
   return (
-    <form action={formAction} className={cardClassName} style={cardStyle}>
+    <form action={optimisticFormAction} className={cardClassName} style={cardStyle}>
       {background && <LeagueCardBackground image={background.image} light={theme === "light"} />}
       <input type="hidden" name="match_id" value={matchId} />
       <input type="hidden" name="league_code" value={leagueCode} />
@@ -259,7 +270,7 @@ export function MatchPredictionCard({
         style={buttonStyle}
         className={`relative mt-2 w-full text-sm ${buttonClassName}`}
       >
-        {isPending ? "..." : state.success ? "Enregistré ✓" : "Enregistrer"}
+        {optimisticSaved ? "Enregistré ✓" : "Enregistrer"}
       </button>
       {state.error && <p className="relative mt-1 text-center text-xs text-bad">{state.error}</p>}
     </form>
