@@ -194,6 +194,11 @@ export async function GET(request: NextRequest) {
         players: 0,
         error: err instanceof Error ? err.message : String(err),
       });
+      // Sans cette pause, un 429 sur une compétition enchaînait en rafale (sans délai) sur toutes
+      // les suivantes de la boucle — chacune retombant en 429 à son tour avant que la fenêtre ait
+      // eu la moindre chance de se libérer. La pause s'appliquait déjà sur le chemin de succès,
+      // pas ici.
+      await sleep(FOOTBALL_DATA_RATE_LIMIT_DELAY_MS);
     }
   }
 
