@@ -55,6 +55,9 @@ export default async function LeaderboardPage() {
             <Link
               href={`/leaderboard/${p.id}`}
               transitionTypes={["nav-forward"]}
+              // Toute la liste est visible sans scroll (petit groupe d'amis) : sans ça, le profil de
+              // chaque joueur précharge en arrière-plan dès l'affichage de cette page.
+              prefetch={false}
               className="flex items-center justify-between gap-3 p-4 transition-colors hover:bg-cream"
             >
               <span className="flex items-center gap-4">

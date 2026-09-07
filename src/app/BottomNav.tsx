@@ -33,6 +33,12 @@ export function BottomNav() {
             <Link
               key={tab.href}
               href={tab.href}
+              // Cette barre est montée sur TOUTE page (voir layout.tsx) : avec le préchargement par
+              // défaut de <Link>, ces 4 onglets — chacun une page dynamique à plusieurs
+              // allers-retours Supabase — se rechargeraient en arrière-plan à CHAQUE navigation,
+              // en concurrence avec les requêtes de la page réellement affichée. Pas de
+              // préchargement ici, seulement au clic (voir aussi CalendarTabs, même raisonnement).
+              prefetch={false}
               className={`flex flex-1 flex-col items-center gap-1 pb-4 pt-2 text-[11px] font-bold ${
                 active ? "text-ink" : "text-mute"
               }`}

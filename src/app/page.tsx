@@ -163,6 +163,10 @@ function QuickLink({
   return (
     <Link
       href={href}
+      // Sans ça, ces 5 raccourcis (tous vers une page dynamique à plusieurs allers-retours
+      // Supabase) préchargent tous en arrière-plan dès l'affichage du dashboard — le tout premier
+      // écran vu après connexion, le pire moment pour saturer Supabase de requêtes inutiles.
+      prefetch={false}
       className="relative flex flex-col items-center gap-1.5 rounded-2xl border border-line bg-paper px-2 py-3 text-center transition-colors hover:border-ink hover:bg-cream"
     >
       {!!badgeCount && (
@@ -190,6 +194,9 @@ function NavCard({
   return (
     <Link
       href={href}
+      // Même raisonnement que QuickLink ci-dessus : ces cartes sont le tout premier écran vu après
+      // connexion, pas l'endroit où précharger 5 pages dynamiques coûteuses en arrière-plan.
+      prefetch={false}
       className="relative flex min-h-[160px] flex-col items-center justify-center rounded-2xl border-2 border-line bg-paper p-6 text-center shadow-sm transition-colors hover:border-ink hover:bg-cream lg:min-h-[200px] lg:p-8"
     >
       {!!badgeCount && (

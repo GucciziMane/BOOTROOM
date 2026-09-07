@@ -33,6 +33,10 @@ export default async function CalendarLeaguesPage() {
           <li key={league.id}>
             <Link
               href={`/leagues/${league.football_data_code}/calendar`}
+              // Toute la liste est visible sans scroll : sans ça, chaque championnat (une page à
+              // plusieurs allers-retours Supabase) précharge en arrière-plan dès l'affichage de
+              // cette page, en concurrence avec elle-même.
+              prefetch={false}
               className="flex items-center gap-3 p-4 transition-colors hover:bg-cream"
             >
               {league.logo_url && (

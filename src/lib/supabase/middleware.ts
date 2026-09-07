@@ -4,7 +4,6 @@ import { NextResponse, type NextRequest } from "next/server";
 const PUBLIC_PATHS = ["/login", "/signup", "/auth"];
 
 export async function updateSession(request: NextRequest) {
-  const t0 = Date.now();
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -29,7 +28,6 @@ export async function updateSession(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  console.log(`[PERF proxy] ${request.nextUrl.pathname} getUser(): ${Date.now() - t0}ms`);
 
   const isPublicPath = PUBLIC_PATHS.some((path) => request.nextUrl.pathname.startsWith(path));
 
