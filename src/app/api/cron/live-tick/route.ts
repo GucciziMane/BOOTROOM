@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
     // un match qui n'a pas encore commencé, déjà filtré ci-dessus).
     if (espnMatch.status === "live" || espnMatch.status === "finished") {
       const [{ data: existingGoals }, { data: existingSubs }] = await Promise.all([
-        supabase.from("match_goals").select("player_id, assist_player_id, minute").eq("match_id", match.id),
+        supabase.from("match_goals").select("id, player_id, assist_player_id, minute").eq("match_id", match.id),
         supabase.from("match_substitutions").select("player_out_id, player_in_id").eq("match_id", match.id),
       ]);
       const existingKeys = new Set((existingGoals ?? []).map((g) => `${g.player_id}:${g.minute}`));
@@ -139,10 +139,16 @@ export async function GET(request: NextRequest) {
 
       let goals: Awaited<ReturnType<typeof getEspnMatchEvents>>["goals"] = [];
       let substitutions: Awaited<ReturnType<typeof getEspnMatchEvents>>["substitutions"] = [];
+      // Distingue "ESPN indisponible ce tick-ci" (goals reste [], mais ne rien en déduire) de
+      // "ESPN a répondu, et cette liste fait foi" (fetchSucceeded) : sans cette distinction, un
+      // simple échec réseau ponctuel se lirait comme "plus aucun but" et effacerait tout ce qui a
+      // déjà été enregistré pour ce match — voir la réconciliation des buts annulés plus bas.
+      let fetchSucceeded = false;
       try {
         const events = await getEspnMatchEvents(slug, espnMatch.id);
         goals = events.goals;
         substitutions = events.substitutions;
+        fetchSucceeded = true;
       } catch {
         // ESPN indisponible pour ce match précis : rien à mettre à jour ce tick-ci, le prochain
         // passage (dans la minute) réessaiera — pas la peine de faire échouer tout le cron pour ça.
@@ -197,6 +203,28 @@ export async function GET(request: NextRequest) {
           goalPushJobs.push(() =>
             notifyGoal(supabase, match, home.name, away.name, espnMatch.homeScore ?? 0, espnMatch.awayScore ?? 0, goal, playerInToOut)
           );
+        }
+      }
+
+      // But annulé (VAR, hors-jeu revu après coup...) : arrive assez souvent pour qu'on ne puisse
+      // pas se contenter d'ajouter, il faut aussi retirer ce qu'ESPN ne reconnaît plus comme un
+      // but valide. On ne compare qu'aux buts déjà en base AVANT ce tick (existingGoals, pas
+      // newGoalRows tout juste insérés) contre la liste actuelle d'ESPN : un but qui a disparu
+      // entre deux passages n'a plus lieu d'être affiché.
+      if (fetchSucceeded) {
+        const currentEspnGoalKeys = new Set(
+          goals.flatMap((g) => {
+            const teamId = teamNamesMatch(g.teamName, home.name) ? match.home_team_id : match.away_team_id;
+            const candidates = teamId === match.home_team_id ? homePlayers : awayPlayers;
+            const scorer = matchPlayerByName(g.scorerName, candidates);
+            return scorer ? [`${scorer.id}:${g.minute}`] : [];
+          })
+        );
+        const cancelledGoalIds = (existingGoals ?? [])
+          .filter((g) => !currentEspnGoalKeys.has(`${g.player_id}:${g.minute}`))
+          .map((g) => g.id);
+        if (cancelledGoalIds.length > 0) {
+          await supabase.from("match_goals").delete().in("id", cancelledGoalIds);
         }
       }
 

@@ -46,14 +46,24 @@ export function LiveMatchesBanner({ initialMatches }: { initialMatches: LiveMatc
 
   if (matches.length === 0) return null;
 
+  // Un match "finished" reste affiché ici un moment après coup de sifflet final (voir
+  // getLiveMatches), mais rien ne doit plus clignoter "en direct" si plus aucun ne l'est vraiment —
+  // sans ce garde-fou, le bandeau continuait d'afficher le point rouge pulsant sur des résultats
+  // déjà terminés, alors que chaque carte individuelle affichait pourtant bien "Terminé".
+  const anyLive = matches.some((m) => m.status === "live");
+
   return (
     <div className="mb-5">
       <div className="mb-2 flex items-center gap-1.5 text-sm font-bold text-mute">
-        <span className="relative flex h-2 w-2">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-bad opacity-75" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-bad" />
-        </span>
-        En direct
+        {anyLive ? (
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-bad opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-bad" />
+          </span>
+        ) : (
+          <span className="h-2 w-2 rounded-full bg-line" />
+        )}
+        {anyLive ? "En direct" : "Résultats récents"}
       </div>
       <div className="flex gap-3 overflow-x-auto pb-1">
         {matches.map((m) => (
