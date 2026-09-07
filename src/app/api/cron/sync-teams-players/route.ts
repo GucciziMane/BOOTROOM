@@ -106,6 +106,12 @@ export async function GET(request: NextRequest) {
       const { startDate, endDate } = competition.currentSeason;
       const year = new Date(startDate).getUTCFullYear();
 
+      // Logo du championnat (affiché à côté de son nom un peu partout) : jamais fourni par les
+      // autres endpoints football-data.org utilisés ici (équipes, matchs), seulement celui-ci.
+      if (competition.emblem) {
+        await supabase.from("leagues").update({ logo_url: competition.emblem }).eq("id", league.id);
+      }
+
       const { data: existingSeason } = await supabase
         .from("seasons")
         .select("id, predictions_lock_at")

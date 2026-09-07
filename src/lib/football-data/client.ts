@@ -60,6 +60,7 @@ export interface FdCompetition {
   id: number;
   code: string;
   name: string;
+  emblem: string | null;
   currentSeason: FdSeason;
 }
 
