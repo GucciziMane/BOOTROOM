@@ -8,6 +8,7 @@ import { BackLink } from "@/app/BackLink";
 import { CalendarTabs } from "./CalendarTabs";
 
 export default async function CalendarPage() {
+  const t0 = Date.now();
   const supabase = await createClient();
   // getSession() : le proxy a déjà validé la session pour cette requête (voir layout.tsx), pas
   // besoin de repayer un aller-retour réseau à Supabase Auth ici.
@@ -21,6 +22,7 @@ export default async function CalendarPage() {
     supabase.from("leagues").select("id, name, country, football_data_code, logo_url").eq("active", true).order("name"),
   ]);
   const user = session?.user ?? null;
+  console.log(`[PERF calendar] wave1 (session+leagues): ${Date.now() - t0}ms`);
 
   const leagueIds = (leagues ?? []).map((l) => l.id);
   const leagueById = new Map((leagues ?? []).map((l) => [l.id, l]));
@@ -34,6 +36,7 @@ export default async function CalendarPage() {
     supabase.from("teams").select("id, name, logo_url").in("league_id", leagueIds.length > 0 ? leagueIds : [-1]),
   ]);
 
+  console.log(`[PERF calendar] wave2 (seasons+teams): ${Date.now() - t0}ms`);
   // Dernière saison par championnat.
   const currentSeasonByLeague = new Map<number, { id: number; year: number }>();
   for (const s of seasonsData ?? []) {
@@ -72,6 +75,8 @@ export default async function CalendarPage() {
     })
   );
 
+  console.log(`[PERF calendar] wave3 (matches per season, n=${seasonIds.length}): ${Date.now() - t0}ms`);
+
   const upcoming = matchesPerSeason.flat().sort((a, b) => a.kickoff_at.localeCompare(b.kickoff_at));
   const upcomingMatchIds = upcoming.map((m) => m.id);
 
@@ -107,6 +112,7 @@ export default async function CalendarPage() {
     supabase.from("player_assist_tier").select("player_id, tier").in("season_id", seasonIds.length > 0 ? seasonIds : [-1]),
     supabase.from("match_result_tier_multipliers").select("tier, favorite_multiplier_pct, underdog_multiplier_pct"),
   ]);
+  console.log(`[PERF calendar] wave4 (final 9 queries): ${Date.now() - t0}ms`);
 
   const predictionByMatchId = new Map((fullPredictions ?? []).map((p) => [p.match_id, p]));
   const playersByTeamId = new Map<number, Array<{ id: number; name: string }>>();
@@ -142,6 +148,7 @@ export default async function CalendarPage() {
     const t = teamById.get(id);
     return t ? { name: t.name, logoUrl: t.logo_url } : { name: "?", logoUrl: null };
   };
+  console.log(`[PERF calendar] before render: ${Date.now() - t0}ms`);
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 p-6">
