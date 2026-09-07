@@ -18,7 +18,14 @@ export function BottomNav() {
   if (HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) return null;
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-paper pb-[env(safe-area-inset-bottom)] lg:hidden">
+    <nav
+      style={{ viewTransitionName: "bottom-nav" }}
+      className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-paper pb-[env(safe-area-inset-bottom)] lg:hidden"
+    >
+      {/* Sans viewTransitionName + les 3 règles CSS "bottom-nav" ci-dessous (globals.css), le
+          crossfade racine (::view-transition-old/new(root), 180ms) inclut cette nav fixe dans son
+          screenshot pleine page à chaque navigation — un screenshot pris pendant ces 180ms capture
+          alors l'ancienne ET la nouvelle page superposées (nav "dédoublée" au milieu du contenu). */}
       <div className="mx-auto flex max-w-3xl">
         {TABS.map((tab) => {
           const active = tab.isActive(pathname);

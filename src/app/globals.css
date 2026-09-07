@@ -176,6 +176,24 @@ textarea {
   pointer-events: none;
 }
 
+/* BottomNav (viewTransitionName: "bottom-nav") est identique avant/après un changement d'onglet —
+   sans ça, elle est incluse dans le screenshot pleine page ci-dessus comme tout le reste, et un
+   screenshot pris pendant les 180ms du fondu capture l'ancienne ET la nouvelle page superposées
+   (nav visible en double, comme "coincée" au milieu du contenu). En lui donnant sa propre identité
+   et en masquant son ancien instantané, elle reste statique et visible en continu pendant le fondu
+   plutôt que de fonder avec le reste — même schéma que l'exemple d'en-tête persistant du guide
+   view-transitions de Next.js. */
+::view-transition-group(bottom-nav) {
+  animation: none;
+  z-index: 100;
+}
+::view-transition-old(bottom-nav) {
+  display: none;
+}
+::view-transition-new(bottom-nav) {
+  animation: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-old(*),
   ::view-transition-new(*),
