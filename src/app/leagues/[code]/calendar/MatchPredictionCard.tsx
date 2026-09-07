@@ -2,7 +2,8 @@
 
 import { useActionState, useOptimistic, useState, type CSSProperties } from "react";
 import Image from "next/image";
-import { saveMatchPrediction, toggleGoalSubscription, type SaveMatchPredictionState } from "./[matchId]/actions";
+import { saveMatchPrediction, type SaveMatchPredictionState } from "./[matchId]/actions";
+import { GoalBell } from "./GoalBell";
 import { buttonPrimary, input } from "@/lib/ui";
 import { applyResultOdds, predictedWinnerTeamId, type OddsTier, type ResultTierMultiplier } from "@/lib/scoring/points";
 import { formatParisDateTime } from "@/lib/format-date";
@@ -87,14 +88,6 @@ export function MatchPredictionCard({
   leagueColor,
   live,
 }: Props) {
-  const [goalSubscribed, setGoalSubscribed] = useState(initialGoalSubscribed);
-  async function toggleBell() {
-    const next = !goalSubscribed;
-    setGoalSubscribed(next); // optimiste : le retour serveur ne change quasiment jamais ce résultat
-    const { error } = await toggleGoalSubscription(matchId, next);
-    if (error) setGoalSubscribed(!next);
-  }
-
   const [state, formAction, isPending] = useActionState(saveMatchPrediction, initialState);
   // Affiché dès le tap plutôt qu'à la réponse du serveur (upsert + 3 revalidatePath, quelques
   // centaines de ms) : ça se sent instantané, et repasse tout seul à l'échec puisque optimisticSaved
@@ -172,7 +165,7 @@ export function MatchPredictionCard({
             ) : (
               leagueLabel && <span>{leagueLabel}</span>
             )}
-            <GoalBell subscribed={goalSubscribed} onToggle={toggleBell} />
+            <GoalBell matchId={matchId} initialSubscribed={initialGoalSubscribed} />
           </span>
         </p>
         <div className="relative flex items-center justify-center gap-3">
@@ -203,7 +196,7 @@ export function MatchPredictionCard({
         <span>{formatParisDateTime(kickoffAt)}</span>
         <span className="flex items-center gap-2">
           {leagueLabel && <span>{leagueLabel}</span>}
-          <GoalBell subscribed={goalSubscribed} onToggle={toggleBell} />
+          <GoalBell matchId={matchId} initialSubscribed={initialGoalSubscribed} />
         </span>
       </p>
 
@@ -292,23 +285,6 @@ export function MatchPredictionCard({
       </button>
       {state.error && <p className="relative mt-1 text-center text-xs text-bad">{state.error}</p>}
     </form>
-  );
-}
-
-/** Cloche "but" — muette par défaut (voir migration match_goal_subscriptions), chacun l'active
- * indépendamment pour ce match précis. type="button" : cette carte est parfois un <form>
- * (pronostic pas encore verrouillé), il ne faut surtout pas que le tap déclenche sa soumission. */
-function GoalBell({ subscribed, onToggle }: { subscribed: boolean; onToggle: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-label={subscribed ? "Désactiver les notifs de but pour ce match" : "Être notifié des buts de ce match"}
-      aria-pressed={subscribed}
-      className="text-sm leading-none transition-transform active:scale-90"
-    >
-      {subscribed ? "🔔" : "🔕"}
-    </button>
   );
 }
 

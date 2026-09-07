@@ -7,6 +7,7 @@ import { FALLBACK_SCORER_TIER, FALLBACK_ASSIST_TIER, type OddsTier } from "@/lib
 import { KNOCKOUT_STAGE_LABEL } from "@/lib/knockout-stage-label";
 import { BackLink } from "@/app/BackLink";
 import { MatchPredictionCard } from "./MatchPredictionCard";
+import { GoalBell } from "./GoalBell";
 
 export default async function CalendarPage({ params }: PageProps<"/leagues/[code]/calendar">) {
   const { code } = await params;
@@ -176,7 +177,14 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
           </h2>
           <ul className={listCard}>
             {live.map((m) => (
-              <ScoreRow key={m.id} home={teamLabel(m.home_team_id)} away={teamLabel(m.away_team_id)} homeScore={m.home_score} awayScore={m.away_score} />
+              <ScoreRow
+                key={m.id}
+                home={teamLabel(m.home_team_id)}
+                away={teamLabel(m.away_team_id)}
+                homeScore={m.home_score}
+                awayScore={m.away_score}
+                goalBell={{ matchId: m.id, initialSubscribed: goalSubscribedMatchIds.has(m.id) }}
+              />
             ))}
           </ul>
         </section>
@@ -268,11 +276,15 @@ function ScoreRow({
   away,
   homeScore,
   awayScore,
+  goalBell,
 }: {
   home: { name: string; logoUrl: string | null };
   away: { name: string; logoUrl: string | null };
   homeScore: number | null;
   awayScore: number | null;
+  /** Uniquement pour un match en direct (voir la section "En direct" ci-dessus) : aucun sens de
+   * proposer de s'abonner aux buts d'un match déjà terminé ("Derniers résultats"). */
+  goalBell?: { matchId: number; initialSubscribed: boolean };
 }) {
   return (
     <li className="flex items-center gap-3 p-3.5">
@@ -287,6 +299,7 @@ function ScoreRow({
         {away.logoUrl && <Image src={away.logoUrl} alt="" width={28} height={28} className="h-7 w-7 shrink-0 object-contain" />}
         <span className="truncate text-sm font-semibold">{away.name}</span>
       </div>
+      {goalBell && <GoalBell matchId={goalBell.matchId} initialSubscribed={goalBell.initialSubscribed} />}
     </li>
   );
 }
