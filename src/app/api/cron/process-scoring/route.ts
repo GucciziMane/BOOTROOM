@@ -22,9 +22,9 @@ const MAX_MATCHES_PER_RUN = 100;
 // de score (qui n'en dépendent pas) en attendant des buteurs qui ne viendront jamais.
 const EVENTS_SYNC_GRACE_MS = 6 * 60 * 60 * 1000;
 
-type ServiceClient = ReturnType<typeof createServiceRoleClient>;
+export type ServiceClient = ReturnType<typeof createServiceRoleClient>;
 
-async function loadPointConfig(supabase: ServiceClient): Promise<PointConfig> {
+export async function loadPointConfig(supabase: ServiceClient): Promise<PointConfig> {
   const { data } = await supabase.from("point_config").select("key, points");
   const map = new Map((data ?? []).map((r) => [r.key, r.points]));
   return {
@@ -50,16 +50,24 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ matches: matchesResult, seasons: seasonsResult });
 }
 
-async function processFinishedMatches(supabase: ServiceClient, config: PointConfig) {
+/**
+ * `matchIdsFilter` : appelé depuis live-tick juste après avoir synchronisé les buts d'un match qui
+ * vient de passer "finished", pour lui donner ses points tout de suite plutôt que d'attendre le
+ * prochain passage de ce cron (jusqu'à 30 min) — la garde events_synced_at/délai de grâce
+ * s'applique quand même, mais live-tick pose events_synced_at avant d'appeler cette fonction.
+ */
+export async function processFinishedMatches(supabase: ServiceClient, config: PointConfig, matchIdsFilter?: number[]) {
   const eventsSyncDeadline = new Date(Date.now() - EVENTS_SYNC_GRACE_MS).toISOString();
 
-  const { data: matches, error } = await supabase
+  let query = supabase
     .from("matches")
     .select("id, league_id, season_id, home_team_id, away_team_id, home_score, away_score, favorite_team_id, odds_tier")
     .eq("status", "finished")
     .is("points_processed_at", null)
     .or(`events_synced_at.not.is.null,kickoff_at.lt.${eventsSyncDeadline}`)
     .limit(MAX_MATCHES_PER_RUN);
+  if (matchIdsFilter) query = query.in("id", matchIdsFilter);
+  const { data: matches, error } = await query;
 
   if (error || !matches || matches.length === 0) {
     return { processed: 0, error: error?.message };

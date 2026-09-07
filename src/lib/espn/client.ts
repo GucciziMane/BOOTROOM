@@ -31,6 +31,8 @@ export interface EspnEvent {
   id: string;
   date: string;
   status: "scheduled" | "live" | "finished" | "postponed" | "cancelled";
+  /** Minute affichée par ESPN pendant le direct (ex: "63'", "45'+2'"), null hors match live. */
+  displayClock: string | null;
   homeTeam: string;
   awayTeam: string;
   homeScore: number | null;
@@ -42,7 +44,7 @@ interface EspnScoreboardResponse {
     id: string;
     date: string;
     competitions: Array<{
-      status: { type: { name: string } };
+      status: { type: { name: string }; displayClock?: string };
       competitors: Array<{
         homeAway: "home" | "away";
         score?: string;
@@ -91,11 +93,13 @@ export async function getEspnScoreboard(leagueSlug: string, fromYmd: string, toY
     const away = comp.competitors.find((c) => c.homeAway === "away");
     if (!home || !away) return [];
 
+    const status = normalizeEspnStatus(comp.status.type.name);
     return [
       {
         id: event.id,
         date: event.date,
-        status: normalizeEspnStatus(comp.status.type.name),
+        status,
+        displayClock: status === "live" ? (comp.status.displayClock ?? null) : null,
         homeTeam: home.team.displayName,
         awayTeam: away.team.displayName,
         homeScore: home.score !== undefined ? Number(home.score) : null,

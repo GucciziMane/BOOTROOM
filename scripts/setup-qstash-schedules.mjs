@@ -35,6 +35,17 @@ const schedules = [
     cron: "5,35 * * * *",
     deduplicationId: "bootroom-process-scoring",
   },
+  // Toutes les minutes : suit les matchs en cours (score, minute, buteurs) et pousse les
+  // notifs de but/résultat en quasi temps réel. Sort tout de suite si rien n'est en cours
+  // (une requête DB, aucun appel externe), donc peu coûteux le reste du temps malgré la
+  // fréquence — voir src/app/api/cron/live-tick/route.ts.
+  {
+    label: "live-tick",
+    destination: `${APP_URL}/api/cron/live-tick`,
+    cron: "* * * * *",
+    deduplicationId: "bootroom-live-tick",
+    retries: 1,
+  },
 ];
 
 for (const s of schedules) {
@@ -43,7 +54,7 @@ for (const s of schedules) {
     cron: s.cron,
     method: "GET",
     headers,
-    retries: 2,
+    retries: s.retries ?? 2,
     label: s.label,
     deduplicationId: s.deduplicationId,
   });

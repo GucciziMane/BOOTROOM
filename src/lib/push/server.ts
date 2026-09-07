@@ -69,3 +69,28 @@ export async function sendPushToUserIds(
     .in("user_id", userIds);
   await sendToSubscriptions(subscriptions ?? [], payload);
 }
+
+/**
+ * Notification à tous les abonnés, avec un message personnalisé pour certains (ex: "ton
+ * pronostic buteur est bon") et le message générique pour tous les autres — groupés par payload
+ * final pour n'envoyer qu'un seul lot par variante plutôt qu'une requête par destinataire.
+ */
+export async function sendPushBroadcastWithOverrides(
+  overridesByUserId: Map<string, { title: string; body: string; url?: string }>,
+  fallback: { title: string; body: string; url?: string }
+): Promise<void> {
+  const supabase = createServiceRoleClient();
+  const { data: subscriptions } = await supabase
+    .from("push_subscriptions")
+    .select("id, user_id, endpoint, p256dh, auth");
+
+  const groups = new Map<string, { payload: { title: string; body: string; url?: string }; subs: PushSubscriptionRow[] }>();
+  for (const sub of subscriptions ?? []) {
+    const payload = overridesByUserId.get(sub.user_id) ?? fallback;
+    const key = JSON.stringify(payload);
+    if (!groups.has(key)) groups.set(key, { payload, subs: [] });
+    groups.get(key)!.subs.push(sub);
+  }
+
+  await Promise.all([...groups.values()].map(({ payload, subs }) => sendToSubscriptions(subs, payload)));
+}
