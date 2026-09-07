@@ -1,7 +1,10 @@
+import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { computeStandings } from "@/lib/scoring/standings";
+import { formatParisDateTime } from "@/lib/format-date";
+import { bannerWarn, bannerNeutral, linkMuted } from "@/lib/ui";
 import { BackLink } from "@/app/BackLink";
 
 const TOP_N = 10;
@@ -9,6 +12,9 @@ const TOP_N = 10;
 export default async function StandingsPage({ params }: PageProps<"/calendar/classements/[code]">) {
   const { code } = await params;
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   const { data: league } = await supabase
     .from("leagues")
@@ -19,7 +25,12 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
   if (!league || !league.active) notFound();
 
   const [{ data: seasons }, { data: teamsData }] = await Promise.all([
-    supabase.from("seasons").select("id").eq("league_id", league.id).order("year", { ascending: false }).limit(1),
+    supabase
+      .from("seasons")
+      .select("id, predictions_lock_at")
+      .eq("league_id", league.id)
+      .order("year", { ascending: false })
+      .limit(1),
     supabase.from("teams").select("id, name, logo_url").eq("league_id", league.id),
   ]);
   const season = seasons?.[0];
@@ -35,7 +46,7 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
     );
   }
 
-  const [{ data: matches }, { data: playersData }] = await Promise.all([
+  const [{ data: matches }, { data: playersData }, { data: seasonPrediction }] = await Promise.all([
     supabase
       .from("matches")
       .select("id, home_team_id, away_team_id, home_score, away_score, status")
@@ -47,6 +58,12 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
         "team_id",
         teams.map((t) => t.id)
       ),
+    supabase
+      .from("season_predictions")
+      .select("top_scorer_player_id, top_assist_player_id, top3, bottom3, surprise_team_id, flop_team_id")
+      .eq("user_id", user!.id)
+      .eq("season_id", season.id)
+      .maybeSingle(),
   ]);
   const playerById = new Map((playersData ?? []).map((p) => [p.id, p]));
 
@@ -79,8 +96,31 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
     }
   }
 
-  const topScorers = rankPlayers(goalsByPlayer, playerById, teamById);
-  const topAssists = rankPlayers(assistsByPlayer, playerById, teamById);
+  const rankedScorers = rankPlayers(goalsByPlayer, playerById, teamById);
+  const rankedAssists = rankPlayers(assistsByPlayer, playerById, teamById);
+
+  // Bandeau pronostics de saison : glissé ici plutôt qu'en section à part, puisque c'est
+  // exactement la page où on vient déjà voir "qui est devant" — le contexte le plus naturel pour
+  // rappeler qu'un pronostic reste à faire, ou pour comparer un pronostic déjà fait à la réalité.
+  const locked = new Date(season.predictions_lock_at) <= new Date();
+  const top3 = (seasonPrediction?.top3 as Record<string, number>) ?? {};
+  const bottom3 = (seasonPrediction?.bottom3 as Record<string, number>) ?? {};
+  const badgesByTeamId = new Map<number, string[]>();
+  const addBadge = (teamId: number | null | undefined, badge: string) => {
+    if (teamId == null) return;
+    if (!badgesByTeamId.has(teamId)) badgesByTeamId.set(teamId, []);
+    badgesByTeamId.get(teamId)!.push(badge);
+  };
+  if (seasonPrediction) {
+    addBadge(top3["1"], "🎯1");
+    addBadge(top3["2"], "🎯2");
+    addBadge(top3["3"], "🎯3");
+    addBadge(bottom3["1"], "💩1");
+    addBadge(bottom3["2"], "💩2");
+    addBadge(bottom3["3"], "💩3");
+    addBadge(seasonPrediction.surprise_team_id, "🃏");
+    addBadge(seasonPrediction.flop_team_id, "📉");
+  }
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 p-6">
@@ -88,6 +128,34 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
         <h1 className="text-3xl font-bold">{league.name}</h1>
         <BackLink href="/calendar/classements" />
       </div>
+
+      {!locked && !seasonPrediction && (
+        <div className={`mb-6 flex flex-wrap items-center justify-between gap-3 ${bannerWarn}`}>
+          <span>
+            🔮 Pronostics de saison pas encore faits pour ce championnat — à envoyer avant le{" "}
+            {formatParisDateTime(season.predictions_lock_at)}.
+          </span>
+          <Link href={`/leagues/${code}`} className="shrink-0 font-bold underline">
+            Pronostiquer →
+          </Link>
+        </div>
+      )}
+      {!locked && seasonPrediction && (
+        <div className={`mb-6 flex flex-wrap items-center justify-between gap-3 ${bannerNeutral}`}>
+          <span>🔮 Pronostics de saison enregistrés, modifiables jusqu&apos;au {formatParisDateTime(season.predictions_lock_at)}.</span>
+          <Link href={`/leagues/${code}`} className="shrink-0 font-bold underline">
+            Modifier →
+          </Link>
+        </div>
+      )}
+      {locked && seasonPrediction && (
+        <p className="mb-4 text-xs text-mute">
+          🎯 = ton top 3 pronostiqué · 💩 = ton flop 3 · 🃏 = ta surprise · 📉 = ton flop —{" "}
+          <Link href={`/leagues/${code}`} className={linkMuted}>
+            détail de tes pronostics
+          </Link>
+        </p>
+      )}
 
       <section className="mb-10 overflow-x-auto rounded-2xl border border-line bg-paper">
         <table className="w-full text-sm">
@@ -106,6 +174,7 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
           <tbody>
             {standings.map((row, i) => {
               const team = teamById.get(row.teamId);
+              const badges = badgesByTeamId.get(row.teamId) ?? [];
               return (
                 <tr key={row.teamId} className="border-b border-line last:border-0">
                   <td className="p-3 text-mute">{i + 1}</td>
@@ -115,6 +184,11 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
                         <Image src={team.logo_url} alt="" width={20} height={20} className="h-5 w-5 object-contain" />
                       )}
                       {team?.name}
+                      {badges.length > 0 && (
+                        <span className="text-xs" title="Ton pronostic de saison">
+                          {badges.join(" ")}
+                        </span>
+                      )}
                     </span>
                   </td>
                   <td className="p-3 text-right text-mute">{row.played}</td>
@@ -133,14 +207,25 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
       </section>
 
       <div className="grid gap-6 sm:grid-cols-2">
-        <RankedPlayerList title="Meilleurs buteurs" entries={topScorers} unit="but" />
-        <RankedPlayerList title="Meilleurs passeurs" entries={topAssists} unit="passe déc." />
+        <RankedPlayerList
+          title="Meilleurs buteurs"
+          entries={rankedScorers}
+          unit="but"
+          predictedPlayerId={seasonPrediction?.top_scorer_player_id ?? null}
+        />
+        <RankedPlayerList
+          title="Meilleurs passeurs"
+          entries={rankedAssists}
+          unit="passe déc."
+          predictedPlayerId={seasonPrediction?.top_assist_player_id ?? null}
+        />
       </div>
     </main>
   );
 }
 
 interface RankedEntry {
+  playerId: number;
   name: string;
   teamName: string;
   count: number;
@@ -155,34 +240,61 @@ function rankPlayers(
     .map(([playerId, count]) => {
       const player = playerById.get(playerId);
       const team = player ? teamById.get(player.team_id) : undefined;
-      return { name: player?.name ?? "?", teamName: team?.name ?? "", count };
+      return { playerId, name: player?.name ?? "?", teamName: team?.name ?? "", count };
     })
-    .sort((a, b) => b.count - a.count)
-    .slice(0, TOP_N);
+    .sort((a, b) => b.count - a.count);
 }
 
-function RankedPlayerList({ title, entries, unit }: { title: string; entries: RankedEntry[]; unit: string }) {
+function RankedPlayerList({
+  title,
+  entries,
+  unit,
+  predictedPlayerId,
+}: {
+  title: string;
+  entries: RankedEntry[];
+  unit: string;
+  predictedPlayerId: number | null;
+}) {
+  const visible = entries.slice(0, TOP_N);
+  const predictedRank = predictedPlayerId != null ? entries.findIndex((e) => e.playerId === predictedPlayerId) : -1;
+  const predictedOutsideTop = predictedRank >= TOP_N ? entries[predictedRank] : null;
+
   return (
     <section className="rounded-2xl border border-line bg-paper p-4">
       <h2 className="mb-3 text-lg font-bold">{title}</h2>
-      {entries.length === 0 ? (
+      {visible.length === 0 ? (
         <p className="text-sm text-mute">Personne pour l&apos;instant.</p>
       ) : (
         <ol className="space-y-2 text-sm">
-          {entries.map((e, i) => (
-            <li key={`${e.name}-${i}`} className="flex items-center justify-between">
-              <span>
-                <span className="mr-2 text-mute">{i + 1}.</span>
-                <span className="font-bold">{e.name}</span>
-                <span className="ml-1 text-mute">— {e.teamName}</span>
-              </span>
-              <span className="font-bold">
-                {e.count} {unit}
-                {e.count > 1 ? "s" : ""}
-              </span>
-            </li>
-          ))}
+          {visible.map((e, i) => {
+            const isPrediction = e.playerId === predictedPlayerId;
+            return (
+              <li
+                key={e.playerId}
+                className={`flex items-center justify-between rounded-lg ${isPrediction ? "-mx-1.5 bg-accent-soft px-1.5 py-0.5" : ""}`}
+              >
+                <span>
+                  <span className="mr-2 text-mute">{i + 1}.</span>
+                  {isPrediction && <span className="mr-1">🔮</span>}
+                  <span className="font-bold">{e.name}</span>
+                  <span className="ml-1 text-mute">— {e.teamName}</span>
+                </span>
+                <span className="font-bold">
+                  {e.count} {unit}
+                  {e.count > 1 ? "s" : ""}
+                </span>
+              </li>
+            );
+          })}
         </ol>
+      )}
+      {predictedOutsideTop && (
+        <p className="mt-3 border-t border-line pt-2 text-xs text-mute">
+          🔮 Ton pronostic : <span className="font-bold text-ink">{predictedOutsideTop.name}</span> — {predictedOutsideTop.count}{" "}
+          {unit}
+          {predictedOutsideTop.count > 1 ? "s" : ""} ({predictedRank + 1}e)
+        </p>
       )}
     </section>
   );

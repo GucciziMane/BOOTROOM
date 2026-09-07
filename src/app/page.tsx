@@ -99,8 +99,7 @@ export default async function DashboardPage() {
           <ClubHomeDashboard data={clubHomeData} />
           <div className="mt-7">
             <div className="mb-2 text-sm font-bold text-mute">Le reste de l&rsquo;appli</div>
-            <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-6">
-              <QuickLink href="/leagues" emoji="🔮" label="Prédictions" />
+            <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-5">
               <QuickLink href="/calendar" emoji="🎯" label="Pronostics" />
               <QuickLink href="/calendar/classements" emoji="🏆" label="Classements" />
               <QuickLink href="/leaderboard" emoji="🏅" label="Général" />
@@ -112,11 +111,6 @@ export default async function DashboardPage() {
       ) : (
       <div className="flex flex-1 items-center justify-center">
         <div className="grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-6">
-          <NavCard
-            href="/leagues"
-            title="Mes prédictions 🔮"
-            description="Buteur, passeur, top 3, flop 3, équipe surprise et équipe flop, par championnat."
-          />
           <NavCard
             href="/calendar"
             title="Pronostics 🎯"
