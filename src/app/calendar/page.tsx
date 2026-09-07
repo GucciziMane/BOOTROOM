@@ -89,6 +89,7 @@ export default async function CalendarPage() {
     { data: assistTierPointsRows },
     { data: playerAssistTierRows },
     { data: resultMultiplierRows },
+    { data: goalSubscriptions },
   ] = await Promise.all([
     supabase
       .from("match_predictions")
@@ -110,9 +111,15 @@ export default async function CalendarPage() {
     supabase.from("match_assist_tier_points").select("tier, points"),
     supabase.from("player_assist_tier").select("player_id, tier").in("season_id", seasonIds.length > 0 ? seasonIds : [-1]),
     supabase.from("match_result_tier_multipliers").select("tier, favorite_multiplier_pct, underdog_multiplier_pct"),
+    supabase
+      .from("match_goal_subscriptions")
+      .select("match_id")
+      .eq("user_id", user!.id)
+      .in("match_id", upcomingMatchIds.length > 0 ? upcomingMatchIds : [-1]),
   ]);
 
   const predictionByMatchId = new Map((fullPredictions ?? []).map((p) => [p.match_id, p]));
+  const goalSubscribedMatchIds = new Set((goalSubscriptions ?? []).map((s) => s.match_id));
   const playersByTeamId = new Map<number, Array<{ id: number; name: string }>>();
   for (const p of players ?? []) {
     if (!playersByTeamId.has(p.team_id)) playersByTeamId.set(p.team_id, []);
@@ -197,6 +204,7 @@ export default async function CalendarPage() {
                     homePlayers={homePlayers}
                     awayPlayers={awayPlayers}
                     locked={locked}
+                    initialGoalSubscribed={goalSubscribedMatchIds.has(m.id)}
                     scoring={{
                       matchExactScore,
                       scorerTierPoints: scorerTierPointsObj,

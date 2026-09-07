@@ -350,6 +350,20 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["push_subscriptions"]["Row"]>;
         Relationships: [];
       };
+      match_goal_subscriptions: {
+        Row: {
+          id: number;
+          user_id: string;
+          match_id: number;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["match_goal_subscriptions"]["Row"]> & {
+          user_id: string;
+          match_id: number;
+        };
+        Update: Partial<Database["public"]["Tables"]["match_goal_subscriptions"]["Row"]>;
+        Relationships: [];
+      };
       chat_message_reactions: {
         Row: {
           id: number;

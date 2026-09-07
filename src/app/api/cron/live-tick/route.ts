@@ -4,7 +4,7 @@ import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { getEspnScoreboard, getEspnMatchEvents, ESPN_LEAGUE_SLUG } from "@/lib/espn/client";
 import { teamNamesMatch, matchPlayerByName } from "@/lib/sync/name-match";
-import { sendPushBroadcastWithOverrides } from "@/lib/push/server";
+import { sendPushBroadcastWithOverrides, sendPushToUserIdsWithOverrides } from "@/lib/push/server";
 import { SYSTEM_SENDER_NAME } from "@/lib/system-sender";
 import { loadPointConfig, processFinishedMatches, type ServiceClient } from "@/app/api/cron/process-scoring/route";
 
@@ -249,10 +249,18 @@ async function notifyGoal(
   goal: NewGoal,
   playerInToOut: Map<number, number>
 ): Promise<void> {
-  const { data: predictions } = await supabase
-    .from("match_predictions")
-    .select("user_id, predicted_scorer_player_id, predicted_assist_player_id")
-    .eq("match_id", match.id);
+  // Plus de diffusion à tout le monde par défaut : uniquement ceux qui ont activé la cloche de
+  // CE match (voir MatchPredictionCard) — sortir tout de suite s'il n'y a personne à notifier,
+  // sans même aller chercher les pronostics.
+  const [{ data: predictions }, { data: subscriptions }] = await Promise.all([
+    supabase
+      .from("match_predictions")
+      .select("user_id, predicted_scorer_player_id, predicted_assist_player_id")
+      .eq("match_id", match.id),
+    supabase.from("match_goal_subscriptions").select("user_id").eq("match_id", match.id),
+  ]);
+  const subscribedUserIds = (subscriptions ?? []).map((s) => s.user_id);
+  if (subscribedUserIds.length === 0) return;
 
   const minuteLabel = goal.minute != null ? ` (${goal.minute}')` : "";
   const fallback = {
@@ -280,7 +288,7 @@ async function notifyGoal(
     }
   }
 
-  await sendPushBroadcastWithOverrides(overrides, fallback);
+  await sendPushToUserIdsWithOverrides(subscribedUserIds, overrides, fallback);
 }
 
 async function notifyFinalResults(

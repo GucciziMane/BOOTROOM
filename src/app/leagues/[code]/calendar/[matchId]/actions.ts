@@ -57,3 +57,23 @@ export async function saveMatchPrediction(
   revalidatePath("/calendar");
   return { error: null, success: true };
 }
+
+/** Cloche "but" d'un match : muette par défaut, chacun l'active indépendamment pour ce match
+ * précis (voir live-tick, qui ne notifie plus que les abonnés d'un match donné). Pas de
+ * revalidatePath : ce réglage n'affecte que ce qu'affiche cet utilisateur-ci sur cette carte. */
+export async function toggleGoalSubscription(matchId: number, subscribe: boolean): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "Non connecté." };
+
+  const { error } = subscribe
+    ? await supabase.from("match_goal_subscriptions").upsert(
+        { user_id: user.id, match_id: matchId },
+        { onConflict: "user_id,match_id" }
+      )
+    : await supabase.from("match_goal_subscriptions").delete().eq("user_id", user.id).eq("match_id", matchId);
+
+  return { error: error ? `Erreur : ${error.message}` : null };
+}

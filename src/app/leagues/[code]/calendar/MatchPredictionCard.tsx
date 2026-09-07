@@ -2,7 +2,7 @@
 
 import { useActionState, useOptimistic, useState, type CSSProperties } from "react";
 import Image from "next/image";
-import { saveMatchPrediction, type SaveMatchPredictionState } from "./[matchId]/actions";
+import { saveMatchPrediction, toggleGoalSubscription, type SaveMatchPredictionState } from "./[matchId]/actions";
 import { buttonPrimary, input } from "@/lib/ui";
 import { applyResultOdds, predictedWinnerTeamId, type OddsTier, type ResultTierMultiplier } from "@/lib/scoring/points";
 import { formatParisDateTime } from "@/lib/format-date";
@@ -44,6 +44,9 @@ interface Props {
     multiplierByTier: Record<number, ResultTierMultiplier>;
   };
   locked: boolean;
+  /** Cloche "but" de ce match : muette par défaut, indépendante par joueur — voir live-tick, qui
+   * ne notifie plus que les abonnés d'un match donné plutôt que tout le monde. */
+  initialGoalSubscribed: boolean;
   initial: {
     predictedHomeScore: number | null;
     predictedAwayScore: number | null;
@@ -78,11 +81,20 @@ export function MatchPredictionCard({
   scoring,
   resultOdds,
   locked,
+  initialGoalSubscribed,
   initial,
   leagueLabel,
   leagueColor,
   live,
 }: Props) {
+  const [goalSubscribed, setGoalSubscribed] = useState(initialGoalSubscribed);
+  async function toggleBell() {
+    const next = !goalSubscribed;
+    setGoalSubscribed(next); // optimiste : le retour serveur ne change quasiment jamais ce résultat
+    const { error } = await toggleGoalSubscription(matchId, next);
+    if (error) setGoalSubscribed(!next);
+  }
+
   const [state, formAction, isPending] = useActionState(saveMatchPrediction, initialState);
   // Affiché dès le tap plutôt qu'à la réponse du serveur (upsert + 3 revalidatePath, quelques
   // centaines de ms) : ça se sent instantané, et repasse tout seul à l'échec puisque optimisticSaved
@@ -148,17 +160,20 @@ export function MatchPredictionCard({
         {background && <LeagueCardBackground image={background.image} light={theme === "light"} />}
         <p className={`relative mb-2 flex items-center justify-between text-xs font-bold ${textFaint}`}>
           <span>{formatParisDateTime(kickoffAt)}</span>
-          {live ? (
-            <span className="flex items-center gap-1 text-bad">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-bad opacity-75" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-bad" />
+          <span className="flex items-center gap-2">
+            {live ? (
+              <span className="flex items-center gap-1 text-bad">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-bad opacity-75" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-bad" />
+                </span>
+                {live.liveClock ?? "En direct"}
               </span>
-              {live.liveClock ?? "En direct"}
-            </span>
-          ) : (
-            leagueLabel && <span>{leagueLabel}</span>
-          )}
+            ) : (
+              leagueLabel && <span>{leagueLabel}</span>
+            )}
+            <GoalBell subscribed={goalSubscribed} onToggle={toggleBell} />
+          </span>
         </p>
         <div className="relative flex items-center justify-center gap-3">
           <TeamBadge name={homeTeamName} logoUrl={homeLogoUrl} theme={theme} />
@@ -186,7 +201,10 @@ export function MatchPredictionCard({
       <input type="hidden" name="league_code" value={leagueCode} />
       <p className={`relative mb-2 flex items-center justify-between text-xs font-bold ${textFaint}`}>
         <span>{formatParisDateTime(kickoffAt)}</span>
-        {leagueLabel && <span>{leagueLabel}</span>}
+        <span className="flex items-center gap-2">
+          {leagueLabel && <span>{leagueLabel}</span>}
+          <GoalBell subscribed={goalSubscribed} onToggle={toggleBell} />
+        </span>
       </p>
 
       <div className="relative flex items-center justify-center gap-2">
@@ -274,6 +292,23 @@ export function MatchPredictionCard({
       </button>
       {state.error && <p className="relative mt-1 text-center text-xs text-bad">{state.error}</p>}
     </form>
+  );
+}
+
+/** Cloche "but" — muette par défaut (voir migration match_goal_subscriptions), chacun l'active
+ * indépendamment pour ce match précis. type="button" : cette carte est parfois un <form>
+ * (pronostic pas encore verrouillé), il ne faut surtout pas que le tap déclenche sa soumission. */
+function GoalBell({ subscribed, onToggle }: { subscribed: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={subscribed ? "Désactiver les notifs de but pour ce match" : "Être notifié des buts de ce match"}
+      aria-pressed={subscribed}
+      className="text-sm leading-none transition-transform active:scale-90"
+    >
+      {subscribed ? "🔔" : "🔕"}
+    </button>
   );
 }
 
