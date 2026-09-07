@@ -1,4 +1,5 @@
 {
+  "regions": ["dub1"],
   "crons": [
     { "path": "/api/cron/sync-teams-players", "schedule": "0 3 * * *" },
     { "path": "/api/cron/sync-fixtures", "schedule": "0 6 * * *" },
