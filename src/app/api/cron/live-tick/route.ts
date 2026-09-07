@@ -4,6 +4,7 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 import { getEspnScoreboard, getEspnMatchGoals, ESPN_LEAGUE_SLUG, type EspnGoal } from "@/lib/espn/client";
 import { teamNamesMatch, matchPlayerByName } from "@/lib/sync/name-match";
 import { sendPushBroadcastWithOverrides } from "@/lib/push/server";
+import { SYSTEM_SENDER_NAME } from "@/lib/system-sender";
 import { loadPointConfig, processFinishedMatches, type ServiceClient } from "@/app/api/cron/process-scoring/route";
 
 // Durée max raisonnable d'un match + arrêts de jeu : au-delà, un match "scheduled"/"live" en base
@@ -190,8 +191,8 @@ async function notifyGoal(
 
   const minuteLabel = goal.minute != null ? ` (${goal.minute}')` : "";
   const fallback = {
-    title: "⚽ But !",
-    body: `${homeName} ${homeScore} - ${awayScore} ${awayName} — ${goal.scorerName}${minuteLabel}`,
+    title: SYSTEM_SENDER_NAME,
+    body: `⚽ But ! ${homeName} ${homeScore} - ${awayScore} ${awayName} — ${goal.scorerName}${minuteLabel}`,
     url: `${APP_URL}/calendar`,
   };
 
@@ -229,8 +230,8 @@ async function notifyFinalResults(
       .eq("match_id", match.id);
 
     const fallback = {
-      title: "Match terminé",
-      body: `${home.name} ${match.home_score} - ${match.away_score} ${away.name}`,
+      title: SYSTEM_SENDER_NAME,
+      body: `🏁 Match terminé : ${home.name} ${match.home_score} - ${match.away_score} ${away.name}`,
       url: `${APP_URL}/calendar`,
     };
     const overrides = new Map<string, { title: string; body: string; url?: string }>();

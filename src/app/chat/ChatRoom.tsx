@@ -15,6 +15,7 @@ import { createClient } from "@/lib/supabase/client";
 import { FavoriteTeamBadge } from "@/app/profile/FavoriteTeamBadge";
 import { formatParisDateTime } from "@/lib/format-date";
 import { splitContentByMentions } from "@/lib/chat/mentions";
+import { SYSTEM_SENDER_NAME } from "@/lib/system-sender";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
 
@@ -550,6 +551,10 @@ export function ChatRoom({
             const mentionsMe = !!currentUsername && m.content.includes(`@${currentUsername}`);
             return (
               <div key={m.id} className="mx-auto max-w-[90%] rounded-2xl bg-cream px-4 py-3 text-center shadow-sm">
+                <p className="mb-1.5 flex items-center justify-center gap-1.5 text-xs font-bold text-mute">
+                  <span aria-hidden>🎙️</span>
+                  {SYSTEM_SENDER_NAME}
+                </p>
                 <p className={`whitespace-pre-line text-sm leading-snug ${mentionsMe ? "ring-1 ring-inset ring-accent rounded-xl p-1" : ""}`}>
                   {splitContentByMentions(m.content, allUsernames).map((part, i) =>
                     part.isMention ? (

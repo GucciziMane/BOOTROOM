@@ -1,6 +1,7 @@
 import type { ServiceClient } from "@/app/api/cron/process-scoring/route";
 import { sendPushToOthers } from "@/lib/push/server";
 import { LEAGUE_FLAG } from "@/lib/country-flags";
+import { SYSTEM_SENDER_NAME } from "@/lib/system-sender";
 
 export interface TouchedMatchdayGroup {
   seasonId: number;
@@ -154,8 +155,8 @@ async function postOneMatchdayRecap(supabase: ServiceClient, group: TouchedMatch
 
   try {
     await sendPushToOthers([], {
-      title: "📊 Récap de la journée",
-      body: `Journée ${group.matchday} ${league?.name ?? ""} terminée — @${topUsername} en tête.`,
+      title: SYSTEM_SENDER_NAME,
+      body: `📊 Journée ${group.matchday} ${league?.name ?? ""} terminée — @${topUsername} en tête.`,
       url: "/chat",
     });
   } catch {
