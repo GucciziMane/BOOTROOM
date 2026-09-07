@@ -48,38 +48,27 @@ export default async function CalendarPage() {
   // Une seule "prochaine journée" par championnat, pas toute la saison restante : la page
   // s'appelle "Prochaine journée", et charger ~1600 matchs d'un coup la rendait lente pour
   // ne finalement afficher que les tout premiers (silencieusement tronqués par Supabase en plus).
-  const nextMatchdayBySeasonId = new Map<number, number>();
-  await Promise.all(
-    seasonIds.map(async (seasonId) => {
-      const { data: row } = await supabase
-        .from("matches")
-        .select("matchday")
-        .eq("season_id", seasonId)
-        .in("status", ["scheduled", "live"])
-        .not("matchday", "is", null)
-        .order("matchday", { ascending: true })
-        .order("kickoff_at", { ascending: true })
-        .limit(1)
-        .maybeSingle();
-      if (row?.matchday != null) nextMatchdayBySeasonId.set(seasonId, row.matchday);
-    })
-  );
-
+  //
+  // Un seul aller-retour par saison (au lieu de deux enchaînés : d'abord découvrir le numéro de
+  // la prochaine journée, puis aller chercher ses matchs) — chaque étage supplémentaire de requêtes
+  // dépendantes coûte une latence réseau entière à la page entière. Une trentaine de lignes triées
+  // par (journée, coup d'envoi) suffit largement à couvrir une journée complète de n'importe quel
+  // championnat, donc le filtrage "seulement la plus proche" peut se faire ici, en mémoire.
   const matchesPerSeason = await Promise.all(
     seasonIds.map(async (seasonId) => {
-      const nextMatchday = nextMatchdayBySeasonId.get(seasonId);
-      const base = supabase
+      const { data } = await supabase
         .from("matches")
         .select(
           "id, season_id, home_team_id, away_team_id, kickoff_at, status, favorite_team_id, odds_tier, matchday, stage, home_score, away_score, live_clock"
         )
         .eq("season_id", seasonId)
-        .in("status", ["scheduled", "live"]);
-      const { data } =
-        nextMatchday != null
-          ? await base.eq("matchday", nextMatchday)
-          : await base.order("kickoff_at", { ascending: true }).limit(20);
-      return data ?? [];
+        .in("status", ["scheduled", "live"])
+        .order("matchday", { ascending: true, nullsFirst: false })
+        .order("kickoff_at", { ascending: true })
+        .limit(30);
+      const rows = data ?? [];
+      const nextMatchday = rows.find((m) => m.matchday != null)?.matchday;
+      return nextMatchday != null ? rows.filter((m) => m.matchday === nextMatchday) : rows.slice(0, 20);
     })
   );
 
