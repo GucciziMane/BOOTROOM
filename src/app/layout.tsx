@@ -42,9 +42,14 @@ async function getClubTheme(): Promise<ClubTheme> {
   const empty: ClubTheme = { enabled: false, primaryColor: null, secondaryColor: null, crestUrl: null };
 
   const supabase = await createClient();
+  // getSession() (pas getUser()) : le proxy (src/proxy.ts) a déjà revalidé la session auprès de
+  // Supabase Auth pour cette même requête avant que ce layout ne s'exécute — refaire un aller-retour
+  // réseau ici juste pour lire l'id de l'utilisateur double inutilement la latence d'auth sur
+  // CHAQUE page (ce layout tourne partout). getSession() lit le JWT déjà validé, sans réseau.
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user ?? null;
   if (!user) return empty;
 
   const { data: profile } = await supabase

@@ -9,15 +9,18 @@ import { CalendarTabs } from "./CalendarTabs";
 
 export default async function CalendarPage() {
   const supabase = await createClient();
+  // getSession() : le proxy a déjà validé la session pour cette requête (voir layout.tsx), pas
+  // besoin de repayer un aller-retour réseau à Supabase Auth ici.
   const [
     {
-      data: { user },
+      data: { session },
     },
     { data: leagues },
   ] = await Promise.all([
-    supabase.auth.getUser(),
+    supabase.auth.getSession(),
     supabase.from("leagues").select("id, name, country, football_data_code, logo_url").eq("active", true).order("name"),
   ]);
+  const user = session?.user ?? null;
 
   const leagueIds = (leagues ?? []).map((l) => l.id);
   const leagueById = new Map((leagues ?? []).map((l) => [l.id, l]));

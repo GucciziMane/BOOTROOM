@@ -8,15 +8,18 @@ import { SeasonPredictionForm, type PlayerOption, type TeamOption } from "./Seas
 export default async function LeagueSeasonPage({ params }: PageProps<"/leagues/[code]">) {
   const { code } = await params;
   const supabase = await createClient();
+  // getSession() : le proxy a déjà validé la session pour cette requête (voir layout.tsx), pas
+  // besoin de repayer un aller-retour réseau à Supabase Auth ici.
   const [
     {
-      data: { user },
+      data: { session },
     },
     { data: league },
   ] = await Promise.all([
-    supabase.auth.getUser(),
+    supabase.auth.getSession(),
     supabase.from("leagues").select("id, name, football_data_code, active").eq("football_data_code", code).maybeSingle(),
   ]);
+  const user = session?.user ?? null;
 
   if (!league || !league.active) notFound();
 

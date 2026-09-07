@@ -6,9 +6,12 @@ import { PredictionHistoryList } from "./PredictionHistoryList";
 
 export default async function MyPredictionsPage() {
   const supabase = await createClient();
+  // getSession() : le proxy a déjà validé la session pour cette requête (voir layout.tsx), pas
+  // besoin de repayer un aller-retour réseau à Supabase Auth ici.
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user ?? null;
 
   const allRows = await getPredictionHistory(supabase, user!.id);
   // Seulement les pronostics déjà notés : un match pas encore joué (ou pas encore traité par le

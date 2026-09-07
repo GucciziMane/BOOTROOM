@@ -9,13 +9,15 @@ import { MatchPredictionForm } from "./MatchPredictionForm";
 export default async function MatchPage({ params }: PageProps<"/leagues/[code]/calendar/[matchId]">) {
   const { code, matchId } = await params;
   const supabase = await createClient();
+  // getSession() : le proxy a déjà validé la session pour cette requête (voir layout.tsx), pas
+  // besoin de repayer un aller-retour réseau à Supabase Auth ici.
   const [
     {
-      data: { user },
+      data: { session },
     },
     { data: match },
   ] = await Promise.all([
-    supabase.auth.getUser(),
+    supabase.auth.getSession(),
     supabase
       .from("matches")
       .select(
@@ -24,6 +26,7 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
       .eq("id", Number(matchId))
       .maybeSingle(),
   ]);
+  const user = session?.user ?? null;
 
   if (!match) notFound();
 

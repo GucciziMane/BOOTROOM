@@ -12,9 +12,12 @@ const TOP_N = 10;
 export default async function StandingsPage({ params }: PageProps<"/calendar/classements/[code]">) {
   const { code } = await params;
   const supabase = await createClient();
+  // getSession() : le proxy a déjà validé la session pour cette requête (voir layout.tsx), pas
+  // besoin de repayer un aller-retour réseau à Supabase Auth ici.
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user ?? null;
 
   const { data: league } = await supabase
     .from("leagues")

@@ -8,9 +8,12 @@ export default async function PlayerPredictionsPage({ params }: PageProps<"/lead
   const { userId } = await params;
   const supabase = await createClient();
 
+  // getSession() : le proxy a déjà validé la session pour cette requête (voir layout.tsx), pas
+  // besoin de repayer un aller-retour réseau à Supabase Auth ici.
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user ?? null;
 
   const { data: profile } = await supabase.from("profiles").select("id, username").eq("id", userId).maybeSingle();
   if (!profile) notFound();

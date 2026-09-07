@@ -14,9 +14,12 @@ import { LiveMatchesBanner } from "./LiveMatchesBanner";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
+  // getSession() : le proxy a déjà validé la session pour cette requête (voir layout.tsx), pas
+  // besoin de repayer un aller-retour réseau à Supabase Auth ici.
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const user = session?.user ?? null;
 
   // Les deux premiers ne dépendent que de `user`, pas l'un de l'autre : lancés en parallèle
   // plutôt qu'à la suite pour ne pas payer deux allers-retours Supabase l'un après l'autre.
