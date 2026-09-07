@@ -7,6 +7,14 @@ type ServiceClient = ReturnType<typeof createServiceRoleClient>;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Plan gratuit football-data.org : 10 requêtes/minute. Ce cron fait jusqu'à 3 appels par
+// championnat (compétition, équipes+effectifs, classement saison précédente) — avec 700ms entre
+// deux appels, 6 championnats (5 domestiques + Ligue des Champions) tenaient sous ~13s, largement
+// au-dessus de 10 req/min et provoquant des 429 en fin de boucle (constaté à l'ajout de la 6e
+// compétition, jamais atteint avant avec seulement 5). ~6.5s entre deux appels reste sous la
+// limite avec marge, quel que soit le nombre de compétitions suivies.
+const FOOTBALL_DATA_RATE_LIMIT_DELAY_MS = 6_500;
+
 /**
  * Force historique (points/match de la saison précédente) de chaque équipe, utilisée pour
  * désigner un favori dès le premier match de la saison en cours (voir lib/scoring/match-odds).
@@ -59,8 +67,8 @@ function computeSeasonStatus(startDate: string, endDate: string): "upcoming" | "
 }
 
 /**
- * Sync hebdomadaire : équipes + effectifs + saison en cours, pour les 5 championnats.
- * Source unique : football-data.org (pas de restriction de saison, tout en 2 appels/ligue).
+ * Sync hebdomadaire : équipes + effectifs + saison en cours, pour chaque compétition suivie.
+ * Source unique : football-data.org (pas de restriction de saison, tout en 2-3 appels/compétition).
  */
 export async function GET(request: NextRequest) {
   const unauthorized = requireCronSecret(request);
@@ -106,7 +114,7 @@ export async function GET(request: NextRequest) {
         });
       }
 
-      await sleep(700);
+      await sleep(FOOTBALL_DATA_RATE_LIMIT_DELAY_MS);
 
       const { teams } = await footballData.getCompetitionTeams(league.football_data_code);
 
@@ -174,11 +182,11 @@ export async function GET(request: NextRequest) {
           .not("football_data_id", "in", `(${syncedFdIds.join(",") || "-1"})`);
       }
 
-      await sleep(700);
+      await sleep(FOOTBALL_DATA_RATE_LIMIT_DELAY_MS);
       await updatePriorSeasonStrength(supabase, league.football_data_code, year, teamIdByFdId);
 
       summary.push({ league: league.football_data_code, teams: upsertedTeams.length, players: playerRows.length });
-      await sleep(700);
+      await sleep(FOOTBALL_DATA_RATE_LIMIT_DELAY_MS);
     } catch (err) {
       summary.push({
         league: league.football_data_code,
