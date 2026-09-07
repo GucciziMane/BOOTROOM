@@ -16,7 +16,7 @@ export default async function ChatPage() {
   const [{ data: messages }, { data: profiles }] = await Promise.all([
     supabase
       .from("chat_messages")
-      .select("id, user_id, content, image_url, is_ephemeral, created_at")
+      .select("id, user_id, content, image_url, is_ephemeral, is_system, created_at")
       .order("created_at", { ascending: false })
       .limit(100),
     supabase.from("profiles").select("id, username, avatar_url, favorite_team_id"),
@@ -79,6 +79,7 @@ export default async function ChatPage() {
       hasImage: m.image_url != null,
       imageUrl: m.image_url ? (signedUrlByPath.get(m.image_url) ?? null) : null,
       isEphemeral: m.is_ephemeral,
+      isSystem: m.is_system,
       createdAt: m.created_at,
     }));
 

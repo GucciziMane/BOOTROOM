@@ -149,6 +149,23 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["match_goals"]["Row"]>;
         Relationships: [];
       };
+      matchday_recaps: {
+        Row: {
+          id: number;
+          season_id: number;
+          league_id: number;
+          matchday: number;
+          top_user_id: string | null;
+          posted_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["matchday_recaps"]["Row"]> & {
+          season_id: number;
+          league_id: number;
+          matchday: number;
+        };
+        Update: Partial<Database["public"]["Tables"]["matchday_recaps"]["Row"]>;
+        Relationships: [];
+      };
       player_scoring_tier: {
         Row: {
           id: number;
@@ -270,15 +287,14 @@ export interface Database {
       chat_messages: {
         Row: {
           id: number;
-          user_id: string;
+          user_id: string | null;
           content: string;
           image_url: string | null;
           is_ephemeral: boolean;
+          is_system: boolean;
           created_at: string;
         };
-        Insert: Partial<Database["public"]["Tables"]["chat_messages"]["Row"]> & {
-          user_id: string;
-        };
+        Insert: Partial<Database["public"]["Tables"]["chat_messages"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["chat_messages"]["Row"]>;
         Relationships: [];
       };

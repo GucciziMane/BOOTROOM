@@ -35,7 +35,7 @@ function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
 
 interface ChatMessage {
   id: number;
-  userId: string;
+  userId: string | null;
   content: string;
   // Séparé de imageUrl : une photo éphémère de quelqu'un d'autre a hasImage=true dès l'arrivée du
   // message (pour afficher le bouton "appuie pour voir"), mais imageUrl reste null tant qu'elle
@@ -44,6 +44,9 @@ interface ChatMessage {
   hasImage: boolean;
   imageUrl: string | null;
   isEphemeral: boolean;
+  // Récap de journée posté par le cron (voir postMatchdayRecaps) : pas d'auteur humain, affiché
+  // en bandeau centré plutôt qu'en bulle avatar+pseudo.
+  isSystem: boolean;
   createdAt: string;
 }
 
@@ -412,10 +415,11 @@ export function ChatRoom({
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages" }, (payload) => {
           const row = payload.new as {
             id: number;
-            user_id: string;
+            user_id: string | null;
             content: string;
             image_url: string | null;
             is_ephemeral: boolean;
+            is_system: boolean;
             created_at: string;
           };
           // image_url est un chemin de stockage privé (bucket privé, cf. migration 0030), jamais
@@ -436,6 +440,7 @@ export function ChatRoom({
                     hasImage: row.image_url != null,
                     imageUrl: null,
                     isEphemeral: row.is_ephemeral,
+                    isSystem: row.is_system,
                     createdAt: row.created_at,
                   },
                 ]
@@ -541,7 +546,27 @@ export function ChatRoom({
       )}
       <div ref={messagesContainerRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
         {messages.map((m) => {
-          const profile = profilesById[m.userId];
+          if (m.isSystem) {
+            const mentionsMe = !!currentUsername && m.content.includes(`@${currentUsername}`);
+            return (
+              <div key={m.id} className="mx-auto max-w-[90%] rounded-2xl bg-cream px-4 py-3 text-center shadow-sm">
+                <p className={`whitespace-pre-line text-sm leading-snug ${mentionsMe ? "ring-1 ring-inset ring-accent rounded-xl p-1" : ""}`}>
+                  {splitContentByMentions(m.content, allUsernames).map((part, i) =>
+                    part.isMention ? (
+                      <span key={i} className="font-bold text-accent-hover">
+                        {part.text}
+                      </span>
+                    ) : (
+                      <span key={i}>{part.text}</span>
+                    )
+                  )}
+                </p>
+                <p className="mt-1 text-[10px] text-mute">{formatParisDateTime(m.createdAt)}</p>
+              </div>
+            );
+          }
+
+          const profile = profilesById[m.userId as string];
           const isOwn = m.userId === currentUserId;
           const reactionGroups: Record<string, string[]> = {};
           for (const r of Object.values(reactions)) {

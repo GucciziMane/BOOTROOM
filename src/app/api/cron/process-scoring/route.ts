@@ -14,6 +14,7 @@ import {
   type ResultTierMultiplier,
 } from "@/lib/scoring/points";
 import { computeStandings } from "@/lib/scoring/standings";
+import { postMatchdayRecaps } from "@/lib/chat/matchday-recap";
 import type { PointsSourceType } from "@/types/database";
 
 const MAX_MATCHES_PER_RUN = 100;
@@ -61,7 +62,9 @@ export async function processFinishedMatches(supabase: ServiceClient, config: Po
 
   let query = supabase
     .from("matches")
-    .select("id, league_id, season_id, home_team_id, away_team_id, home_score, away_score, favorite_team_id, odds_tier")
+    .select(
+      "id, league_id, season_id, home_team_id, away_team_id, home_score, away_score, favorite_team_id, odds_tier, matchday"
+    )
     .eq("status", "finished")
     .is("points_processed_at", null)
     .or(`events_synced_at.not.is.null,kickoff_at.lt.${eventsSyncDeadline}`)
@@ -214,6 +217,11 @@ export async function processFinishedMatches(supabase: ServiceClient, config: Po
     .from("matches")
     .update({ points_processed_at: new Date().toISOString() })
     .in("id", matchIds);
+
+  const touchedMatchdayGroups = finishedMatches
+    .filter((m): m is typeof m & { matchday: number } => m.matchday != null)
+    .map((m) => ({ seasonId: m.season_id, leagueId: m.league_id, matchday: m.matchday }));
+  await postMatchdayRecaps(supabase, touchedMatchdayGroups);
 
   return { processed: finishedMatches.length };
 }

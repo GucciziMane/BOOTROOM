@@ -38,7 +38,10 @@ export default async function DashboardPage() {
     supabase
       .from("chat_messages")
       .select("id", { count: "exact", head: true })
-      .neq("user_id", user!.id)
+      // .neq exclut les lignes user_id NULL en SQL (NULL <> x n'est jamais vrai) : sans le
+      // "or", les récaps de journée (postés sans auteur, cf. postMatchdayRecaps) ne compteraient
+      // jamais comme non lus.
+      .or(`user_id.neq.${user!.id},user_id.is.null`)
       .gt("created_at", profile?.chat_last_read_at ?? "1970-01-01"),
     profile?.use_club_theme && profile.favorite_team_id
       ? getClubHomeData(supabase, profile.favorite_team_id)
