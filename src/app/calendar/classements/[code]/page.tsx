@@ -157,18 +157,18 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
         </p>
       )}
 
-      <section className="mb-10 overflow-x-auto rounded-2xl border border-line bg-paper">
-        <table className="w-full text-sm">
+      <section className="mb-10 overflow-hidden rounded-2xl border border-line bg-paper">
+        <table className="w-full table-fixed text-xs sm:text-sm">
           <thead>
             <tr className="border-b border-line bg-cream">
-              <th className="p-3 text-left">#</th>
-              <th className="p-3 text-left">Équipe</th>
-              <th className="p-3 text-right">J</th>
-              <th className="p-3 text-right">G</th>
-              <th className="p-3 text-right">N</th>
-              <th className="p-3 text-right">P</th>
-              <th className="p-3 text-right">Diff</th>
-              <th className="p-3 text-right">Pts</th>
+              <th className="w-[8%] p-1.5 text-left sm:p-3">#</th>
+              <th className="w-[42%] p-1.5 text-left sm:p-3">Équipe</th>
+              <th className="w-[10%] p-1.5 text-right sm:p-3">J</th>
+              <th className="w-[16%] p-1.5 text-right sm:p-3" title="Victoires-Nuls-Défaites">
+                V-N-D
+              </th>
+              <th className="w-[12%] p-1.5 text-right sm:p-3">Diff</th>
+              <th className="w-[12%] p-1.5 text-right sm:p-3">Pts</th>
             </tr>
           </thead>
           <tbody>
@@ -177,28 +177,34 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
               const badges = badgesByTeamId.get(row.teamId) ?? [];
               return (
                 <tr key={row.teamId} className="border-b border-line last:border-0">
-                  <td className="p-3 text-mute">{i + 1}</td>
-                  <td className="p-3">
-                    <span className="flex items-center gap-2 font-bold">
+                  <td className="p-1.5 text-mute sm:p-3">{i + 1}</td>
+                  <td className="p-1.5 sm:p-3">
+                    <span className="flex min-w-0 items-center gap-1.5 font-bold">
                       {team?.logo_url && (
-                        <Image src={team.logo_url} alt="" width={20} height={20} className="h-5 w-5 object-contain" />
+                        <Image
+                          src={team.logo_url}
+                          alt=""
+                          width={20}
+                          height={20}
+                          className="h-4 w-4 shrink-0 object-contain sm:h-5 sm:w-5"
+                        />
                       )}
-                      {team?.name}
+                      <span className="truncate">{team?.name}</span>
                       {badges.length > 0 && (
-                        <span className="text-xs" title="Ton pronostic de saison">
+                        <span className="shrink-0 text-xs" title="Ton pronostic de saison">
                           {badges.join(" ")}
                         </span>
                       )}
                     </span>
                   </td>
-                  <td className="p-3 text-right text-mute">{row.played}</td>
-                  <td className="p-3 text-right text-mute">{row.won}</td>
-                  <td className="p-3 text-right text-mute">{row.drawn}</td>
-                  <td className="p-3 text-right text-mute">{row.lost}</td>
-                  <td className="p-3 text-right text-mute">
+                  <td className="p-1.5 text-right text-mute sm:p-3">{row.played}</td>
+                  <td className="p-1.5 text-right text-mute sm:p-3">
+                    {row.won}-{row.drawn}-{row.lost}
+                  </td>
+                  <td className="p-1.5 text-right text-mute sm:p-3">
                     {row.goalDifference > 0 ? `+${row.goalDifference}` : row.goalDifference}
                   </td>
-                  <td className="p-3 text-right font-bold">{row.points}</td>
+                  <td className="p-1.5 text-right font-bold sm:p-3">{row.points}</td>
                 </tr>
               );
             })}
