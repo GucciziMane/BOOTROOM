@@ -14,7 +14,7 @@ export interface LeagueBackground {
 export const LEAGUE_BACKGROUND: Record<string, LeagueBackground> = {
   CL: { image: "/champions-league-stadium.jpg" },
   PL: { image: "/league-bg-pl.jpg", button: "#6d28d9", buttonHover: "#5b21b6" },
-  FL1: { image: "/league-bg-fl1.webp", button: "#3b82f6", buttonHover: "#2563eb" },
+  FL1: { image: "/league-bg-fl1.jpg", button: "#3b82f6", buttonHover: "#2563eb" },
   PD: { image: "/league-bg-pd.jpg", light: true, button: "#e2231a", buttonHover: "#b81b14" },
   BL1: { image: "/league-bg-bl1.webp" },
   PPL: { image: "/league-bg-ppl.jpg" },
