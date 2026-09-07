@@ -49,7 +49,7 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
   const [{ data: matches }, { data: playersData }, { data: seasonPrediction }] = await Promise.all([
     supabase
       .from("matches")
-      .select("id, home_team_id, away_team_id, home_score, away_score, status")
+      .select("id, home_team_id, away_team_id, home_score, away_score, status, stage")
       .eq("season_id", season.id),
     supabase
       .from("players")
@@ -69,8 +69,12 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
 
   const seasonMatchIds = (matches ?? []).map((m) => m.id);
 
+  // Une coupe à élimination directe (Ligue des Champions) mélange phase de ligue et tours à
+  // élimination directe dans les mêmes matchs de saison : seule la phase de ligue forme un vrai
+  // classement (une défaite en 1/4 de finale ne "descend" personne).
+  const isLeaguePhase = (stage: string | null) => stage == null || stage === "REGULAR_SEASON" || stage === "LEAGUE_STAGE";
   const matchResults = (matches ?? [])
-    .filter((m) => m.status === "finished" && m.home_score !== null && m.away_score !== null)
+    .filter((m) => m.status === "finished" && m.home_score !== null && m.away_score !== null && isLeaguePhase(m.stage))
     .map((m) => ({
       homeTeamId: m.home_team_id,
       awayTeamId: m.away_team_id,

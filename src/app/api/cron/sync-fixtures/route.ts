@@ -66,6 +66,19 @@ export async function GET(request: NextRequest) {
 
       const { matches } = await footballData.getCompetitionMatches(league.football_data_code);
 
+      // Une coupe à élimination directe (Ligue des Champions) n'a de "matchday" football-data.org
+      // que pour sa phase de ligue — barrages/8es/1/4/1/2/finale arrivent avec matchday=null. On
+      // leur assigne un numéro de journée synthétique à la suite de la phase de ligue (calculé sur
+      // ce lot plutôt que codé en dur, pour rester correct si le format change) afin que "prochaine
+      // journée"/le récap automatique continuent de fonctionner jusqu'à la finale — sans quoi ces
+      // matchs resteraient invisibles dès la fin de la phase de ligue (cf. matches.matchday, et le
+      // filtre "not is null" utilisé pour trouver la prochaine journée dans /calendar).
+      const KNOCKOUT_STAGE_ORDER = ["PLAYOFFS", "LAST_16", "QUARTER_FINALS", "SEMI_FINALS", "FINAL"];
+      const maxRealMatchday = Math.max(0, ...matches.map((m) => m.matchday ?? 0));
+      const syntheticMatchdayByStage = new Map(
+        KNOCKOUT_STAGE_ORDER.map((stage, i) => [stage, maxRealMatchday + 1 + i])
+      );
+
       let regressions = 0;
       const rows = matches.flatMap((m) => {
         const homeTeamId = teamIdByFdId.get(m.homeTeam.id);
@@ -96,7 +109,8 @@ export async function GET(request: NextRequest) {
             status,
             home_score: m.score.fullTime.home,
             away_score: m.score.fullTime.away,
-            matchday: m.matchday,
+            matchday: m.matchday ?? syntheticMatchdayByStage.get(m.stage) ?? null,
+            stage: m.stage,
           },
         ];
       });
@@ -140,7 +154,7 @@ export async function GET(request: NextRequest) {
 async function updateMatchOdds(supabase: ReturnType<typeof createServiceRoleClient>, seasonId: number) {
   const { data: seasonMatches } = await supabase
     .from("matches")
-    .select("id, home_team_id, away_team_id, status, home_score, away_score, favorite_team_id, odds_tier")
+    .select("id, home_team_id, away_team_id, status, home_score, away_score, favorite_team_id, odds_tier, stage")
     .eq("season_id", seasonId);
   if (!seasonMatches || seasonMatches.length === 0) return;
 
@@ -148,8 +162,14 @@ async function updateMatchOdds(supabase: ReturnType<typeof createServiceRoleClie
   const { data: teamsData } = await supabase.from("teams").select("id, prior_ppg").in("id", teamIds);
   const priorPpgByTeam = new Map((teamsData ?? []).map((t) => [t.id, t.prior_ppg]));
 
+  // Un résultat à élimination directe (Ligue des Champions) fausserait un classement points/match
+  // classique (aller-retour entre les deux mêmes équipes, poids disproportionné) : seule la phase
+  // de ligue sert de base au calcul du favori/écart, comme pour le classement affiché (voir
+  // /calendar/classements/[code]).
+  const isLeaguePhase = (stage: string | null) => stage == null || stage === "REGULAR_SEASON" || stage === "LEAGUE_STAGE";
+
   const finishedResults = seasonMatches
-    .filter((m) => m.status === "finished" && m.home_score !== null && m.away_score !== null)
+    .filter((m) => m.status === "finished" && m.home_score !== null && m.away_score !== null && isLeaguePhase(m.stage))
     .map((m) => ({
       homeTeamId: m.home_team_id,
       awayTeamId: m.away_team_id,

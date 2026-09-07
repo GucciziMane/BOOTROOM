@@ -79,6 +79,10 @@ export interface FdMatch {
   utcDate: string;
   status: FdMatchStatus;
   matchday: number | null;
+  /** "REGULAR_SEASON" pour les 5 championnats domestiques ; pour une coupe à élimination directe
+   * (ex: Ligue des Champions), distingue la phase de ligue (matchday non nul) des tours à
+   * élimination directe (matchday nul : "PLAYOFFS"/"LAST_16"/"QUARTER_FINALS"/"SEMI_FINALS"/"FINAL"). */
+  stage: string;
   homeTeam: { id: number; name: string };
   awayTeam: { id: number; name: string };
   score: { fullTime: { home: number | null; away: number | null } };

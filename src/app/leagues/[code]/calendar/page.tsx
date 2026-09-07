@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatParisDateTime } from "@/lib/format-date";
 import { listCard } from "@/lib/ui";
 import { FALLBACK_SCORER_TIER, FALLBACK_ASSIST_TIER, type OddsTier } from "@/lib/scoring/points";
+import { KNOCKOUT_STAGE_LABEL } from "@/lib/knockout-stage-label";
 import { BackLink } from "@/app/BackLink";
 import { MatchPredictionCard } from "./MatchPredictionCard";
 
@@ -42,7 +43,7 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
   const { data: matches } = await supabase
     .from("matches")
     .select(
-      "id, home_team_id, away_team_id, kickoff_at, status, home_score, away_score, favorite_team_id, odds_tier, matchday"
+      "id, home_team_id, away_team_id, kickoff_at, status, home_score, away_score, favorite_team_id, odds_tier, matchday, stage"
     )
     .eq("season_id", season.id)
     .order("kickoff_at", { ascending: true });
@@ -117,10 +118,14 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
 
   // Groupe d'abord par journée (numéro officiel du championnat), puis par date à l'intérieur —
   // une journée s'étale souvent sur plusieurs jours (vendredi à lundi).
-  const matchdayGroups = new Map<string, { matchday: number | null; dates: Map<string, typeof upcoming> }>();
+  const matchdayGroups = new Map<
+    string,
+    { matchday: number | null; stage: string | null; dates: Map<string, typeof upcoming> }
+  >();
   for (const m of upcoming) {
     const matchdayKey = m.matchday != null ? String(m.matchday) : "—";
-    if (!matchdayGroups.has(matchdayKey)) matchdayGroups.set(matchdayKey, { matchday: m.matchday, dates: new Map() });
+    if (!matchdayGroups.has(matchdayKey))
+      matchdayGroups.set(matchdayKey, { matchday: m.matchday, stage: m.stage, dates: new Map() });
     const group = matchdayGroups.get(matchdayKey)!;
     const dateKey = formatParisDateTime(m.kickoff_at).split(" à")[0];
     if (!group.dates.has(dateKey)) group.dates.set(dateKey, []);
@@ -174,11 +179,11 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
           // plus tardive que la journée suivante ferait sinon apparaître les journées dans le
           // désordre (ex: J6 avant J4/J5 si un match de J4 a été reprogrammé après ceux de J6).
           .sort(([, a], [, b]) => (a.matchday ?? Infinity) - (b.matchday ?? Infinity))
-          .map(([matchdayKey, { matchday, dates }]) => (
+          .map(([matchdayKey, { matchday, stage, dates }]) => (
           <div key={matchdayKey} className="mb-6">
             {matchday != null && (
               <div className="mb-3 flex items-center gap-3">
-                <h3 className="text-lg font-bold">Journée {matchday}</h3>
+                <h3 className="text-lg font-bold">{(stage && KNOCKOUT_STAGE_LABEL[stage]) || `Journée ${matchday}`}</h3>
                 <span className="h-px flex-1 bg-line" />
               </div>
             )}

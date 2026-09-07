@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { formatParisDateTime } from "@/lib/format-date";
 import { LEAGUE_FLAG, LEAGUE_COLOR } from "@/lib/country-flags";
+import { KNOCKOUT_STAGE_LABEL } from "@/lib/knockout-stage-label";
 import { FALLBACK_SCORER_TIER, FALLBACK_ASSIST_TIER, type OddsTier } from "@/lib/scoring/points";
 import { MatchPredictionCard } from "@/app/leagues/[code]/calendar/MatchPredictionCard";
 import { BackLink } from "@/app/BackLink";
@@ -67,7 +68,7 @@ export default async function CalendarPage() {
       const base = supabase
         .from("matches")
         .select(
-          "id, season_id, home_team_id, away_team_id, kickoff_at, status, favorite_team_id, odds_tier, matchday, home_score, away_score, live_clock"
+          "id, season_id, home_team_id, away_team_id, kickoff_at, status, favorite_team_id, odds_tier, matchday, stage, home_score, away_score, live_clock"
         )
         .eq("season_id", seasonId)
         .in("status", ["scheduled", "live"]);
@@ -187,7 +188,7 @@ export default async function CalendarPage() {
                     leagueCode={league?.football_data_code ?? ""}
                     leagueLabel={
                       league
-                        ? `${LEAGUE_FLAG[league.football_data_code] ?? ""} ${league.name}${m.matchday != null ? ` · J${m.matchday}` : ""}`
+                        ? `${LEAGUE_FLAG[league.football_data_code] ?? ""} ${league.name}${matchdaySuffix(m.matchday, m.stage)}`
                         : undefined
                     }
                     leagueColor={league ? LEAGUE_COLOR[league.football_data_code] : undefined}
@@ -239,4 +240,10 @@ export default async function CalendarPage() {
       </section>
     </main>
   );
+}
+
+function matchdaySuffix(matchday: number | null, stage: string | null): string {
+  if (matchday == null) return "";
+  const stageLabel = stage ? KNOCKOUT_STAGE_LABEL[stage] : undefined;
+  return ` · ${stageLabel ?? `J${matchday}`}`;
 }

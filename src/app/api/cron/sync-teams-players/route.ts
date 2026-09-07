@@ -110,11 +110,15 @@ export async function GET(request: NextRequest) {
 
       const { teams } = await footballData.getCompetitionTeams(league.football_data_code);
 
+      // onConflict sur (league_id, football_data_id) et non football_data_id seul : football-data.org
+      // attribue le même id à un club dans toutes les compétitions où il joue (ex: le Real Madrid a
+      // le même id en Liga et en Ligue des Champions) — un conflit sur football_data_id seul ferait
+      // basculer le league_id d'un club déjà suivi ailleurs vers cette compétition-ci.
       const { data: upsertedTeams, error: teamsError } = await supabase
         .from("teams")
         .upsert(
           teams.map((t) => ({ league_id: league.id, name: t.name, football_data_id: t.id, logo_url: t.crest })),
-          { onConflict: "football_data_id" }
+          { onConflict: "league_id,football_data_id" }
         )
         .select("id, football_data_id");
 
@@ -146,9 +150,11 @@ export async function GET(request: NextRequest) {
         updated_at: new Date().toISOString(),
       }));
 
+      // Même raisonnement que pour teams ci-dessus : un joueur transféré entre deux clubs suivis
+      // garde le même football_data_id, donc onConflict doit être scopé par team_id.
       const { error: playersError } = await supabase
         .from("players")
-        .upsert(playerRows, { onConflict: "football_data_id" });
+        .upsert(playerRows, { onConflict: "team_id,football_data_id" });
 
       if (playersError) {
         throw new Error(playersError.message);

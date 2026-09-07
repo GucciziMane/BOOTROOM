@@ -25,6 +25,7 @@ export const ESPN_LEAGUE_SLUG: Record<string, string> = {
   PD: "esp.1",
   BL1: "ger.1",
   PPL: "por.1",
+  CL: "uefa.champions",
 };
 
 export interface EspnEvent {

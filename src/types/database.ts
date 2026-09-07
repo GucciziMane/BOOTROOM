@@ -125,6 +125,7 @@ export interface Database {
           odds_tier: 1 | 2 | 3 | 4 | 5 | null;
           matchday: number | null;
           live_clock: string | null;
+          stage: string | null;
         };
         Insert: Partial<Database["public"]["Tables"]["matches"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["matches"]["Row"]>;
