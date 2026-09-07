@@ -8,45 +8,46 @@ import { BackLink } from "@/app/BackLink";
 import { CalendarTabs } from "./CalendarTabs";
 
 export default async function CalendarPage() {
-  const t0 = Date.now();
   const supabase = await createClient();
   // getSession() : le proxy a déjà validé la session pour cette requête (voir layout.tsx), pas
   // besoin de repayer un aller-retour réseau à Supabase Auth ici.
+  //
+  // seasons/teams ne filtrent plus par leagueIds côté requête (ce qui forçait à attendre le
+  // résultat de la requête leagues avant de les lancer) : ce sont de petites tables (une poignée de
+  // lignes par championnat, rien à voir avec les milliers de lignes de matches plus bas), donc les
+  // charger en entier puis filtrer ici en mémoire coûte moins qu'un étage de requêtes séquentiel de
+  // plus — chaque aller-retour réseau supplémentaire coûte cher ici (Supabase hors de la région du
+  // serveur Vercel, chaque requête paye un aller-retour d'environ 300ms).
   const [
     {
       data: { session },
     },
     { data: leagues },
+    { data: allSeasons },
+    { data: allTeams },
   ] = await Promise.all([
     supabase.auth.getSession(),
     supabase.from("leagues").select("id, name, country, football_data_code, logo_url").eq("active", true).order("name"),
+    supabase.from("seasons").select("id, league_id, year").order("year", { ascending: false }),
+    supabase.from("teams").select("id, league_id, name, logo_url"),
   ]);
   const user = session?.user ?? null;
-  console.log(`[PERF calendar] wave1 (session+leagues): ${Date.now() - t0}ms`);
 
-  const leagueIds = (leagues ?? []).map((l) => l.id);
+  const leagueIds = new Set((leagues ?? []).map((l) => l.id));
   const leagueById = new Map((leagues ?? []).map((l) => [l.id, l]));
+  const seasonsData = (allSeasons ?? []).filter((s) => leagueIds.has(s.league_id));
+  const teamsData = (allTeams ?? []).filter((t) => leagueIds.has(t.league_id));
 
-  const [{ data: seasonsData }, { data: teamsData }] = await Promise.all([
-    supabase
-      .from("seasons")
-      .select("id, league_id, year")
-      .in("league_id", leagueIds.length > 0 ? leagueIds : [-1])
-      .order("year", { ascending: false }),
-    supabase.from("teams").select("id, name, logo_url").in("league_id", leagueIds.length > 0 ? leagueIds : [-1]),
-  ]);
-
-  console.log(`[PERF calendar] wave2 (seasons+teams): ${Date.now() - t0}ms`);
   // Dernière saison par championnat.
   const currentSeasonByLeague = new Map<number, { id: number; year: number }>();
-  for (const s of seasonsData ?? []) {
+  for (const s of seasonsData) {
     if (!currentSeasonByLeague.has(s.league_id)) currentSeasonByLeague.set(s.league_id, { id: s.id, year: s.year });
   }
   const seasonIds = [...currentSeasonByLeague.values()].map((s) => s.id);
   const leagueIdBySeasonId = new Map([...currentSeasonByLeague.entries()].map(([leagueId, s]) => [s.id, leagueId]));
 
-  const teamById = new Map((teamsData ?? []).map((t) => [t.id, t]));
-  const teamIds = (teamsData ?? []).map((t) => t.id);
+  const teamById = new Map(teamsData.map((t) => [t.id, t]));
+  const teamIds = teamsData.map((t) => t.id);
 
   // Une seule "prochaine journée" par championnat, pas toute la saison restante : la page
   // s'appelle "Prochaine journée", et charger ~1600 matchs d'un coup la rendait lente pour
@@ -74,8 +75,6 @@ export default async function CalendarPage() {
       return nextMatchday != null ? rows.filter((m) => m.matchday === nextMatchday) : rows.slice(0, 20);
     })
   );
-
-  console.log(`[PERF calendar] wave3 (matches per season, n=${seasonIds.length}): ${Date.now() - t0}ms`);
 
   const upcoming = matchesPerSeason.flat().sort((a, b) => a.kickoff_at.localeCompare(b.kickoff_at));
   const upcomingMatchIds = upcoming.map((m) => m.id);
@@ -112,7 +111,6 @@ export default async function CalendarPage() {
     supabase.from("player_assist_tier").select("player_id, tier").in("season_id", seasonIds.length > 0 ? seasonIds : [-1]),
     supabase.from("match_result_tier_multipliers").select("tier, favorite_multiplier_pct, underdog_multiplier_pct"),
   ]);
-  console.log(`[PERF calendar] wave4 (final 9 queries): ${Date.now() - t0}ms`);
 
   const predictionByMatchId = new Map((fullPredictions ?? []).map((p) => [p.match_id, p]));
   const playersByTeamId = new Map<number, Array<{ id: number; name: string }>>();
@@ -148,7 +146,6 @@ export default async function CalendarPage() {
     const t = teamById.get(id);
     return t ? { name: t.name, logoUrl: t.logo_url } : { name: "?", logoUrl: null };
   };
-  console.log(`[PERF calendar] before render: ${Date.now() - t0}ms`);
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 p-6">
