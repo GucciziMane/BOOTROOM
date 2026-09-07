@@ -395,6 +395,7 @@ function genGuessMatchScore(
 }
 
 type DynamicType = "hidden_teammate" | "guess_crest" | "guess_player_team" | "guess_match_score";
+const ALL_DYNAMIC_TYPES: DynamicType[] = ["hidden_teammate", "guess_crest", "guess_player_team", "guess_match_score"];
 
 // Composition du "sac" de types dynamiques : mélangé différemment chaque jour et distribué aux 7
 // positions dynamiques, ce qui garantit un mélange varié tous les jours sans jamais faire reposer
@@ -471,20 +472,39 @@ async function getOrGenerateDynamicQuestions(
   const usedPlayerIdsForPlayerTeam = new Set<number>();
   const usedMatchIds = new Set<number>();
 
+  const generateByType = (type: DynamicType, position: number, seedStr: string): DailyQuestionFull | null => {
+    switch (type) {
+      case "hidden_teammate":
+        return genHiddenTeammate(leagueData, position, seedStr, usedTeamIdsForHiddenTeammate);
+      case "guess_crest":
+        return genGuessCrest(leagueData, position, seedStr, usedTeamIdsForCrest);
+      case "guess_player_team":
+        return genGuessPlayerTeam(leagueData, position, seedStr, usedPlayerIdsForPlayerTeam);
+      case "guess_match_score":
+        return genGuessMatchScore(matches, teamsById, position, seedStr, usedMatchIds);
+    }
+  };
+
+  // Un type peut échouer à produire une question ce jour-là (ex: aucun match terminé en tout début
+  // de saison, pour "guess_match_score") sans que les données manquent pour autant globalement :
+  // plutôt que de laisser le créneau vide — ce qui réduit le quiz du jour en dessous de 10
+  // questions, À VIE pour cette date puisque le résultat est mis en cache (voir plus bas) — on
+  // essaie les 3 autres types avant d'abandonner ce créneau. Vu en prod : un quiz coincé à
+  // seulement 3 questions (les statiques) alors que les données existaient, juste pas pour le type
+  // tiré au hasard sur ce créneau précis.
   const generated = dynamicPositions
     .map((position, idx) => {
-      const type = typeOrder[idx % typeOrder.length];
+      const primaryType = typeOrder[idx % typeOrder.length];
       const seedStr = `${quizDate}-${position}`;
-      switch (type) {
-        case "hidden_teammate":
-          return genHiddenTeammate(leagueData, position, seedStr, usedTeamIdsForHiddenTeammate);
-        case "guess_crest":
-          return genGuessCrest(leagueData, position, seedStr, usedTeamIdsForCrest);
-        case "guess_player_team":
-          return genGuessPlayerTeam(leagueData, position, seedStr, usedPlayerIdsForPlayerTeam);
-        case "guess_match_score":
-          return genGuessMatchScore(matches, teamsById, position, seedStr, usedMatchIds);
+      const fallbackTypes = seededShuffle(
+        ALL_DYNAMIC_TYPES.filter((t) => t !== primaryType),
+        `${seedStr}-fallback`
+      );
+      for (const type of [primaryType, ...fallbackTypes]) {
+        const question = generateByType(type, position, seedStr);
+        if (question) return question;
       }
+      return null;
     })
     .filter((q): q is DailyQuestionFull => q !== null);
 
