@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, type CSSProperties } from "react";
 import Image from "next/image";
 import { saveMatchPrediction, type SaveMatchPredictionState } from "./[matchId]/actions";
 import { buttonPrimary, input } from "@/lib/ui";
@@ -118,6 +118,17 @@ export function MatchPredictionCard({
   const cardClassName =
     theme === "none" ? "rounded-2xl border border-line bg-paper p-4 shadow-sm" : "relative overflow-hidden rounded-2xl p-4 shadow-md";
   const cardStyle = theme === "none" && leagueColor ? { borderLeftColor: leagueColor, borderLeftWidth: 4 } : undefined;
+
+  // Bouton assorti à l'image plutôt que le violet par défaut de l'appli, quand la compétition en
+  // définit un — via des custom properties CSS (pas une couleur inline directe) pour que
+  // hover:bg-[var(--btn-bg-hover)] reste réellement actif au survol (une inline style sur
+  // background-color ne peut pas être re-surchargée par une règle :hover du stylesheet).
+  const buttonClassName = background?.button
+    ? buttonPrimary.replace("bg-accent", "bg-[var(--btn-bg)]").replace("hover:bg-accent-hover", "hover:bg-[var(--btn-bg-hover)]")
+    : buttonPrimary;
+  const buttonStyle = background?.button
+    ? ({ "--btn-bg": background.button, "--btn-bg-hover": background.buttonHover ?? background.button } as CSSProperties)
+    : undefined;
 
   if (locked) {
     const lockedScorer = [...homePlayers, ...awayPlayers].find((p) => p.id === initial.predictedScorerPlayerId);
@@ -243,7 +254,12 @@ export function MatchPredictionCard({
         {assister ? ` · ${assister.name} +${assistPoints}pts` : ""}
       </p>
 
-      <button type="submit" disabled={isPending} className={`relative mt-2 w-full text-sm ${buttonPrimary}`}>
+      <button
+        type="submit"
+        disabled={isPending}
+        style={buttonStyle}
+        className={`relative mt-2 w-full text-sm ${buttonClassName}`}
+      >
         {isPending ? "..." : state.success ? "Enregistré ✓" : "Enregistrer"}
       </button>
       {state.error && <p className="relative mt-1 text-center text-xs text-bad">{state.error}</p>}
