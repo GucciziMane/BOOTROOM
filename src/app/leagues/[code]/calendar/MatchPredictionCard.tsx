@@ -105,15 +105,25 @@ export function MatchPredictionCard({
     multiplierByTier
   );
 
+  // Habillage à part pour la C1 (photo du stade en fond) plutôt qu'une carte identique aux
+  // championnats domestiques : demandé explicitement pour que ces matchs se distinguent d'un
+  // coup d'œil dans "prochaine journée" comme dans le calendrier dédié.
+  const isChampionsLeague = leagueCode === "CL";
+
   if (locked) {
     const lockedScorer = [...homePlayers, ...awayPlayers].find((p) => p.id === initial.predictedScorerPlayerId);
     const lockedAssist = [...homePlayers, ...awayPlayers].find((p) => p.id === initial.predictedAssistPlayerId);
     return (
       <div
-        className="rounded-2xl border border-line bg-paper p-4 shadow-sm"
-        style={leagueColor ? { borderLeftColor: leagueColor, borderLeftWidth: 4 } : undefined}
+        className={
+          isChampionsLeague
+            ? "relative overflow-hidden rounded-2xl p-4 shadow-md"
+            : "rounded-2xl border border-line bg-paper p-4 shadow-sm"
+        }
+        style={!isChampionsLeague && leagueColor ? { borderLeftColor: leagueColor, borderLeftWidth: 4 } : undefined}
       >
-        <p className="mb-2 flex items-center justify-between text-xs font-bold text-mute">
+        {isChampionsLeague && <ChampionsLeagueBackground />}
+        <p className={`relative mb-2 flex items-center justify-between text-xs font-bold ${isChampionsLeague ? "text-white/70" : "text-mute"}`}>
           <span>{formatParisDateTime(kickoffAt)}</span>
           {live ? (
             <span className="flex items-center gap-1 text-bad">
@@ -127,16 +137,16 @@ export function MatchPredictionCard({
             leagueLabel && <span>{leagueLabel}</span>
           )}
         </p>
-        <div className="flex items-center justify-center gap-3">
-          <TeamBadge name={homeTeamName} logoUrl={homeLogoUrl} />
-          <span className="text-lg font-bold">
+        <div className="relative flex items-center justify-center gap-3">
+          <TeamBadge name={homeTeamName} logoUrl={homeLogoUrl} light={isChampionsLeague} />
+          <span className={`text-lg font-bold ${isChampionsLeague ? "text-white" : ""}`}>
             {live ? (live.homeScore ?? 0) : (initial.predictedHomeScore ?? "–")}
             {" – "}
             {live ? (live.awayScore ?? 0) : (initial.predictedAwayScore ?? "–")}
           </span>
-          <TeamBadge name={awayTeamName} logoUrl={awayLogoUrl} />
+          <TeamBadge name={awayTeamName} logoUrl={awayLogoUrl} light={isChampionsLeague} />
         </div>
-        <p className="mt-2 text-center text-xs text-mute">
+        <p className={`relative mt-2 text-center text-xs ${isChampionsLeague ? "text-white/70" : "text-mute"}`}>
           {live && <span>Ton prono : {initial.predictedHomeScore ?? "–"}-{initial.predictedAwayScore ?? "–"} · </span>}
           {lockedScorer ? `Buteur : ${lockedScorer.name}` : initial.predictedHomeScore == null ? "Non pronostiqué" : "Sans buteur"}
           {lockedAssist && ` · Passeur : ${lockedAssist.name}`}
@@ -149,18 +159,23 @@ export function MatchPredictionCard({
   return (
     <form
       action={formAction}
-      className="rounded-2xl border border-line bg-paper p-4 shadow-sm"
-      style={leagueColor ? { borderLeftColor: leagueColor, borderLeftWidth: 4 } : undefined}
+      className={
+        isChampionsLeague
+          ? "relative overflow-hidden rounded-2xl p-4 shadow-md"
+          : "rounded-2xl border border-line bg-paper p-4 shadow-sm"
+      }
+      style={!isChampionsLeague && leagueColor ? { borderLeftColor: leagueColor, borderLeftWidth: 4 } : undefined}
     >
+      {isChampionsLeague && <ChampionsLeagueBackground />}
       <input type="hidden" name="match_id" value={matchId} />
       <input type="hidden" name="league_code" value={leagueCode} />
-      <p className="mb-2 flex items-center justify-between text-xs font-bold text-mute">
+      <p className={`relative mb-2 flex items-center justify-between text-xs font-bold ${isChampionsLeague ? "text-white/70" : "text-mute"}`}>
         <span>{formatParisDateTime(kickoffAt)}</span>
         {leagueLabel && <span>{leagueLabel}</span>}
       </p>
 
-      <div className="flex items-center justify-center gap-2">
-        <TeamBadge name={homeTeamName} logoUrl={homeLogoUrl} />
+      <div className="relative flex items-center justify-center gap-2">
+        <TeamBadge name={homeTeamName} logoUrl={homeLogoUrl} light={isChampionsLeague} />
         <input
           type="number"
           name="predicted_home_score"
@@ -170,7 +185,7 @@ export function MatchPredictionCard({
           onChange={(e) => setHomeScore(e.target.value)}
           className={`w-12 text-center font-bold ${input}`}
         />
-        <span className="text-mute">–</span>
+        <span className={isChampionsLeague ? "text-white/70" : "text-mute"}>–</span>
         <input
           type="number"
           name="predicted_away_score"
@@ -180,14 +195,14 @@ export function MatchPredictionCard({
           onChange={(e) => setAwayScore(e.target.value)}
           className={`w-12 text-center font-bold ${input}`}
         />
-        <TeamBadge name={awayTeamName} logoUrl={awayLogoUrl} />
+        <TeamBadge name={awayTeamName} logoUrl={awayLogoUrl} light={isChampionsLeague} />
       </div>
 
       <select
         name="predicted_scorer_player_id"
         value={scorerId}
         onChange={(e) => setScorerId(e.target.value)}
-        className={`mt-3 text-sm ${input}`}
+        className={`relative mt-3 text-sm ${input}`}
       >
         <option value="">Buteur (optionnel)</option>
         <optgroup label={homeTeamName}>
@@ -210,7 +225,7 @@ export function MatchPredictionCard({
         name="predicted_assist_player_id"
         value={assistId}
         onChange={(e) => setAssistId(e.target.value)}
-        className={`mt-2 text-sm ${input}`}
+        className={`relative mt-2 text-sm ${input}`}
       >
         <option value="">Passeur décisif (optionnel)</option>
         <optgroup label={homeTeamName}>
@@ -229,28 +244,43 @@ export function MatchPredictionCard({
         </optgroup>
       </select>
 
-      <p className="mt-2 text-center text-xs text-mute">
+      <p className={`relative mt-2 text-center text-xs ${isChampionsLeague ? "text-white/70" : "text-mute"}`}>
         Score exact +{exactScorePoints}pts{scorer ? ` · ${scorer.name} +${scorerPoints}pts` : ""}
         {assister ? ` · ${assister.name} +${assistPoints}pts` : ""}
       </p>
 
-      <button type="submit" disabled={isPending} className={`mt-2 w-full text-sm ${buttonPrimary}`}>
+      <button type="submit" disabled={isPending} className={`relative mt-2 w-full text-sm ${buttonPrimary}`}>
         {isPending ? "..." : state.success ? "Enregistré ✓" : "Enregistrer"}
       </button>
-      {state.error && <p className="mt-1 text-center text-xs text-bad">{state.error}</p>}
+      {state.error && <p className="relative mt-1 text-center text-xs text-bad">{state.error}</p>}
     </form>
   );
 }
 
-function TeamBadge({ name, logoUrl }: { name: string; logoUrl: string | null }) {
+function ChampionsLeagueBackground() {
+  return (
+    <>
+      <Image
+        src="/champions-league-stadium.jpg"
+        alt=""
+        fill
+        sizes="(min-width: 640px) 50vw, 100vw"
+        className="object-cover"
+      />
+      <div className="absolute inset-0 bg-gradient-to-b from-[#050b1f]/35 via-[#0b1339]/55 to-[#050b1f]/85" />
+    </>
+  );
+}
+
+function TeamBadge({ name, logoUrl, light }: { name: string; logoUrl: string | null; light?: boolean }) {
   return (
     <span className="flex w-20 flex-col items-center gap-1.5 text-center">
       {logoUrl ? (
         <Image src={logoUrl} alt="" width={40} height={40} className="h-10 w-10 shrink-0 object-contain" />
       ) : (
-        <span className="block h-10 w-10 shrink-0 rounded-full bg-cream" />
+        <span className={`block h-10 w-10 shrink-0 rounded-full ${light ? "bg-white/20" : "bg-cream"}`} />
       )}
-      <span className="text-[11px] font-bold leading-tight">{name}</span>
+      <span className={`text-[11px] font-bold leading-tight ${light ? "text-white" : ""}`}>{name}</span>
     </span>
   );
 }
