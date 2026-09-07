@@ -3,6 +3,12 @@ import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { footballData, normalizePosition } from "@/lib/football-data/client";
 
+// Sans ce plafond explicite, une invocation s'est fait couper (constaté en préparant l'arrivée de
+// la Ligue des Champions) avant la fin des ~13 appels espacés de FOOTBALL_DATA_RATE_LIMIT_DELAY_MS
+// nécessaires pour 6 compétitions — la limite par défaut de la plateforme était donc plus basse que
+// prévu pour cette route. 300s laisse de la marge même si d'autres compétitions s'ajoutent.
+export const maxDuration = 300;
+
 type ServiceClient = ReturnType<typeof createServiceRoleClient>;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
