@@ -72,9 +72,16 @@ function computeSeasonStatus(startDate: string, endDate: string): "upcoming" | "
   return "in_progress";
 }
 
+// Un lot de 2 tient large sous le plafond de durée de la plateforme même dans le pire cas (3
+// appels/compétition à FOOTBALL_DATA_RATE_LIMIT_DELAY_MS d'écart). Avec le cron quotidien
+// (vercel.json), 6 compétitions tournent complètement tous les 3 jours — largement suffisant pour
+// des effectifs qui ne bougent qu'au mercato.
+const BATCH_SIZE = 2;
+
 /**
- * Sync hebdomadaire : équipes + effectifs + saison en cours, pour chaque compétition suivie.
- * Source unique : football-data.org (pas de restriction de saison, tout en 2-3 appels/compétition).
+ * Sync : équipes + effectifs + saison en cours. Ne traite qu'un petit lot de compétitions par
+ * invocation (les moins récemment resynchronisées d'abord), jamais toutes à la fois — voir
+ * BATCH_SIZE. Source unique : football-data.org (pas de restriction de saison, 2-3 appels/compétition).
  */
 export async function GET(request: NextRequest) {
   const unauthorized = requireCronSecret(request);
@@ -83,7 +90,9 @@ export async function GET(request: NextRequest) {
   const supabase = createServiceRoleClient();
   const { data: leagues, error: leaguesError } = await supabase
     .from("leagues")
-    .select("id, football_data_code");
+    .select("id, football_data_code")
+    .order("roster_synced_at", { ascending: true, nullsFirst: true })
+    .limit(BATCH_SIZE);
 
   if (leaguesError || !leagues) {
     return NextResponse.json({ error: leaguesError?.message ?? "leagues introuvables" }, { status: 500 });
@@ -206,6 +215,11 @@ export async function GET(request: NextRequest) {
       // pas ici.
       await sleep(FOOTBALL_DATA_RATE_LIMIT_DELAY_MS);
     }
+
+    // Y compris après un échec : sans ça, une compétition qui échoue systématiquement (clé
+    // manquante côté source, etc.) resterait pour toujours en tête de la file "moins récemment
+    // resynchronisée" et monopoliserait le lot à chaque run, empêchant les autres de tourner.
+    await supabase.from("leagues").update({ roster_synced_at: new Date().toISOString() }).eq("id", league.id);
   }
 
   return NextResponse.json({ summary });

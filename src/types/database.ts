@@ -55,6 +55,7 @@ export interface Database {
           football_data_code: string;
           logo_url: string | null;
           active: boolean;
+          roster_synced_at: string | null;
         };
         Insert: Partial<Database["public"]["Tables"]["leagues"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["leagues"]["Row"]>;
