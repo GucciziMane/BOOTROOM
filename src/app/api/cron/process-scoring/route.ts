@@ -8,6 +8,7 @@ import {
   resolveAssistTierPoints,
   predictedWinnerTeamId,
   applyResultOdds,
+  predictionCoveredByPlayer,
   FALLBACK_SCORER_TIER,
   type PointConfig,
   type OddsTier,
@@ -101,7 +102,7 @@ export async function processFinishedMatches(supabase: ServiceClient, config: Po
   // Tout précalculé en 5 requêtes groupées plutôt que jusqu'à 5 requêtes PAR match (+ jusqu'à 2
   // de plus par pronostic) : à MAX_MATCHES_PER_RUN=100 matchs et quelques amis chacun, l'ancienne
   // version pouvait dépasser le millier d'allers-retours DB séquentiels dans un seul run de cron.
-  const [{ data: allPredictions }, { data: allGoals }, { data: existingLedger }, { data: scorerTierRows }, { data: assistTierRows }] =
+  const [{ data: allPredictions }, { data: allGoals }, { data: allSubs }, { data: existingLedger }, { data: scorerTierRows }, { data: assistTierRows }] =
     await Promise.all([
       supabase
         .from("match_predictions")
@@ -110,6 +111,7 @@ export async function processFinishedMatches(supabase: ServiceClient, config: Po
         )
         .in("match_id", matchIds),
       supabase.from("match_goals").select("match_id, player_id, assist_player_id").in("match_id", matchIds),
+      supabase.from("match_substitutions").select("match_id, player_out_id, player_in_id").in("match_id", matchIds),
       supabase
         .from("points_ledger")
         .select("user_id, source_type, source_id")
@@ -136,6 +138,14 @@ export async function processFinishedMatches(supabase: ServiceClient, config: Po
       assistersByMatch.get(g.match_id)!.add(g.assist_player_id);
     }
   }
+  // "Garantie buteur/passeur" (voir predictionCoveredByPlayer) : joueur sortant -> entrant, par match.
+  const substituteByMatch = new Map<number, Map<number, number>>();
+  for (const s of allSubs ?? []) {
+    if (s.player_out_id == null || s.player_in_id == null) continue;
+    if (!substituteByMatch.has(s.match_id)) substituteByMatch.set(s.match_id, new Map());
+    substituteByMatch.get(s.match_id)!.set(s.player_out_id, s.player_in_id);
+  }
+
   const alreadyAwarded = new Set((existingLedger ?? []).map((r) => `${r.source_id}:${r.user_id}:${r.source_type}`));
   // Un même joueur n'a qu'un seul tier par saison en pratique (une seule ligue à la fois) : la clé
   // ne porte que sur player_id, pas besoin du season_id ici contrairement à une lecture par match.
@@ -157,6 +167,7 @@ export async function processFinishedMatches(supabase: ServiceClient, config: Po
     const awayScore = match.away_score as number;
     const actualScorers = scorersByMatch.get(match.id) ?? new Set();
     const actualAssisters = assistersByMatch.get(match.id) ?? new Set();
+    const substituteByPlayer = substituteByMatch.get(match.id) ?? new Map();
 
     for (const pred of predictionsByMatch.get(match.id) ?? []) {
       const baseScorePoints = computeMatchScorePoints(
@@ -180,14 +191,12 @@ export async function processFinishedMatches(supabase: ServiceClient, config: Po
         resultMultiplierMap
       );
 
-      const scorerPoints =
-        pred.predicted_scorer_player_id && actualScorers.has(pred.predicted_scorer_player_id)
-          ? resolveScorerTierPoints(scorerTierByPlayer.get(pred.predicted_scorer_player_id), tierPointsMap)
-          : 0;
-      const assistPoints =
-        pred.predicted_assist_player_id && actualAssisters.has(pred.predicted_assist_player_id)
-          ? resolveAssistTierPoints(assistTierByPlayer.get(pred.predicted_assist_player_id), assistTierPointsMap)
-          : 0;
+      const scorerPoints = predictionCoveredByPlayer(pred.predicted_scorer_player_id, actualScorers, substituteByPlayer)
+        ? resolveScorerTierPoints(scorerTierByPlayer.get(pred.predicted_scorer_player_id!), tierPointsMap)
+        : 0;
+      const assistPoints = predictionCoveredByPlayer(pred.predicted_assist_player_id, actualAssisters, substituteByPlayer)
+        ? resolveAssistTierPoints(assistTierByPlayer.get(pred.predicted_assist_player_id!), assistTierPointsMap)
+        : 0;
 
       const toAward: Array<[PointsSourceType, number]> = [
         ["match_score", scorePoints],

@@ -168,6 +168,19 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["matchday_recaps"]["Row"]>;
         Relationships: [];
       };
+      match_substitutions: {
+        Row: {
+          id: number;
+          match_id: number;
+          team_id: number;
+          player_out_id: number | null;
+          player_in_id: number | null;
+          minute: number | null;
+        };
+        Insert: Partial<Database["public"]["Tables"]["match_substitutions"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["match_substitutions"]["Row"]>;
+        Relationships: [];
+      };
       player_scoring_tier: {
         Row: {
           id: number;

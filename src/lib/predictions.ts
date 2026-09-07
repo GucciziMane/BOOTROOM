@@ -46,15 +46,11 @@ export async function getPredictionHistory(supabase: Client, userId: string): Pr
 
   const matchIds = (predictions ?? []).map((p) => p.match_id);
 
-  const [{ data: matches }, { data: goals }, { data: ledger }] = await Promise.all([
+  const [{ data: matches }, { data: ledger }] = await Promise.all([
     supabase
       .from("matches")
       .select("id, league_id, home_team_id, away_team_id, kickoff_at, status, home_score, away_score, matchday")
       .in("id", matchIds.length > 0 ? matchIds : [-1]),
-    supabase
-      .from("match_goals")
-      .select("match_id, player_id, assist_player_id")
-      .in("match_id", matchIds.length > 0 ? matchIds : [-1]),
     supabase
       .from("points_ledger")
       .select("source_id, source_type, points")
@@ -85,19 +81,6 @@ export async function getPredictionHistory(supabase: Client, userId: string): Pr
   const teamById = new Map((teams ?? []).map((t) => [t.id, t]));
   const playerNameById = new Map((players ?? []).map((p) => [p.id, p.name]));
 
-  const scorersByMatch = new Map<number, Set<number>>();
-  const assistersByMatch = new Map<number, Set<number>>();
-  for (const g of goals ?? []) {
-    if (g.player_id != null) {
-      if (!scorersByMatch.has(g.match_id)) scorersByMatch.set(g.match_id, new Set());
-      scorersByMatch.get(g.match_id)!.add(g.player_id);
-    }
-    if (g.assist_player_id != null) {
-      if (!assistersByMatch.has(g.match_id)) assistersByMatch.set(g.match_id, new Set());
-      assistersByMatch.get(g.match_id)!.add(g.assist_player_id);
-    }
-  }
-
   const pointsByMatchAndType = new Map<string, number>();
   for (const l of ledger ?? []) {
     pointsByMatchAndType.set(`${l.source_id}:${l.source_type}`, l.points);
@@ -114,14 +97,17 @@ export async function getPredictionHistory(supabase: Client, userId: string): Pr
 
       const scorerName = p.predicted_scorer_player_id != null ? playerNameById.get(p.predicted_scorer_player_id) : undefined;
       const assistName = p.predicted_assist_player_id != null ? playerNameById.get(p.predicted_assist_player_id) : undefined;
+      // Dérivé des points réellement attribués (points_ledger), pas d'un nouveau calcul de
+      // correspondance ici : évite que l'affichage se désynchronise de la "garantie
+      // buteur/passeur" (voir process-scoring) si sa logique évolue un jour.
       const scorerValid =
         !isFinished || p.predicted_scorer_player_id == null
           ? null
-          : (scorersByMatch.get(match.id)?.has(p.predicted_scorer_player_id) ?? false);
+          : (pointsByMatchAndType.get(`${match.id}:match_scorer`) ?? 0) > 0;
       const assistValid =
         !isFinished || p.predicted_assist_player_id == null
           ? null
-          : (assistersByMatch.get(match.id)?.has(p.predicted_assist_player_id) ?? false);
+          : (pointsByMatchAndType.get(`${match.id}:match_assist`) ?? 0) > 0;
 
       return {
         matchId: match.id,

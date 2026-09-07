@@ -51,6 +51,23 @@ export function resolveAssistTierPoints(tier: number | null | undefined, tierPoi
   return tierPointsMap.get(tier ?? FALLBACK_ASSIST_TIER) ?? FALLBACK_ASSIST_TIER_POINTS;
 }
 
+/**
+ * "Garantie buteur/passeur" : un pronostic sur un joueur remplacé en cours de match reste validé
+ * si c'est son remplaçant qui marque/passe à sa place — sur tous les matchs, pas seulement celui
+ * du joueur pronostiqué lui-même. `substituteByPlayer` associe le joueur SORTANT à celui ENTRANT
+ * à sa place (voir match_substitutions) ; un seul niveau de remplacement, pas de chaîne.
+ */
+export function predictionCoveredByPlayer(
+  predictedPlayerId: number | null,
+  actualPlayers: ReadonlySet<number>,
+  substituteByPlayer: ReadonlyMap<number, number>
+): boolean {
+  if (predictedPlayerId == null) return false;
+  if (actualPlayers.has(predictedPlayerId)) return true;
+  const substitute = substituteByPlayer.get(predictedPlayerId);
+  return substitute != null && actualPlayers.has(substitute);
+}
+
 /** 1 = équipes proches au classement, 5 = écart de niveau important. */
 export type OddsTier = 1 | 2 | 3 | 4 | 5;
 

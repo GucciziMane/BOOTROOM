@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
-import { getEspnScoreboard, getEspnMatchGoals, ESPN_LEAGUE_SLUG, type EspnGoal } from "@/lib/espn/client";
+import { getEspnScoreboard, getEspnMatchEvents, ESPN_LEAGUE_SLUG } from "@/lib/espn/client";
 import { teamNamesMatch, matchPlayerByName } from "@/lib/sync/name-match";
 import { sendPushBroadcastWithOverrides } from "@/lib/push/server";
 import { SYSTEM_SENDER_NAME } from "@/lib/system-sender";
@@ -92,23 +92,42 @@ export async function GET(request: NextRequest) {
     // Buts : uniquement pour un match en cours ou qui vient de se terminer (rien à récupérer pour
     // un match qui n'a pas encore commencé, déjà filtré ci-dessus).
     if (espnMatch.status === "live" || espnMatch.status === "finished") {
-      const { data: existingGoals } = await supabase
-        .from("match_goals")
-        .select("player_id, assist_player_id, minute")
-        .eq("match_id", match.id);
+      const [{ data: existingGoals }, { data: existingSubs }] = await Promise.all([
+        supabase.from("match_goals").select("player_id, assist_player_id, minute").eq("match_id", match.id),
+        supabase.from("match_substitutions").select("player_out_id, player_in_id").eq("match_id", match.id),
+      ]);
       const existingKeys = new Set((existingGoals ?? []).map((g) => `${g.player_id}:${g.minute}`));
+      const existingSubKeys = new Set((existingSubs ?? []).map((s) => `${s.player_out_id}:${s.player_in_id}`));
 
-      let summary: EspnGoal[];
+      let goals: Awaited<ReturnType<typeof getEspnMatchEvents>>["goals"] = [];
+      let substitutions: Awaited<ReturnType<typeof getEspnMatchEvents>>["substitutions"] = [];
       try {
-        summary = await getEspnMatchGoals(slug, espnMatch.id);
+        const events = await getEspnMatchEvents(slug, espnMatch.id);
+        goals = events.goals;
+        substitutions = events.substitutions;
       } catch {
-        summary = [];
+        // ESPN indisponible pour ce match précis : rien à mettre à jour ce tick-ci, le prochain
+        // passage (dans la minute) réessaiera — pas la peine de faire échouer tout le cron pour ça.
       }
 
       const homePlayers = (await supabase.from("players").select("id, name").eq("team_id", match.home_team_id).is("left_at", null)).data ?? [];
       const awayPlayers = (await supabase.from("players").select("id, name").eq("team_id", match.away_team_id).is("left_at", null)).data ?? [];
 
-      const newGoalRows = summary.flatMap((g) => {
+      const newSubRows = substitutions.flatMap((s) => {
+        const teamId = teamNamesMatch(s.teamName, home.name) ? match.home_team_id : match.away_team_id;
+        const candidates = teamId === match.home_team_id ? homePlayers : awayPlayers;
+        const playerOut = matchPlayerByName(s.playerOutName, candidates);
+        const playerIn = matchPlayerByName(s.playerInName, candidates);
+        if (!playerOut && !playerIn) return [];
+        const key = `${playerOut?.id ?? null}:${playerIn?.id ?? null}`;
+        if (existingSubKeys.has(key)) return [];
+        return [{ match_id: match.id, team_id: teamId, player_out_id: playerOut?.id ?? null, player_in_id: playerIn?.id ?? null, minute: s.minute }];
+      });
+      if (newSubRows.length > 0) {
+        await supabase.from("match_substitutions").insert(newSubRows);
+      }
+
+      const newGoalRows = goals.flatMap((g) => {
         const teamId = teamNamesMatch(g.teamName, home.name) ? match.home_team_id : match.away_team_id;
         const candidates = teamId === match.home_team_id ? homePlayers : awayPlayers;
         const scorer = matchPlayerByName(g.scorerName, candidates);
@@ -129,9 +148,16 @@ export async function GET(request: NextRequest) {
             minute: row.minute,
           }))
         );
+        // "Garantie buteur/passeur" (voir process-scoring) : le remplaçant entré à la place du
+        // joueur pronostiqué compte aussi, y compris pour la notif temps réel — pas seulement au
+        // calcul des points a posteriori.
+        const playerInToOut = new Map<number, number>();
+        for (const s of [...(existingSubs ?? []), ...newSubRows]) {
+          if (s.player_in_id != null && s.player_out_id != null) playerInToOut.set(s.player_in_id, s.player_out_id);
+        }
         for (const goal of newGoalRows) {
           goalPushJobs.push(() =>
-            notifyGoal(supabase, match, home.name, away.name, espnMatch.homeScore ?? 0, espnMatch.awayScore ?? 0, goal)
+            notifyGoal(supabase, match, home.name, away.name, espnMatch.homeScore ?? 0, espnMatch.awayScore ?? 0, goal, playerInToOut)
           );
         }
       }
@@ -182,7 +208,8 @@ async function notifyGoal(
   awayName: string,
   homeScore: number,
   awayScore: number,
-  goal: NewGoal
+  goal: NewGoal,
+  playerInToOut: Map<number, number>
 ): Promise<void> {
   const { data: predictions } = await supabase
     .from("match_predictions")
@@ -196,10 +223,19 @@ async function notifyGoal(
     url: `${APP_URL}/calendar`,
   };
 
+  // Garantie buteur/passeur : un pronostic sur le joueur remplacé compte aussi si c'est son
+  // remplaçant qui marque/passe à sa place (voir process-scoring pour le calcul définitif après
+  // coup — cette notif temps réel applique la même règle).
+  const scorerReplacedFor = playerInToOut.get(goal.player_id);
+  const assistReplacedFor = goal.assist_player_id != null ? playerInToOut.get(goal.assist_player_id) : undefined;
+
   const overrides = new Map<string, { title: string; body: string; url?: string }>();
   for (const pred of predictions ?? []) {
-    const scorerHit = pred.predicted_scorer_player_id === goal.player_id;
-    const assistHit = goal.assist_player_id != null && pred.predicted_assist_player_id === goal.assist_player_id;
+    const scorerHit =
+      pred.predicted_scorer_player_id === goal.player_id || pred.predicted_scorer_player_id === scorerReplacedFor;
+    const assistHit =
+      goal.assist_player_id != null &&
+      (pred.predicted_assist_player_id === goal.assist_player_id || pred.predicted_assist_player_id === assistReplacedFor);
     if (scorerHit || assistHit) {
       const bonus = scorerHit && assistHit ? "Buteur ET passeur trouvés, énorme 🔥" : scorerHit ? "Ton pronostic buteur est bon 🎯" : "Ton pronostic passeur est bon 🎯";
       overrides.set(pred.user_id, { ...fallback, body: `${fallback.body}\n${bonus}` });

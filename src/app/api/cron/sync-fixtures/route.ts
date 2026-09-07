@@ -3,7 +3,7 @@ import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { footballData, normalizeMatchStatus } from "@/lib/football-data/client";
 import { highlightly, type HlMatch } from "@/lib/highlightly/client";
-import { getEspnScoreboard, getEspnMatchGoals, ESPN_LEAGUE_SLUG } from "@/lib/espn/client";
+import { getEspnScoreboard, getEspnMatchEvents, ESPN_LEAGUE_SLUG } from "@/lib/espn/client";
 import { teamNamesMatch, matchPlayerByName } from "@/lib/sync/name-match";
 import { computeStandings } from "@/lib/scoring/standings";
 import { computeMatchOdds } from "@/lib/scoring/match-odds";
@@ -318,13 +318,18 @@ async function syncGoalEvents(
   let outOfWindow = 0;
   let stoppedOnBudget = 0;
 
-  const saveGoals = async (
+  const saveMatchEvents = async (
     matchId: number,
-    goalRows: Array<{ match_id: number; team_id: number; player_id: number; assist_player_id: number | null; minute: number | null }>
+    goalRows: Array<{ match_id: number; team_id: number; player_id: number; assist_player_id: number | null; minute: number | null }>,
+    subRows: Array<{ match_id: number; team_id: number; player_out_id: number | null; player_in_id: number | null; minute: number | null }> = []
   ) => {
     await supabase.from("match_goals").delete().eq("match_id", matchId);
     if (goalRows.length > 0) {
       await supabase.from("match_goals").insert(goalRows);
+    }
+    await supabase.from("match_substitutions").delete().eq("match_id", matchId);
+    if (subRows.length > 0) {
+      await supabase.from("match_substitutions").insert(subRows);
     }
     await supabase.from("matches").update({ events_synced_at: new Date().toISOString() }).eq("id", matchId);
   };
@@ -363,7 +368,7 @@ async function syncGoalEvents(
         );
 
         if (espnMatch) {
-          const goals = await getEspnMatchGoals(espnSlug, espnMatch.id);
+          const { goals, substitutions } = await getEspnMatchEvents(espnSlug, espnMatch.id);
           const goalRows = goals.flatMap((g) => {
             const teamId = teamNamesMatch(g.teamName, homeName) ? match.home_team_id : match.away_team_id;
             const scorer = matchPlayerByName(g.scorerName, playersByTeamId.get(teamId) ?? []);
@@ -379,7 +384,23 @@ async function syncGoalEvents(
               },
             ];
           });
-          await saveGoals(match.id, goalRows);
+          const subRows = substitutions.flatMap((s) => {
+            const teamId = teamNamesMatch(s.teamName, homeName) ? match.home_team_id : match.away_team_id;
+            const candidates = playersByTeamId.get(teamId) ?? [];
+            const playerOut = matchPlayerByName(s.playerOutName, candidates);
+            const playerIn = matchPlayerByName(s.playerInName, candidates);
+            if (!playerOut && !playerIn) return [];
+            return [
+              {
+                match_id: match.id,
+                team_id: teamId,
+                player_out_id: playerOut?.id ?? null,
+                player_in_id: playerIn?.id ?? null,
+                minute: s.minute,
+              },
+            ];
+          });
+          await saveMatchEvents(match.id, goalRows, subRows);
           matched++;
           matchedViaEspn++;
           matchedThisOne = true;
@@ -450,7 +471,10 @@ async function syncGoalEvents(
           ];
         });
 
-      await saveGoals(match.id, goalRows);
+      // Highlightly ne fournit pas de garantie sur l'ordre entrant/sortant de ses events
+      // "Substitution" (jamais vérifié comme pour ESPN) : on n'enregistre que les buts via ce
+      // relais, la garantie buteur/passeur ne s'appliquera simplement pas sur ces matchs-là.
+      await saveMatchEvents(match.id, goalRows);
       matched++;
     } catch {
       unmatched++;

@@ -117,6 +117,15 @@ export interface EspnGoal {
   minute: number | null;
 }
 
+/** "Garantie buteur/passeur" (voir process-scoring) : le remplaçant qui entre à la place du
+ * joueur pronostiqué, si jamais c'est lui qui marque/passe à sa place. */
+export interface EspnSubstitution {
+  teamName: string;
+  playerOutName: string;
+  playerInName: string;
+  minute: number | null;
+}
+
 interface EspnSummaryResponse {
   keyEvents?: Array<{
     type: { type: string };
@@ -127,11 +136,16 @@ interface EspnSummaryResponse {
   }>;
 }
 
-/** Buts (buteur + passeur éventuel) d'un match précis, via son id d'événement ESPN. */
-export async function getEspnMatchGoals(leagueSlug: string, eventId: string): Promise<EspnGoal[]> {
+/** Buts + remplacements d'un match précis, via son id d'événement ESPN — une seule requête pour
+ * les deux plutôt que d'interroger deux fois le même endpoint. */
+export async function getEspnMatchEvents(
+  leagueSlug: string,
+  eventId: string
+): Promise<{ goals: EspnGoal[]; substitutions: EspnSubstitution[] }> {
   const data = await espnFetch<EspnSummaryResponse>(`/${leagueSlug}/summary?event=${eventId}`);
+  const events = data.keyEvents ?? [];
 
-  return (data.keyEvents ?? []).flatMap((e) => {
+  const goals = events.flatMap((e) => {
     // ESPN distingue le TYPE de but ("goal", "goal---header", "goal---volley", "own-goal",
     // "penalty---scored"...) : ne retenir que le libellé exact "goal" en ignorait la plupart en
     // silence (confirmé sur un match réel : le seul but d'un 1-0 était "goal---header", donc
@@ -150,4 +164,22 @@ export async function getEspnMatchGoals(leagueSlug: string, eventId: string): Pr
       },
     ];
   });
+
+  const substitutions = events.flatMap((e) => {
+    // participants[0] = joueur qui ENTRE, participants[1] = joueur qui SORT — vérifié en croisant
+    // avec les champs starter/subbedIn/subbedOut du roster ESPN sur un vrai match (pas documenté
+    // officiellement par ESPN, mais confirmé dans ce sens précis, jamais l'inverse).
+    if (e.type?.type !== "substitution" || !e.team || !e.participants || e.participants.length < 2) return [];
+    const minuteMatch = e.clock?.displayValue?.match(/\d+/);
+    return [
+      {
+        teamName: e.team.displayName,
+        playerInName: e.participants[0].athlete.displayName,
+        playerOutName: e.participants[1].athlete.displayName,
+        minute: minuteMatch ? Number(minuteMatch[0]) : null,
+      },
+    ];
+  });
+
+  return { goals, substitutions };
 }
