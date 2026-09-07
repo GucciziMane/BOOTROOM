@@ -10,7 +10,10 @@ export default async function MyPredictionsPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const rows = await getPredictionHistory(supabase, user!.id);
+  const allRows = await getPredictionHistory(supabase, user!.id);
+  // Seulement les pronostics déjà notés : un match pas encore joué (ou pas encore traité par le
+  // cron de points) n'a rien à montrer ici, il encombrait la page avec des cartes "à venir".
+  const rows = allRows.filter((r) => r.totalPoints != null);
   const totalPointsSum = rows.reduce((sum, r) => sum + (r.totalPoints ?? 0), 0);
 
   return (
@@ -24,7 +27,7 @@ export default async function MyPredictionsPage() {
 
       <section>
         <p className="mb-4 text-sm text-mute">
-          Tous tes pronostics depuis le début, du plus récent au plus ancien —{" "}
+          Tous tes pronostics déjà notés, du plus récent au plus ancien —{" "}
           <strong className="text-ink">{rows.length}</strong> pronostic{rows.length > 1 ? "s" : ""}, pour un total de{" "}
           <strong className="text-ink">{totalPointsSum} pts</strong>.
         </p>
