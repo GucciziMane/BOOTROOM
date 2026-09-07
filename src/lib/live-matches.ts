@@ -33,22 +33,29 @@ export interface LiveMatchDto {
 /** Liste des matchs en cours (+ tout juste terminés) pour le bandeau "En direct" — partagée entre
  * la page d'accueil (rendu initial côté serveur) et /api/live-matches (polling client). */
 export async function getLiveMatches(supabase: SupabaseClient<Database>): Promise<LiveMatchDto[]> {
+  // Un championnat désactivé (ex: Bundesliga, Primeira Liga) garde ses données et continue d'être
+  // suivi en base, mais ne doit plus jamais réapparaître à l'écran — y compris ici, sans quoi un de
+  // ses matchs qui se joue "en douce" ressurgirait dans le bandeau "en direct".
+  const { data: activeLeagues } = await supabase.from("leagues").select("id, football_data_code").eq("active", true);
+  const activeLeagueIds = (activeLeagues ?? []).map((l) => l.id);
+  const leagueCodeById = new Map((activeLeagues ?? []).map((l) => [l.id, l.football_data_code]));
+  if (activeLeagueIds.length === 0) return [];
+
   const windowStart = new Date(Date.now() - WINDOW_MS).toISOString();
   const { data: matches } = await supabase
     .from("matches")
-    .select("id, season_id, home_team_id, away_team_id, status, home_score, away_score, live_clock, kickoff_at")
+    .select("id, league_id, home_team_id, away_team_id, status, home_score, away_score, live_clock, kickoff_at")
     .in("status", ["live", "finished"])
+    .in("league_id", activeLeagueIds)
     .gt("kickoff_at", windowStart)
     .order("kickoff_at", { ascending: true });
 
   if (!matches || matches.length === 0) return [];
 
-  const seasonIds = [...new Set(matches.map((m) => m.season_id))];
   const teamIds = [...new Set(matches.flatMap((m) => [m.home_team_id, m.away_team_id]))];
   const matchIds = matches.map((m) => m.id);
 
-  const [{ data: seasons }, { data: teams }, { data: goals }] = await Promise.all([
-    supabase.from("seasons").select("id, league_id").in("id", seasonIds),
+  const [{ data: teams }, { data: goals }] = await Promise.all([
     supabase.from("teams").select("id, name, logo_url").in("id", teamIds),
     supabase
       .from("match_goals")
@@ -56,11 +63,6 @@ export async function getLiveMatches(supabase: SupabaseClient<Database>): Promis
       .in("match_id", matchIds)
       .order("minute", { ascending: true }),
   ]);
-
-  const leagueIdBySeasonId = new Map((seasons ?? []).map((s) => [s.id, s.league_id]));
-  const leagueIds = [...new Set([...leagueIdBySeasonId.values()])];
-  const { data: leagues } = await supabase.from("leagues").select("id, football_data_code").in("id", leagueIds);
-  const leagueCodeById = new Map((leagues ?? []).map((l) => [l.id, l.football_data_code]));
   const teamById = new Map((teams ?? []).map((t) => [t.id, t]));
 
   const playerIds = [
@@ -84,8 +86,7 @@ export async function getLiveMatches(supabase: SupabaseClient<Database>): Promis
   }
 
   return matches.map((m) => {
-    const leagueId = leagueIdBySeasonId.get(m.season_id);
-    const leagueCode = leagueId != null ? leagueCodeById.get(leagueId) : undefined;
+    const leagueCode = leagueCodeById.get(m.league_id);
     const home = teamById.get(m.home_team_id);
     const away = teamById.get(m.away_team_id);
     return {

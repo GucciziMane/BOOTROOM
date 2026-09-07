@@ -67,7 +67,15 @@ export async function GET(request: NextRequest) {
   }
 
   const [{ data: leagues }, { data: teams }] = await Promise.all([
-    supabase.from("leagues").select("id, football_data_code").in("id", [...new Set(inWindowMatches.map((m) => m.league_id))]),
+    // .eq("active", true) : un championnat désactivé (Bundesliga, Primeira Liga) garde ses matchs
+    // en base mais ne doit plus être suivi minute par minute — absent d'ici, son league_id ne
+    // matchera rien dans slugByLeague juste en dessous, et la boucle le sautera via le "!slug"
+    // déjà en place, sans code de filtrage séparé à maintenir.
+    supabase
+      .from("leagues")
+      .select("id, football_data_code")
+      .eq("active", true)
+      .in("id", [...new Set(inWindowMatches.map((m) => m.league_id))]),
     supabase.from("teams").select("id, name").in("id", [...new Set(inWindowMatches.flatMap((m) => [m.home_team_id, m.away_team_id]))]),
   ]);
   const slugByLeague = new Map((leagues ?? []).map((l) => [l.id, ESPN_LEAGUE_SLUG[l.football_data_code]]));
