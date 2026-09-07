@@ -66,7 +66,9 @@ export default async function CalendarPage() {
       const nextMatchday = nextMatchdayBySeasonId.get(seasonId);
       const base = supabase
         .from("matches")
-        .select("id, season_id, home_team_id, away_team_id, kickoff_at, status, favorite_team_id, odds_tier, matchday")
+        .select(
+          "id, season_id, home_team_id, away_team_id, kickoff_at, status, favorite_team_id, odds_tier, matchday, home_score, away_score, live_clock"
+        )
         .eq("season_id", seasonId)
         .in("status", ["scheduled", "live"]);
       const { data } =
@@ -222,6 +224,11 @@ export default async function CalendarPage() {
                       predictedScorerPlayerId: existing?.predicted_scorer_player_id ?? null,
                       predictedAssistPlayerId: existing?.predicted_assist_player_id ?? null,
                     }}
+                    live={
+                      m.status === "live"
+                        ? { homeScore: m.home_score, awayScore: m.away_score, liveClock: m.live_clock }
+                        : undefined
+                    }
                   />
                 );
               })}

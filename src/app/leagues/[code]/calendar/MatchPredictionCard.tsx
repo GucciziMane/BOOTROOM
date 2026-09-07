@@ -47,6 +47,13 @@ interface Props {
   leagueLabel?: string;
   /** Idem : bordure de gauche colorée pour repérer le championnat d'un coup d'œil dans la grille. */
   leagueColor?: string;
+  /** Présent uniquement si le match est actuellement en cours : score réel + minute, affichés à
+   * la place du pronostic une fois le match verrouillé — voir /api/cron/live-tick. */
+  live?: {
+    homeScore: number | null;
+    awayScore: number | null;
+    liveClock: string | null;
+  };
 }
 
 const initialState: SaveMatchPredictionState = { error: null, success: false };
@@ -67,6 +74,7 @@ export function MatchPredictionCard({
   initial,
   leagueLabel,
   leagueColor,
+  live,
 }: Props) {
   const [state, formAction, isPending] = useActionState(saveMatchPrediction, initialState);
   const [homeScore, setHomeScore] = useState(initial.predictedHomeScore != null ? String(initial.predictedHomeScore) : "");
@@ -107,19 +115,32 @@ export function MatchPredictionCard({
       >
         <p className="mb-2 flex items-center justify-between text-xs font-bold text-mute">
           <span>{formatParisDateTime(kickoffAt)}</span>
-          {leagueLabel && <span>{leagueLabel}</span>}
+          {live ? (
+            <span className="flex items-center gap-1 text-bad">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-bad opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-bad" />
+              </span>
+              {live.liveClock ?? "En direct"}
+            </span>
+          ) : (
+            leagueLabel && <span>{leagueLabel}</span>
+          )}
         </p>
         <div className="flex items-center justify-center gap-3">
           <TeamBadge name={homeTeamName} logoUrl={homeLogoUrl} />
           <span className="text-lg font-bold">
-            {initial.predictedHomeScore ?? "–"} – {initial.predictedAwayScore ?? "–"}
+            {live ? (live.homeScore ?? 0) : (initial.predictedHomeScore ?? "–")}
+            {" – "}
+            {live ? (live.awayScore ?? 0) : (initial.predictedAwayScore ?? "–")}
           </span>
           <TeamBadge name={awayTeamName} logoUrl={awayLogoUrl} />
         </div>
         <p className="mt-2 text-center text-xs text-mute">
+          {live && <span>Ton prono : {initial.predictedHomeScore ?? "–"}-{initial.predictedAwayScore ?? "–"} · </span>}
           {lockedScorer ? `Buteur : ${lockedScorer.name}` : initial.predictedHomeScore == null ? "Non pronostiqué" : "Sans buteur"}
           {lockedAssist && ` · Passeur : ${lockedAssist.name}`}
-          {" · "}Verrouillé
+          {!live && " · Verrouillé"}
         </p>
       </div>
     );

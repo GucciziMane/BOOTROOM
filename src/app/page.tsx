@@ -4,11 +4,13 @@ import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/app/login/actions";
 import { getFavoriteTeamLeagueGroups } from "@/lib/favorite-teams";
 import { getClubHomeData } from "@/lib/club-home";
+import { getLiveMatches } from "@/lib/live-matches";
 import { linkMuted } from "@/lib/ui";
 import { FavoriteTeamBadge } from "@/app/profile/FavoriteTeamBadge";
 import { ThemeModeToggle } from "@/app/profile/ThemeModeToggle";
 import { FavoriteTeamOnboarding } from "./FavoriteTeamOnboarding";
 import { ClubHomeDashboard } from "./ClubHomeDashboard";
+import { LiveMatchesBanner } from "./LiveMatchesBanner";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -32,7 +34,7 @@ export default async function DashboardPage() {
 
   // Pareil ici : le compteur de messages non lus et les données du club favori dépendent de
   // `profile` mais pas l'un de l'autre.
-  const [{ count: unreadChatCount }, clubHomeData] = await Promise.all([
+  const [{ count: unreadChatCount }, clubHomeData, liveMatches] = await Promise.all([
     supabase
       .from("chat_messages")
       .select("id", { count: "exact", head: true })
@@ -41,6 +43,7 @@ export default async function DashboardPage() {
     profile?.use_club_theme && profile.favorite_team_id
       ? getClubHomeData(supabase, profile.favorite_team_id)
       : Promise.resolve(null),
+    getLiveMatches(supabase),
   ]);
 
   return (
@@ -82,6 +85,10 @@ export default async function DashboardPage() {
             hasFavoriteTeam={!!profile?.favorite_team_id}
           />
         </div>
+      </div>
+
+      <div className="mt-4">
+        <LiveMatchesBanner initialMatches={liveMatches} />
       </div>
 
       {clubHomeData ? (
