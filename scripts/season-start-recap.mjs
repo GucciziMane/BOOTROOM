@@ -4,10 +4,27 @@
 // automatique (déclenché par journée complète), celui-ci agrège tout ce qui est déjà noté depuis
 // le début de la saison — à lancer à la main, jamais par un cron.
 import { createClient } from "@supabase/supabase-js";
+import webpush from "web-push";
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
+webpush.setVapidDetails(process.env.VAPID_SUBJECT, process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
+
+async function pushToEveryone(payload) {
+  const { data: subscriptions } = await supabase.from("push_subscriptions").select("id, endpoint, p256dh, auth");
+  const staleIds = [];
+  await Promise.allSettled(
+    (subscriptions ?? []).map(async (sub) => {
+      try {
+        await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, JSON.stringify(payload));
+      } catch (err) {
+        if (err.statusCode === 404 || err.statusCode === 410) staleIds.push(sub.id);
+      }
+    })
+  );
+  if (staleIds.length > 0) await supabase.from("push_subscriptions").delete().in("id", staleIds);
+}
 
 const LEAGUE_FLAG = { FL1: "🇫🇷", PL: "🇬🇧", PD: "🇪🇸", BL1: "🇩🇪", PPL: "🇵🇹" };
 const SYSTEM_SENDER_NAME = "Gianni Infantino";
@@ -153,6 +170,13 @@ async function main() {
   const { error } = await supabase.from("chat_messages").insert({ user_id: null, content, is_system: true });
   if (error) throw new Error(`Échec de l'insertion : ${error.message}`);
   console.log("Posté dans le chat.");
+
+  await pushToEveryone({
+    title: SYSTEM_SENDER_NAME,
+    body: "🏁 Récap de début de saison dans le chat — tous championnats confondus.",
+    url: "/chat",
+  });
+  console.log("Notif push envoyée.");
 }
 
 main();
