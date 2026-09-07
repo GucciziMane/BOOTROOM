@@ -13,7 +13,9 @@ export type PointsSourceType =
   | "season_top3"
   | "season_bottom3"
   | "season_surprise"
-  | "season_flop";
+  | "season_flop"
+  | "season_final_team"
+  | "season_final_winner";
 
 export interface Database {
   public: {
@@ -248,6 +250,9 @@ export interface Database {
           bottom3: Record<string, number>;
           surprise_team_id: number | null;
           flop_team_id: number | null;
+          final_team_a_id: number | null;
+          final_team_b_id: number | null;
+          final_winner_team_id: number | null;
           submitted_at: string;
           updated_at: string;
         };

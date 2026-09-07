@@ -36,6 +36,8 @@ export async function loadPointConfig(supabase: ServiceClient): Promise<PointCon
     seasonPositionPresence: map.get("season_position_presence") ?? 15,
     seasonSurpriseTeam: map.get("season_surprise_team") ?? 40,
     seasonFlopTeam: map.get("season_flop_team") ?? 40,
+    seasonFinalTeam: map.get("season_final_team") ?? 40,
+    seasonFinalWinner: map.get("season_final_winner") ?? 60,
   };
 }
 
@@ -245,6 +247,16 @@ async function processFinishedSeasons(supabase: ServiceClient, config: PointConf
     return { processed: 0, error: error?.message };
   }
 
+  // Ligue des Champions : pas de flop3/équipe surprise/équipe flop (pas de sens pour une coupe à
+  // élimination directe) — à la place, un pronostic finale (2 finalistes + vainqueur), résolu
+  // automatiquement depuis le match "FINAL" de la saison plutôt qu'une saisie admin comme
+  // actual_surprise_team_id/actual_flop_team_id (voir plus bas).
+  const { data: leaguesData } = await supabase
+    .from("leagues")
+    .select("id, football_data_code")
+    .in("id", [...new Set(seasons.map((s) => s.league_id))]);
+  const leagueCodeById = new Map((leaguesData ?? []).map((l) => [l.id, l.football_data_code]));
+
   const { data: tierPoints } = await supabase.from("season_top_player_tier_points").select("tier, points");
   const tierPointsMap = new Map((tierPoints ?? []).map((t) => [t.tier, t.points]));
 
@@ -293,6 +305,33 @@ async function processFinishedSeasons(supabase: ServiceClient, config: PointConf
     const actualTopScorerIds = topEntries(goalsByPlayer);
     const actualTopAssistIds = topEntries(assistsByPlayer);
 
+    const isCup = leagueCodeById.get(season.league_id) === "CL";
+
+    // Coupe à élimination directe : le seul match qui compte pour "finaliste"/"vainqueur" est
+    // celui de stage "FINAL" — voir la synthèse de journée pour les tours à élimination directe
+    // dans /api/cron/sync-fixtures. Un match encore null/pas fini = rien à récompenser pour
+    // l'instant, comme actual_surprise_team_id/actual_flop_team_id pas encore renseignés.
+    let actualFinalists: number[] = [];
+    let actualWinnerTeamId: number | null = null;
+    if (isCup) {
+      const { data: finalMatch } = await supabase
+        .from("matches")
+        .select("home_team_id, away_team_id, home_score, away_score")
+        .eq("season_id", season.id)
+        .eq("stage", "FINAL")
+        .eq("status", "finished")
+        .maybeSingle();
+      if (finalMatch && finalMatch.home_score !== null && finalMatch.away_score !== null) {
+        actualFinalists = [finalMatch.home_team_id, finalMatch.away_team_id];
+        actualWinnerTeamId =
+          finalMatch.home_score > finalMatch.away_score
+            ? finalMatch.home_team_id
+            : finalMatch.away_score > finalMatch.home_score
+              ? finalMatch.away_team_id
+              : null; // égalité au score plein temps : vainqueur (tirs au but) non suivi ici
+      }
+    }
+
     const { data: existingLedger } = await supabase
       .from("points_ledger")
       .select("user_id, source_type")
@@ -304,12 +343,16 @@ async function processFinishedSeasons(supabase: ServiceClient, config: PointConf
         "season_bottom3",
         "season_surprise",
         "season_flop",
+        "season_final_team",
+        "season_final_winner",
       ]);
     const alreadyAwarded = new Set((existingLedger ?? []).map((r) => `${r.user_id}:${r.source_type}`));
 
     const { data: predictions } = await supabase
       .from("season_predictions")
-      .select("user_id, top_scorer_player_id, top_assist_player_id, top3, bottom3, surprise_team_id, flop_team_id")
+      .select(
+        "user_id, top_scorer_player_id, top_assist_player_id, top3, bottom3, surprise_team_id, flop_team_id, final_team_a_id, final_team_b_id, final_winner_team_id"
+      )
       .eq("season_id", season.id);
 
     for (const pred of predictions ?? []) {
@@ -341,22 +384,38 @@ async function processFinishedSeasons(supabase: ServiceClient, config: PointConf
       );
       await award("season_top3", top3Points);
 
-      const bottom3 = (pred.bottom3 as Record<string, number>) ?? {};
-      const bottom3Points = [1, 2, 3].reduce(
-        (sum, rank) => sum + computeSeasonPositionPoints(bottom3[String(rank)], rank, bottom3TeamIds, config),
-        0
-      );
-      await award("season_bottom3", bottom3Points);
+      if (isCup) {
+        if (actualFinalists.length > 0) {
+          const predictedFinalists: Array<number | null> = [pred.final_team_a_id, pred.final_team_b_id];
+          let finalTeamPoints = 0;
+          for (const teamId of predictedFinalists) {
+            if (teamId != null && actualFinalists.includes(teamId)) finalTeamPoints += config.seasonFinalTeam;
+          }
+          await award("season_final_team", finalTeamPoints);
+        }
+        if (actualWinnerTeamId && pred.final_winner_team_id === actualWinnerTeamId) {
+          await award("season_final_winner", config.seasonFinalWinner);
+        }
+      } else {
+        const bottom3 = (pred.bottom3 as Record<string, number>) ?? {};
+        const bottom3Points = [1, 2, 3].reduce(
+          (sum, rank) => sum + computeSeasonPositionPoints(bottom3[String(rank)], rank, bottom3TeamIds, config),
+          0
+        );
+        await award("season_bottom3", bottom3Points);
 
-      if (season.actual_surprise_team_id && pred.surprise_team_id === season.actual_surprise_team_id) {
-        await award("season_surprise", config.seasonSurpriseTeam);
-      }
-      if (season.actual_flop_team_id && pred.flop_team_id === season.actual_flop_team_id) {
-        await award("season_flop", config.seasonFlopTeam);
+        if (season.actual_surprise_team_id && pred.surprise_team_id === season.actual_surprise_team_id) {
+          await award("season_surprise", config.seasonSurpriseTeam);
+        }
+        if (season.actual_flop_team_id && pred.flop_team_id === season.actual_flop_team_id) {
+          await award("season_flop", config.seasonFlopTeam);
+        }
       }
     }
 
-    const fullyResolved = Boolean(season.actual_surprise_team_id && season.actual_flop_team_id);
+    const fullyResolved = isCup
+      ? actualFinalists.length > 0
+      : Boolean(season.actual_surprise_team_id && season.actual_flop_team_id);
     if (fullyResolved) {
       await supabase.from("seasons").update({ points_processed_at: new Date().toISOString() }).eq("id", season.id);
     }

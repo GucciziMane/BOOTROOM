@@ -5,6 +5,10 @@ export interface PointConfig {
   seasonPositionPresence: number;
   seasonSurpriseTeam: number;
   seasonFlopTeam: number;
+  /** Pronostic finale (coupe à élimination directe, ex: Ligue des Champions) : par finaliste
+   * correctement deviné (jusqu'à 2), puis bonus si le vainnqueur est aussi le bon. */
+  seasonFinalTeam: number;
+  seasonFinalWinner: number;
 }
 
 /** Score exact = plein pot, bon résultat (victoire/nul/défaite) sans le score = petit bonus. */

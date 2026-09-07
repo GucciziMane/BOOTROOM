@@ -26,6 +26,16 @@ export async function saveSeasonPrediction(
   const topAssistId = parseTeamId(formData, "top_assist_player_id");
   const surpriseTeamId = parseTeamId(formData, "surprise_team_id");
   const flopTeamId = parseTeamId(formData, "flop_team_id");
+  const finalTeamAId = parseTeamId(formData, "final_team_a_id");
+  const finalTeamBId = parseTeamId(formData, "final_team_b_id");
+  const finalWinnerTeamId = parseTeamId(formData, "final_winner_team_id");
+
+  if (finalTeamAId && finalTeamBId && finalTeamAId === finalTeamBId) {
+    return { error: "Les deux finalistes doivent être deux équipes différentes.", success: false };
+  }
+  if (finalWinnerTeamId && finalWinnerTeamId !== finalTeamAId && finalWinnerTeamId !== finalTeamBId) {
+    return { error: "Le vainqueur de la finale doit être l'un des deux finalistes choisis.", success: false };
+  }
 
   const top3: Record<string, number> = {};
   const bottom3: Record<string, number> = {};
@@ -59,6 +69,9 @@ export async function saveSeasonPrediction(
       bottom3,
       surprise_team_id: surpriseTeamId,
       flop_team_id: flopTeamId,
+      final_team_a_id: finalTeamAId,
+      final_team_b_id: finalTeamBId,
+      final_winner_team_id: finalWinnerTeamId,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "user_id,season_id" }

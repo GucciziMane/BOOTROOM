@@ -31,6 +31,9 @@ interface Props {
     bottom3: Record<string, number>;
     surpriseTeamId: number | null;
     flopTeamId: number | null;
+    finalTeamAId: number | null;
+    finalTeamBId: number | null;
+    finalWinnerTeamId: number | null;
   };
 }
 
@@ -184,10 +187,82 @@ function TeamSelect({
   );
 }
 
+/** Finale (coupe à élimination directe) : 2 finalistes puis, seulement parmi eux, le vainqueur —
+ * pas de sens de proposer top3/flop3 séparés d'un classement qui n'existe pas dans ce format. */
+function FinalPredictionSection({
+  teams,
+  initialTeamAId,
+  initialTeamBId,
+  initialWinnerId,
+}: {
+  teams: TeamOption[];
+  initialTeamAId: number | null;
+  initialTeamBId: number | null;
+  initialWinnerId: number | null;
+}) {
+  const [teamA, setTeamA] = useState<number | "">(initialTeamAId ?? "");
+  const [teamB, setTeamB] = useState<number | "">(initialTeamBId ?? "");
+  const [winner, setWinner] = useState<number | "">(initialWinnerId ?? "");
+
+  const finalistIds = [teamA, teamB].filter((id): id is number => id !== "");
+  // Dérivé plutôt que réinitialisé via un effet : si le vainqueur choisi n'est plus l'un des deux
+  // finalistes actuels (changement d'équipe après coup), il redevient "aucun" directement au
+  // rendu — pas besoin de resynchroniser un état séparé après coup.
+  const winnerValue = winner !== "" && finalistIds.includes(winner) ? winner : "";
+
+  return (
+    <section>
+      <h2 className="mb-3 text-lg font-bold">Finale</h2>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-sm font-bold text-mute">Finaliste 1</label>
+          <TeamCombobox
+            teams={teams.filter((t) => t.id !== teamB)}
+            value={teamA}
+            onChange={setTeamA}
+            placeholder="Équipe..."
+          />
+          <input type="hidden" name="final_team_a_id" value={teamA} />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-bold text-mute">Finaliste 2</label>
+          <TeamCombobox
+            teams={teams.filter((t) => t.id !== teamA)}
+            value={teamB}
+            onChange={setTeamB}
+            placeholder="Équipe..."
+          />
+          <input type="hidden" name="final_team_b_id" value={teamB} />
+        </div>
+      </div>
+      <div className="mt-4">
+        <label className="mb-1 block text-sm font-bold text-mute">Vainqueur</label>
+        <select
+          value={winnerValue}
+          onChange={(e) => setWinner(e.target.value ? Number(e.target.value) : "")}
+          disabled={finalistIds.length < 2}
+          className={`${input} disabled:bg-cream disabled:text-mute`}
+        >
+          <option value="">{finalistIds.length < 2 ? "Choisis d'abord les 2 finalistes" : "Vainqueur..."}</option>
+          {finalistIds.map((id) => (
+            <option key={id} value={id}>
+              {teams.find((t) => t.id === id)?.name}
+            </option>
+          ))}
+        </select>
+        <input type="hidden" name="final_winner_team_id" value={winnerValue} />
+      </div>
+    </section>
+  );
+}
+
 const initialState: SaveSeasonPredictionState = { error: null, success: false };
 
 export function SeasonPredictionForm({ leagueCode, seasonId, teams, players, teamsCount, initial }: Props) {
   const [state, formAction, isPending] = useActionState(saveSeasonPrediction, initialState);
+  // Coupe à élimination directe : pas de flop3/équipe surprise/équipe flop (aucun sens sans
+  // classement final), remplacés par un pronostic de finale — voir FinalPredictionSection.
+  const isCup = leagueCode === "CL";
 
   return (
     <form action={formAction} className={`space-y-8 ${card}`}>
@@ -230,37 +305,48 @@ export function SeasonPredictionForm({ leagueCode, seasonId, teams, players, tea
         </div>
       </section>
 
-      <section>
-        <h2 className="mb-3 text-lg font-bold">Flop 3 du classement</h2>
-        <div className="grid gap-4 sm:grid-cols-3">
-          {[1, 2, 3].map((rank) => (
-            <div key={rank}>
-              <label className="mb-1 block text-sm font-bold text-mute">
-                {rank === 1 ? `${teamsCount}e (dernier)` : `${teamsCount - rank + 1}e`}
-              </label>
-              <TeamSelect
-                name={`bottom3_${rank}`}
-                teams={teams}
-                defaultTeamId={initial.bottom3[String(rank)] ?? null}
-              />
+      {isCup ? (
+        <FinalPredictionSection
+          teams={teams}
+          initialTeamAId={initial.finalTeamAId}
+          initialTeamBId={initial.finalTeamBId}
+          initialWinnerId={initial.finalWinnerTeamId}
+        />
+      ) : (
+        <>
+          <section>
+            <h2 className="mb-3 text-lg font-bold">Flop 3 du classement</h2>
+            <div className="grid gap-4 sm:grid-cols-3">
+              {[1, 2, 3].map((rank) => (
+                <div key={rank}>
+                  <label className="mb-1 block text-sm font-bold text-mute">
+                    {rank === 1 ? `${teamsCount}e (dernier)` : `${teamsCount - rank + 1}e`}
+                  </label>
+                  <TeamSelect
+                    name={`bottom3_${rank}`}
+                    teams={teams}
+                    defaultTeamId={initial.bottom3[String(rank)] ?? null}
+                  />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </section>
+          </section>
 
-      <section>
-        <h2 className="mb-3 text-lg font-bold">Équipe surprise & équipe flop</h2>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-sm font-bold text-mute">Équipe surprise</label>
-            <TeamSelect name="surprise_team_id" teams={teams} defaultTeamId={initial.surpriseTeamId} />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-bold text-mute">Équipe flop</label>
-            <TeamSelect name="flop_team_id" teams={teams} defaultTeamId={initial.flopTeamId} />
-          </div>
-        </div>
-      </section>
+          <section>
+            <h2 className="mb-3 text-lg font-bold">Équipe surprise & équipe flop</h2>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm font-bold text-mute">Équipe surprise</label>
+                <TeamSelect name="surprise_team_id" teams={teams} defaultTeamId={initial.surpriseTeamId} />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-bold text-mute">Équipe flop</label>
+                <TeamSelect name="flop_team_id" teams={teams} defaultTeamId={initial.flopTeamId} />
+              </div>
+            </div>
+          </section>
+        </>
+      )}
 
       {state.error && <p className="text-sm text-bad">{state.error}</p>}
       {state.success && <p className="text-sm text-good">Pronostics enregistrés.</p>}

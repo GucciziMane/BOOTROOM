@@ -51,7 +51,9 @@ export default async function LeagueSeasonPage({ params }: PageProps<"/leagues/[
       .order("name"),
     supabase
       .from("season_predictions")
-      .select("top_scorer_player_id, top_assist_player_id, top3, bottom3, surprise_team_id, flop_team_id")
+      .select(
+        "top_scorer_player_id, top_assist_player_id, top3, bottom3, surprise_team_id, flop_team_id, final_team_a_id, final_team_b_id, final_winner_team_id"
+      )
       .eq("user_id", user!.id)
       .eq("season_id", season.id)
       .maybeSingle(),
@@ -80,7 +82,7 @@ export default async function LeagueSeasonPage({ params }: PageProps<"/leagues/[
 
       {locked ? (
         <div className={card}>
-          <LockedSummary existing={existing ?? null} teams={teams} players={players} />
+          <LockedSummary existing={existing ?? null} teams={teams} players={players} isCup={code === "CL"} />
         </div>
       ) : (
         <SeasonPredictionForm
@@ -96,6 +98,9 @@ export default async function LeagueSeasonPage({ params }: PageProps<"/leagues/[
             bottom3: (existing?.bottom3 as Record<string, number>) ?? {},
             surpriseTeamId: existing?.surprise_team_id ?? null,
             flopTeamId: existing?.flop_team_id ?? null,
+            finalTeamAId: existing?.final_team_a_id ?? null,
+            finalTeamBId: existing?.final_team_b_id ?? null,
+            finalWinnerTeamId: existing?.final_winner_team_id ?? null,
           }}
         />
       )}
@@ -107,6 +112,7 @@ function LockedSummary({
   existing,
   teams,
   players,
+  isCup,
 }: {
   existing: {
     top_scorer_player_id: number | null;
@@ -115,9 +121,13 @@ function LockedSummary({
     bottom3: unknown;
     surprise_team_id: number | null;
     flop_team_id: number | null;
+    final_team_a_id: number | null;
+    final_team_b_id: number | null;
+    final_winner_team_id: number | null;
   } | null;
   teams: TeamOption[];
   players: PlayerOption[];
+  isCup: boolean;
 }) {
   if (!existing) {
     return <p className="text-mute">Tu n&apos;as pas soumis de pronostics avant le verrouillage.</p>;
@@ -142,18 +152,34 @@ function LockedSummary({
         <dt className="text-mute">Top 3</dt>
         <dd className="text-lg font-bold">{[1, 2, 3].map((r) => teamName(top3[String(r)])).join(", ")}</dd>
       </div>
-      <div>
-        <dt className="text-mute">Flop 3</dt>
-        <dd className="text-lg font-bold">{[1, 2, 3].map((r) => teamName(bottom3[String(r)])).join(", ")}</dd>
-      </div>
-      <div>
-        <dt className="text-mute">Équipe surprise</dt>
-        <dd className="text-lg font-bold">{teamName(existing.surprise_team_id)}</dd>
-      </div>
-      <div>
-        <dt className="text-mute">Équipe flop</dt>
-        <dd className="text-lg font-bold">{teamName(existing.flop_team_id)}</dd>
-      </div>
+      {isCup ? (
+        <div>
+          <dt className="text-mute">Finale</dt>
+          <dd className="text-lg font-bold">
+            {teamName(existing.final_team_a_id)} vs {teamName(existing.final_team_b_id)}
+            {existing.final_winner_team_id && (
+              <span className="ml-2 text-base font-normal text-mute">
+                (vainqueur : {teamName(existing.final_winner_team_id)})
+              </span>
+            )}
+          </dd>
+        </div>
+      ) : (
+        <>
+          <div>
+            <dt className="text-mute">Flop 3</dt>
+            <dd className="text-lg font-bold">{[1, 2, 3].map((r) => teamName(bottom3[String(r)])).join(", ")}</dd>
+          </div>
+          <div>
+            <dt className="text-mute">Équipe surprise</dt>
+            <dd className="text-lg font-bold">{teamName(existing.surprise_team_id)}</dd>
+          </div>
+          <div>
+            <dt className="text-mute">Équipe flop</dt>
+            <dd className="text-lg font-bold">{teamName(existing.flop_team_id)}</dd>
+          </div>
+        </>
+      )}
     </dl>
   );
 }

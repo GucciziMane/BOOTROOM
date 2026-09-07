@@ -60,7 +60,9 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
       ),
     supabase
       .from("season_predictions")
-      .select("top_scorer_player_id, top_assist_player_id, top3, bottom3, surprise_team_id, flop_team_id")
+      .select(
+        "top_scorer_player_id, top_assist_player_id, top3, bottom3, surprise_team_id, flop_team_id, final_team_a_id, final_team_b_id, final_winner_team_id"
+      )
       .eq("user_id", user!.id)
       .eq("season_id", season.id)
       .maybeSingle(),
@@ -124,6 +126,11 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
     addBadge(bottom3["3"], "💩3");
     addBadge(seasonPrediction.surprise_team_id, "🃏");
     addBadge(seasonPrediction.flop_team_id, "📉");
+    // Finale (coupe à élimination directe) : finaliste pronostiqué, 👑 en plus si aussi pronostiqué vainqueur.
+    for (const finalistId of [seasonPrediction.final_team_a_id, seasonPrediction.final_team_b_id]) {
+      if (finalistId == null) continue;
+      addBadge(finalistId, finalistId === seasonPrediction.final_winner_team_id ? "🏆👑" : "🏆");
+    }
   }
 
   return (
@@ -154,7 +161,9 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
       )}
       {locked && seasonPrediction && (
         <p className="mb-4 text-xs text-mute">
-          🎯 = ton top 3 pronostiqué · 💩 = ton flop 3 · 🃏 = ta surprise · 📉 = ton flop —{" "}
+          {code === "CL"
+            ? "🎯 = ton top 3 pronostiqué · 🏆 = ton finaliste pronostiqué · 👑 = ton vainqueur pronostiqué —"
+            : "🎯 = ton top 3 pronostiqué · 💩 = ton flop 3 · 🃏 = ta surprise · 📉 = ton flop —"}{" "}
           <Link href={`/leagues/${code}`} className={linkMuted}>
             détail de tes pronostics
           </Link>
