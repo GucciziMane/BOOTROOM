@@ -83,3 +83,14 @@ export function matchPlayerByName<P extends { id: number; name: string }>(
 
   return matches.length === 1 ? matches[0] : null;
 }
+
+/**
+ * Clé de dédup/rapprochement d'un but entre deux passages (insertion, réconciliation des buts
+ * annulés) : par id de joueur quand résolu, sinon par nom brut de la source — un but contre son
+ * camp ou marqué par un joueur pas encore synchronisé (transfert récent) n'a pas d'id, mais reste
+ * comparable d'un tick à l'autre par son nom tel que fourni par la source. Partagé entre live-tick
+ * et sync-fixtures, qui écrivent tous les deux dans match_goals.
+ */
+export function goalKey(playerId: number | null, rawName: string | null, minute: number | null): string {
+  return playerId != null ? `id:${playerId}:${minute}` : `name:${rawName}:${minute}`;
+}

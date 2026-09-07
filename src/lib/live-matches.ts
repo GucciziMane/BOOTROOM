@@ -59,7 +59,7 @@ export async function getLiveMatches(supabase: SupabaseClient<Database>): Promis
     supabase.from("teams").select("id, name, logo_url").in("id", teamIds),
     supabase
       .from("match_goals")
-      .select("match_id, team_id, minute, player_id, assist_player_id")
+      .select("match_id, team_id, minute, player_id, assist_player_id, scorer_name, assist_name")
       .in("match_id", matchIds)
       .order("minute", { ascending: true }),
   ]);
@@ -79,8 +79,13 @@ export async function getLiveMatches(supabase: SupabaseClient<Database>): Promis
     if (!goalsByMatchId.has(g.match_id)) goalsByMatchId.set(g.match_id, []);
     goalsByMatchId.get(g.match_id)!.push({
       minute: g.minute,
-      scorerName: g.player_id != null ? (playerNameById.get(g.player_id) ?? "?") : "But contre son camp",
-      assistName: g.assist_player_id != null ? (playerNameById.get(g.assist_player_id) ?? null) : null,
+      // player_id null : but contre son camp, ou joueur pas encore synchronisé (transfert récent)
+      // — dans les deux cas on affiche le nom brut fourni par la source plutôt que de perdre le
+      // but (voir migration 0039), "?" restant un dernier repli pour d'anciennes lignes antérieures
+      // à cette migration qui n'auraient ni l'un ni l'autre.
+      scorerName: g.player_id != null ? (playerNameById.get(g.player_id) ?? g.scorer_name ?? "?") : (g.scorer_name ?? "?"),
+      assistName:
+        g.assist_player_id != null ? (playerNameById.get(g.assist_player_id) ?? g.assist_name ?? null) : g.assist_name,
       teamSide: match && g.team_id === match.home_team_id ? "home" : "away",
     });
   }

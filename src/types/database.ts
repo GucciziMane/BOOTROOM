@@ -148,6 +148,10 @@ export interface Database {
           player_id: number | null;
           assist_player_id: number | null;
           minute: number | null;
+          /** Nom brut fourni par la source, y compris quand player_id est null (joueur absent de
+           * l'effectif synchronisé) — voir migration 0039. */
+          scorer_name: string | null;
+          assist_name: string | null;
         };
         Insert: Partial<Database["public"]["Tables"]["match_goals"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["match_goals"]["Row"]>;

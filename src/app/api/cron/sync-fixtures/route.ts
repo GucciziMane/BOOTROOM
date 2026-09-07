@@ -320,7 +320,17 @@ async function syncGoalEvents(
 
   const saveMatchEvents = async (
     matchId: number,
-    goalRows: Array<{ match_id: number; team_id: number; player_id: number; assist_player_id: number | null; minute: number | null }>,
+    goalRows: Array<{
+      match_id: number;
+      team_id: number;
+      // null : joueur absent de l'effectif synchronisé (transfert récent), ou but contre son camp
+      // (le buteur appartient à l'équipe qui encaisse, pas celle créditée) — voir migration 0039.
+      player_id: number | null;
+      assist_player_id: number | null;
+      minute: number | null;
+      scorer_name: string;
+      assist_name: string | null;
+    }>,
     subRows: Array<{ match_id: number; team_id: number; player_out_id: number | null; player_in_id: number | null; minute: number | null }> = []
   ) => {
     await supabase.from("match_goals").delete().eq("match_id", matchId);
@@ -369,20 +379,19 @@ async function syncGoalEvents(
 
         if (espnMatch) {
           const { goals, substitutions } = await getEspnMatchEvents(espnSlug, espnMatch.id);
-          const goalRows = goals.flatMap((g) => {
+          const goalRows = goals.map((g) => {
             const teamId = teamNamesMatch(g.teamName, homeName) ? match.home_team_id : match.away_team_id;
             const scorer = matchPlayerByName(g.scorerName, playersByTeamId.get(teamId) ?? []);
             const assist = g.assistName ? matchPlayerByName(g.assistName, playersByTeamId.get(teamId) ?? []) : null;
-            if (!scorer) return [];
-            return [
-              {
-                match_id: match.id,
-                team_id: teamId,
-                player_id: scorer.id,
-                assist_player_id: assist?.id ?? null,
-                minute: g.minute,
-              },
-            ];
+            return {
+              match_id: match.id,
+              team_id: teamId,
+              player_id: scorer?.id ?? null,
+              assist_player_id: assist?.id ?? null,
+              minute: g.minute,
+              scorer_name: g.scorerName,
+              assist_name: g.assistName,
+            };
           });
           const subRows = substitutions.flatMap((s) => {
             const teamId = teamNamesMatch(s.teamName, homeName) ? match.home_team_id : match.away_team_id;
@@ -460,14 +469,15 @@ async function syncGoalEvents(
           const teamId = teamNamesMatch(e.team.name, homeName) ? match.home_team_id : match.away_team_id;
           const scorer = matchPlayerByName(e.player, playersByTeamId.get(teamId) ?? []);
           const assist = e.assist ? matchPlayerByName(e.assist, playersByTeamId.get(teamId) ?? []) : null;
-          if (!scorer) return [];
           return [
             {
               match_id: match.id,
               team_id: teamId,
-              player_id: scorer.id,
+              player_id: scorer?.id ?? null,
               assist_player_id: assist?.id ?? null,
               minute: parseInt(e.time, 10),
+              scorer_name: e.player,
+              assist_name: e.assist ?? null,
             },
           ];
         });

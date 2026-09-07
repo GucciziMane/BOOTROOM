@@ -3,7 +3,7 @@ import { Client as QStashClient } from "@upstash/qstash";
 import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { getEspnScoreboard, getEspnMatchEvents, ESPN_LEAGUE_SLUG } from "@/lib/espn/client";
-import { teamNamesMatch, matchPlayerByName } from "@/lib/sync/name-match";
+import { teamNamesMatch, matchPlayerByName, goalKey } from "@/lib/sync/name-match";
 import { sendPushBroadcastWithOverrides, sendPushToUserIdsWithOverrides } from "@/lib/push/server";
 import { SYSTEM_SENDER_NAME } from "@/lib/system-sender";
 import { loadPointConfig, processFinishedMatches, type ServiceClient } from "@/app/api/cron/process-scoring/route";
@@ -131,10 +131,10 @@ export async function GET(request: NextRequest) {
     // un match qui n'a pas encore commencé, déjà filtré ci-dessus).
     if (espnMatch.status === "live" || espnMatch.status === "finished") {
       const [{ data: existingGoals }, { data: existingSubs }] = await Promise.all([
-        supabase.from("match_goals").select("id, player_id, assist_player_id, minute").eq("match_id", match.id),
+        supabase.from("match_goals").select("id, player_id, assist_player_id, minute, scorer_name").eq("match_id", match.id),
         supabase.from("match_substitutions").select("player_out_id, player_in_id").eq("match_id", match.id),
       ]);
-      const existingKeys = new Set((existingGoals ?? []).map((g) => `${g.player_id}:${g.minute}`));
+      const existingKeys = new Set((existingGoals ?? []).map((g) => goalKey(g.player_id, g.scorer_name, g.minute)));
       const existingSubKeys = new Set((existingSubs ?? []).map((s) => `${s.player_out_id}:${s.player_in_id}`));
 
       let goals: Awaited<ReturnType<typeof getEspnMatchEvents>>["goals"] = [];
@@ -175,11 +175,25 @@ export async function GET(request: NextRequest) {
         const teamId = teamNamesMatch(g.teamName, home.name) ? match.home_team_id : match.away_team_id;
         const candidates = teamId === match.home_team_id ? homePlayers : awayPlayers;
         const scorer = matchPlayerByName(g.scorerName, candidates);
-        if (!scorer) return [];
-        const key = `${scorer.id}:${g.minute}`;
+        const key = goalKey(scorer?.id ?? null, g.scorerName, g.minute);
         if (existingKeys.has(key)) return [];
+        // Un but contre son camp (le buteur appartient à l'équipe qui ENCAISSE, pas celle créditée
+        // du but — `candidates` cherche dans le mauvais effectif) ou un transfert tout juste arrivé
+        // qu'football-data.org n'a pas encore synchronisé finissaient tous les deux par échouer
+        // cette recherche : on garde le but quand même (player_id null, nom brut conservé) plutôt
+        // que de le perdre silencieusement — voir migration 0039.
         const assist = g.assistName ? matchPlayerByName(g.assistName, candidates) : null;
-        return [{ match_id: match.id, team_id: teamId, player_id: scorer.id, assist_player_id: assist?.id ?? null, minute: g.minute, scorerName: scorer.name }];
+        return [
+          {
+            match_id: match.id,
+            team_id: teamId,
+            player_id: scorer?.id ?? null,
+            assist_player_id: assist?.id ?? null,
+            minute: g.minute,
+            scorerName: g.scorerName,
+            assistName: g.assistName,
+          },
+        ];
       });
 
       if (newGoalRows.length > 0) {
@@ -190,6 +204,8 @@ export async function GET(request: NextRequest) {
             player_id: row.player_id,
             assist_player_id: row.assist_player_id,
             minute: row.minute,
+            scorer_name: row.scorerName,
+            assist_name: row.assistName,
           }))
         );
         // "Garantie buteur/passeur" (voir process-scoring) : le remplaçant entré à la place du
@@ -213,15 +229,15 @@ export async function GET(request: NextRequest) {
       // entre deux passages n'a plus lieu d'être affiché.
       if (fetchSucceeded) {
         const currentEspnGoalKeys = new Set(
-          goals.flatMap((g) => {
+          goals.map((g) => {
             const teamId = teamNamesMatch(g.teamName, home.name) ? match.home_team_id : match.away_team_id;
             const candidates = teamId === match.home_team_id ? homePlayers : awayPlayers;
             const scorer = matchPlayerByName(g.scorerName, candidates);
-            return scorer ? [`${scorer.id}:${g.minute}`] : [];
+            return goalKey(scorer?.id ?? null, g.scorerName, g.minute);
           })
         );
         const cancelledGoalIds = (existingGoals ?? [])
-          .filter((g) => !currentEspnGoalKeys.has(`${g.player_id}:${g.minute}`))
+          .filter((g) => !currentEspnGoalKeys.has(goalKey(g.player_id, g.scorer_name, g.minute)))
           .map((g) => g.id);
         if (cancelledGoalIds.length > 0) {
           await supabase.from("match_goals").delete().in("id", cancelledGoalIds);
@@ -269,7 +285,10 @@ export async function GET(request: NextRequest) {
 interface NewGoal {
   match_id: number;
   team_id: number;
-  player_id: number;
+  // null : joueur absent de l'effectif synchronisé (transfert récent, ou but contre son camp —
+  // voir migration 0039). Ne peut alors correspondre à aucun pronostic buteur/passeur, ce joueur
+  // n'ayant jamais pu être proposé dans la liste au moment du pronostic.
+  player_id: number | null;
   assist_player_id: number | null;
   minute: number | null;
   scorerName: string;
@@ -308,13 +327,17 @@ async function notifyGoal(
   // Garantie buteur/passeur : un pronostic sur le joueur remplacé compte aussi si c'est son
   // remplaçant qui marque/passe à sa place (voir process-scoring pour le calcul définitif après
   // coup — cette notif temps réel applique la même règle).
-  const scorerReplacedFor = playerInToOut.get(goal.player_id);
+  const scorerReplacedFor = goal.player_id != null ? playerInToOut.get(goal.player_id) : undefined;
   const assistReplacedFor = goal.assist_player_id != null ? playerInToOut.get(goal.assist_player_id) : undefined;
 
   const overrides = new Map<string, { title: string; body: string; url?: string }>();
   for (const pred of predictions ?? []) {
+    // goal.player_id == null (joueur non résolu) ne peut correspondre à AUCUN pronostic — sans ce
+    // garde-fou, "personne n'a pronostiqué de buteur" (predicted_scorer_player_id aussi null) se
+    // lirait à tort comme un pronostic gagnant.
     const scorerHit =
-      pred.predicted_scorer_player_id === goal.player_id || pred.predicted_scorer_player_id === scorerReplacedFor;
+      goal.player_id != null &&
+      (pred.predicted_scorer_player_id === goal.player_id || pred.predicted_scorer_player_id === scorerReplacedFor);
     const assistHit =
       goal.assist_player_id != null &&
       (pred.predicted_assist_player_id === goal.assist_player_id || pred.predicted_assist_player_id === assistReplacedFor);
