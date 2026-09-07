@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Client as QStashClient } from "@upstash/qstash";
 import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { getEspnScoreboard, getEspnMatchEvents, ESPN_LEAGUE_SLUG } from "@/lib/espn/client";
@@ -13,6 +14,35 @@ import { loadPointConfig, processFinishedMatches, type ServiceClient } from "@/a
 const LIVE_WINDOW_MS = 150 * 60 * 1000;
 
 const APP_URL = "https://bootroom.online";
+
+// QStash ne planifie pas plus finement que la minute (syntaxe cron standard) : le schedule
+// "* * * * *" est déjà le maximum. Pour se rapprocher davantage du direct pendant qu'un match est
+// réellement en cours, ce tick s'auto-replanifie 3 fois dans la minute qui suit (toutes les 15s)
+// via un message QStash à retardement — repli sur le rythme normal (60s) dès qu'aucun match n'est
+// live, pour ne pas payer ce surcoût le reste du temps (le point du filtre "fenêtre" en haut).
+const FOLLOWUP_DELAYS_SECONDS = [15, 30, 45];
+
+async function scheduleFollowUpTicks(): Promise<void> {
+  const token = process.env.QSTASH_TOKEN;
+  const cronSecret = process.env.CRON_SECRET;
+  if (!token || !cronSecret) return;
+
+  const client = new QStashClient({ token });
+  await Promise.all(
+    FOLLOWUP_DELAYS_SECONDS.map((delay) =>
+      client.publish({
+        url: `${APP_URL}/api/cron/live-tick`,
+        method: "GET",
+        headers: { Authorization: `Bearer ${cronSecret}` },
+        delay,
+        // Un tick de suivi par tranche de 15s de la même minute, pas un par appel : deux
+        // exécutions du cron régulier qui se chevaucheraient (peu probable mais pas exclu)
+        // ne doivent pas empiler leurs relances respectives.
+        deduplicationId: `bootroom-live-tick-followup-${Math.floor(Date.now() / 60_000)}-${delay}`,
+      })
+    )
+  );
+}
 
 export async function GET(request: NextRequest) {
   const unauthorized = requireCronSecret(request);
@@ -180,6 +210,14 @@ export async function GET(request: NextRequest) {
     const result = await processFinishedMatches(supabase, config, newlyFinishedMatchIds);
     scoredMatches = result.processed ?? 0;
     await notifyFinalResults(supabase, newlyFinishedMatchIds, teamById);
+  }
+
+  if (liveCount > 0) {
+    try {
+      await scheduleFollowUpTicks();
+    } catch {
+      // Pas grave : le prochain tick régulier (dans la minute) reprendra la main normalement.
+    }
   }
 
   return NextResponse.json({

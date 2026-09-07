@@ -11,12 +11,15 @@ import {
 } from "@/lib/league-card-theme";
 import { LEAGUE_BACKGROUND } from "@/lib/league-background";
 
-// Poll plutôt que Supabase Realtime : le back (cron live-tick) n'écrit de toute façon qu'une
-// fois par minute, donc un polling à ce rythme reste largement "en direct" à l'échelle humaine,
-// pour une fraction de la complexité (pas de résolution de noms de joueurs à partir d'un payload
-// realtime partiel, pas d'auth de canal à hydrater). Se relance même quand la liste est vide,
-// pour détecter un match qui démarre sans que l'utilisateur ait besoin de recharger la page.
-const POLL_MS = 20_000;
+// Poll plutôt que Supabase Realtime : pour une fraction de la complexité (pas de résolution de
+// noms de joueurs à partir d'un payload realtime partiel, pas d'auth de canal à hydrater). Se
+// relance même quand la liste est vide, pour détecter un match qui démarre sans que l'utilisateur
+// ait besoin de recharger la page.
+//
+// Le back (cron live-tick) s'auto-replanifie toutes les 15s pendant qu'un match est réellement en
+// cours (voir route.ts) : un polling client plus lent que ça laisserait une donnée fraîche
+// attendre sans raison avant d'être affichée.
+const POLL_MS = 10_000;
 
 export function LiveMatchesBanner({ initialMatches }: { initialMatches: LiveMatchDto[] }) {
   const [matches, setMatches] = useState(initialMatches);
