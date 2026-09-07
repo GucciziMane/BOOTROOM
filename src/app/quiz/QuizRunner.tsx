@@ -34,6 +34,9 @@ const CATEGORY_LABEL: Record<string, string> = {
   guess_crest: "Devine le blason",
   guess_player_team: "Dans quel club ?",
   guess_match_score: "Score du match",
+  guess_player_position: "Quel poste ?",
+  league_top_scorer: "Meilleur buteur",
+  guess_match_scorer: "Qui a marqué ?",
 };
 
 const DIFFICULTY_LABEL: Record<string, string> = { easy: "Facile", medium: "Moyen", hard: "Difficile" };

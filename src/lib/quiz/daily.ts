@@ -10,7 +10,10 @@ export type QuizCategory =
   | "hidden_teammate"
   | "guess_crest"
   | "guess_player_team"
-  | "guess_match_score";
+  | "guess_match_score"
+  | "guess_player_position"
+  | "league_top_scorer"
+  | "guess_match_scorer";
 export type QuizDifficulty = "easy" | "medium" | "hard";
 
 export interface DailyQuestionFull {
@@ -166,15 +169,24 @@ interface TeamLite {
   logo_url: string | null;
 }
 
+const POSITION_LABEL: Record<string, string> = {
+  Goalkeeper: "Gardien",
+  Defender: "Défenseur",
+  Midfielder: "Milieu",
+  Attacker: "Attaquant",
+};
+
 interface PlayerLite {
   id: number;
   name: string;
   team_id: number;
   photo_url: string | null;
+  position: string | null;
 }
 
 interface LeagueData {
   leagueIds: number[];
+  leagueNameById: Map<number, string>;
   teams: TeamLite[];
   players: PlayerLite[];
   playersByTeam: Map<number, Array<{ id: number; name: string }>>;
@@ -182,6 +194,7 @@ interface LeagueData {
 
 interface MatchRow {
   id: number;
+  league_id: number;
   home_team_id: number;
   away_team_id: number;
   home_score: number;
@@ -191,9 +204,11 @@ interface MatchRow {
 
 /** Charge une seule fois les données réelles (effectifs, blasons) utilisées par tous les générateurs dynamiques. */
 async function fetchLeagueData(supabase: ServiceClient): Promise<LeagueData> {
-  const { data: leagues } = await supabase.from("leagues").select("id").eq("active", true);
+  const { data: leagues } = await supabase.from("leagues").select("id, name").eq("active", true);
   const leagueIds = (leagues ?? []).map((l) => l.id);
-  if (leagueIds.length === 0) return { leagueIds: [], teams: [], players: [], playersByTeam: new Map() };
+  const leagueNameById = new Map((leagues ?? []).map((l) => [l.id, l.name]));
+  if (leagueIds.length === 0)
+    return { leagueIds: [], leagueNameById, teams: [], players: [], playersByTeam: new Map() };
 
   // .order("id") est indispensable : sans ordre explicite, Postgres peut renvoyer les lignes dans
   // un ordre différent d'un appel à l'autre, ce qui casserait le mélange déterministe (la page
@@ -205,7 +220,7 @@ async function fetchLeagueData(supabase: ServiceClient): Promise<LeagueData> {
     .order("id", { ascending: true });
   const { data: players } = await supabase
     .from("players")
-    .select("id, name, team_id, photo_url")
+    .select("id, name, team_id, photo_url, position")
     .in(
       "team_id",
       (teams ?? []).map((t) => t.id)
@@ -219,7 +234,7 @@ async function fetchLeagueData(supabase: ServiceClient): Promise<LeagueData> {
     playersByTeam.get(p.team_id)!.push({ id: p.id, name: p.name });
   }
 
-  return { leagueIds, teams: teams ?? [], players: players ?? [], playersByTeam };
+  return { leagueIds, leagueNameById, teams: teams ?? [], players: players ?? [], playersByTeam };
 }
 
 /** Matchs terminés avant le jour du quiz — la borne évite qu'un match en cours ne change de statut
@@ -228,7 +243,7 @@ async function fetchFinishedMatches(supabase: ServiceClient, leagueIds: number[]
   if (leagueIds.length === 0) return [];
   const { data } = await supabase
     .from("matches")
-    .select("id, home_team_id, away_team_id, home_score, away_score, matchday")
+    .select("id, league_id, home_team_id, away_team_id, home_score, away_score, matchday")
     .in("league_id", leagueIds)
     .eq("status", "finished")
     .not("home_score", "is", null)
@@ -236,6 +251,25 @@ async function fetchFinishedMatches(supabase: ServiceClient, leagueIds: number[]
     .lt("kickoff_at", `${quizDate}T00:00:00Z`)
     .order("id", { ascending: true });
   return (data ?? []) as MatchRow[];
+}
+
+interface GoalRow {
+  match_id: number;
+  team_id: number;
+  player_id: number | null;
+}
+
+/** Buts des matchs terminés déjà chargés — but sans player_id (transfert non synchronisé, but
+ * contre son camp — voir migration 0039) ignoré : il ne peut être crédité à aucun joueur précis. */
+async function fetchGoalsForMatches(supabase: ServiceClient, matchIds: number[]): Promise<GoalRow[]> {
+  if (matchIds.length === 0) return [];
+  const { data } = await supabase
+    .from("match_goals")
+    .select("match_id, team_id, player_id")
+    .in("match_id", matchIds)
+    .not("player_id", "is", null)
+    .order("id", { ascending: true });
+  return (data ?? []) as GoalRow[];
 }
 
 /** "Ces 3 joueurs jouent dans la même équipe, qui est le 4e ?" — généré depuis les vrais effectifs. */
@@ -394,20 +428,197 @@ function genGuessMatchScore(
   };
 }
 
-type DynamicType = "hidden_teammate" | "guess_crest" | "guess_player_team" | "guess_match_score";
-const ALL_DYNAMIC_TYPES: DynamicType[] = ["hidden_teammate", "guess_crest", "guess_player_team", "guess_match_score"];
+/** "Quel est le poste de ce joueur ?" — généré depuis les vrais effectifs (players.position). */
+function genGuessPlayerPosition(
+  data: LeagueData,
+  position: number,
+  seedStr: string,
+  excludePlayerIds: Set<number>
+): DailyQuestionFull | null {
+  const eligiblePlayers = data.players.filter(
+    (p) => p.position && POSITION_LABEL[p.position] && !excludePlayerIds.has(p.id)
+  );
+  if (eligiblePlayers.length === 0) return null;
+
+  const player = seededShuffle(eligiblePlayers, `${seedStr}-player`)[0];
+  excludePlayerIds.add(player.id);
+  const correctLabel = POSITION_LABEL[player.position!];
+  // Toujours exactement 3 décoys : POSITION_LABEL n'a que 4 valeurs possibles au total.
+  const decoyLabels = Object.values(POSITION_LABEL).filter((l) => l !== correctLabel);
+  const choices = seededShuffle([correctLabel, ...decoyLabels], `${seedStr}-order`);
+  const correctIndex = choices.indexOf(correctLabel);
+  const team = data.teams.find((t) => t.id === player.team_id);
+
+  return {
+    position,
+    category: "guess_player_position",
+    difficulty: "easy",
+    question: `Quel est le poste de ${player.name}${team ? ` (${team.name})` : ""} ?`,
+    teamLogoUrl: player.photo_url,
+    choices,
+    correctIndex,
+    explanation: `${player.name} évolue au poste de ${correctLabel.toLowerCase()}.`,
+  };
+}
+
+/** "Qui est l'actuel meilleur buteur de ce championnat ?" — agrégé depuis les vrais buts déjà
+ * enregistrés cette saison (match_goals). Décoys : les buteurs suivants au classement, plus
+ * crédibles que des noms au hasard. */
+function genLeagueTopScorer(
+  data: LeagueData,
+  matches: MatchRow[],
+  goals: GoalRow[],
+  position: number,
+  seedStr: string,
+  excludeLeagueIds: Set<number>
+): DailyQuestionFull | null {
+  const leagueIdByMatchId = new Map(matches.map((m) => [m.id, m.league_id]));
+  const goalsByLeagueAndPlayer = new Map<number, Map<number, number>>();
+  for (const g of goals) {
+    if (g.player_id == null) continue;
+    const leagueId = leagueIdByMatchId.get(g.match_id);
+    if (leagueId == null) continue;
+    if (!goalsByLeagueAndPlayer.has(leagueId)) goalsByLeagueAndPlayer.set(leagueId, new Map());
+    const perPlayer = goalsByLeagueAndPlayer.get(leagueId)!;
+    perPlayer.set(g.player_id, (perPlayer.get(g.player_id) ?? 0) + 1);
+  }
+
+  // >= 4 buteurs distincts : il faut de quoi fournir 3 décoys en plus du bon buteur.
+  const eligibleLeagueIds = [...goalsByLeagueAndPlayer.keys()].filter(
+    (id) => !excludeLeagueIds.has(id) && goalsByLeagueAndPlayer.get(id)!.size >= 4
+  );
+  if (eligibleLeagueIds.length === 0) return null;
+
+  const leagueId = seededShuffle(eligibleLeagueIds, `${seedStr}-league`)[0];
+  excludeLeagueIds.add(leagueId);
+  const leagueName = data.leagueNameById.get(leagueId);
+  if (!leagueName) return null;
+
+  const ranked = [...goalsByLeagueAndPlayer.get(leagueId)!.entries()].sort((a, b) => b[1] - a[1]);
+  const topCount = ranked[0][1];
+  // Égalité en tête : très courante tôt dans la saison (peu de journées jouées, beaucoup de
+  // joueurs à 2-3 buts) — exiger un meilleur buteur unique ferait échouer ce type de question
+  // presque tout le temps. On désigne un des co-leaders (choix stable via la seed) comme bonne
+  // réponse, et on exclut TOUS les co-leaders des décoys : un décoy doit avoir strictement moins
+  // de buts, sans quoi il serait tout aussi "correct" que la réponse retenue.
+  const topScorerIds = ranked.filter(([, count]) => count === topCount).map(([id]) => id);
+  const topPlayerId = seededShuffle(topScorerIds, `${seedStr}-tie-break`)[0];
+  const topPlayer = data.players.find((p) => p.id === topPlayerId);
+  if (!topPlayer) return null;
+
+  const decoyPlayers = ranked
+    .filter(([, count]) => count < topCount)
+    .slice(0, 3)
+    .map(([id]) => data.players.find((p) => p.id === id))
+    .filter((p): p is PlayerLite => !!p);
+  if (decoyPlayers.length < 3) return null;
+
+  const choiceObjs = seededShuffle([topPlayer, ...decoyPlayers], `${seedStr}-order`);
+  const correctIndex = choiceObjs.findIndex((p) => p.id === topPlayer.id);
+  const tied = topScorerIds.length > 1;
+
+  return {
+    position,
+    category: "league_top_scorer",
+    difficulty: "hard",
+    question: tied
+      ? `Qui fait partie des meilleurs buteurs actuels de ${leagueName} cette saison ?`
+      : `Qui est l'actuel meilleur buteur de ${leagueName} cette saison ?`,
+    teamLogoUrl: null,
+    choices: choiceObjs.map((p) => p.name),
+    correctIndex,
+    explanation: tied
+      ? `${topPlayer.name} co-domine le classement avec ${topCount} buts.`
+      : `${topPlayer.name} est en tête avec ${topCount} but${topCount > 1 ? "s" : ""}.`,
+  };
+}
+
+/** "Qui a marqué pour cette équipe dans ce match ?" — uniquement pour un match où l'équipe visée
+ * n'a marqué qu'une seule fois, sans quoi plusieurs réponses seraient valables. */
+function genGuessMatchScorer(
+  data: LeagueData,
+  matches: MatchRow[],
+  goals: GoalRow[],
+  teamsById: Map<number, TeamLite>,
+  position: number,
+  seedStr: string,
+  excludeGoalKeys: Set<string>
+): DailyQuestionFull | null {
+  const matchById = new Map(matches.map((m) => [m.id, m]));
+  const goalCountByTeamMatch = new Map<string, number>();
+  for (const g of goals) {
+    if (g.player_id == null) continue;
+    const key = `${g.match_id}:${g.team_id}`;
+    goalCountByTeamMatch.set(key, (goalCountByTeamMatch.get(key) ?? 0) + 1);
+  }
+
+  const eligibleGoals = goals.filter((g) => {
+    if (g.player_id == null) return false;
+    if (excludeGoalKeys.has(`${g.match_id}:${g.player_id}`)) return false;
+    if ((goalCountByTeamMatch.get(`${g.match_id}:${g.team_id}`) ?? 0) !== 1) return false;
+    if (!matchById.has(g.match_id)) return false;
+    return (data.playersByTeam.get(g.team_id)?.length ?? 0) >= 4;
+  });
+  if (eligibleGoals.length === 0) return null;
+
+  const goal = seededShuffle(eligibleGoals, `${seedStr}-goal`)[0];
+  excludeGoalKeys.add(`${goal.match_id}:${goal.player_id}`);
+  const match = matchById.get(goal.match_id)!;
+  const scorer = data.players.find((p) => p.id === goal.player_id);
+  const home = teamsById.get(match.home_team_id);
+  const away = teamsById.get(match.away_team_id);
+  const scoringTeam = teamsById.get(goal.team_id);
+  if (!scorer || !home || !away || !scoringTeam) return null;
+
+  const teammates = (data.playersByTeam.get(goal.team_id) ?? []).filter((p) => p.id !== scorer.id);
+  const decoys = seededShuffle(teammates, `${seedStr}-decoys`).slice(0, 3);
+  if (decoys.length < 3) return null;
+
+  const choiceObjs = seededShuffle([{ id: scorer.id, name: scorer.name }, ...decoys], `${seedStr}-order`);
+  const correctIndex = choiceObjs.findIndex((c) => c.id === scorer.id);
+
+  return {
+    position,
+    category: "guess_match_scorer",
+    difficulty: "medium",
+    question: `Qui a marqué pour ${scoringTeam.name} lors du match ${home.name} ${match.home_score}-${match.away_score} ${away.name} ?`,
+    teamLogoUrl: scoringTeam.logo_url,
+    choices: choiceObjs.map((c) => c.name),
+    correctIndex,
+    explanation: `${scorer.name} est l'auteur de ce but pour ${scoringTeam.name}.`,
+  };
+}
+
+type DynamicType =
+  | "hidden_teammate"
+  | "guess_crest"
+  | "guess_player_team"
+  | "guess_match_score"
+  | "guess_player_position"
+  | "league_top_scorer"
+  | "guess_match_scorer";
+const ALL_DYNAMIC_TYPES: DynamicType[] = [
+  "hidden_teammate",
+  "guess_crest",
+  "guess_player_team",
+  "guess_match_score",
+  "guess_player_position",
+  "league_top_scorer",
+  "guess_match_scorer",
+];
 
 // Composition du "sac" de types dynamiques : mélangé différemment chaque jour et distribué aux 7
-// positions dynamiques, ce qui garantit un mélange varié tous les jours sans jamais faire reposer
-// la majorité du quiz sur le "coéquipier caché" (1 occurrence sur 7 ici, contre les autres x2).
+// positions dynamiques. Un de chaque type désormais (7 types pour 7 créneaux) : le fallback
+// ci-dessous couvre les jours où un type précis n'a pas assez de données (ex: league_top_scorer
+// tôt en saison), donc pas besoin de doubler les types les plus fiables pour "assurer le coup".
 const DYNAMIC_TYPE_POOL: DynamicType[] = [
   "guess_crest",
-  "guess_crest",
   "guess_player_team",
-  "guess_player_team",
-  "guess_match_score",
   "guess_match_score",
   "hidden_teammate",
+  "guess_player_position",
+  "league_top_scorer",
+  "guess_match_scorer",
 ];
 
 interface DynamicRow {
@@ -461,16 +672,23 @@ async function getOrGenerateDynamicQuestions(
 
   const leagueData = await fetchLeagueData(supabase);
   const matches = await fetchFinishedMatches(supabase, leagueData.leagueIds, quizDate);
+  const goals = await fetchGoalsForMatches(
+    supabase,
+    matches.map((m) => m.id)
+  );
   const teamsById = new Map(leagueData.teams.map((t) => [t.id, t]));
   const typeOrder = seededShuffle(DYNAMIC_TYPE_POOL, `${quizDate}-dynamic-order`);
 
-  // Un même type peut tomber sur plusieurs positions le même jour (le sac en contient 2 pour
-  // crest/player-team/match-score) : ces ensembles, partagés entre les appels, empêchent deux
-  // positions du même type de retomber sur la même équipe/joueur/match ce jour-là.
+  // Un même type peut tomber sur plusieurs positions le même jour (fallback compris, si un autre
+  // type échoue) : ces ensembles, partagés entre les appels, empêchent deux positions du même type
+  // de retomber sur la même équipe/joueur/match/championnat ce jour-là.
   const usedTeamIdsForCrest = new Set<number>();
   const usedTeamIdsForHiddenTeammate = new Set<number>();
   const usedPlayerIdsForPlayerTeam = new Set<number>();
   const usedMatchIds = new Set<number>();
+  const usedPlayerIdsForPosition = new Set<number>();
+  const usedLeagueIdsForTopScorer = new Set<number>();
+  const usedGoalKeysForMatchScorer = new Set<string>();
 
   const generateByType = (type: DynamicType, position: number, seedStr: string): DailyQuestionFull | null => {
     switch (type) {
@@ -482,6 +700,12 @@ async function getOrGenerateDynamicQuestions(
         return genGuessPlayerTeam(leagueData, position, seedStr, usedPlayerIdsForPlayerTeam);
       case "guess_match_score":
         return genGuessMatchScore(matches, teamsById, position, seedStr, usedMatchIds);
+      case "guess_player_position":
+        return genGuessPlayerPosition(leagueData, position, seedStr, usedPlayerIdsForPosition);
+      case "league_top_scorer":
+        return genLeagueTopScorer(leagueData, matches, goals, position, seedStr, usedLeagueIdsForTopScorer);
+      case "guess_match_scorer":
+        return genGuessMatchScorer(leagueData, matches, goals, teamsById, position, seedStr, usedGoalKeysForMatchScorer);
     }
   };
 
