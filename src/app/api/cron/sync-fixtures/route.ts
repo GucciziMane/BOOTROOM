@@ -33,6 +33,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: leaguesError?.message ?? "leagues introuvables" }, { status: 500 });
   }
 
+  // Lu une seule fois pour tout le run (plutôt que par ligue) : sert à ne plus recalculer les
+  // cotes d'un match une fois son pronostic verrouillé, voir updateMatchOdds plus bas.
+  const { data: lockSetting } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("key", "match_prediction_lock_hours_before_kickoff")
+    .maybeSingle();
+  const lockHours = Number(lockSetting?.value ?? 1);
+
   const matchesSummary: Array<{
     league: string;
     matches: number;
@@ -120,7 +129,7 @@ export async function GET(request: NextRequest) {
         .upsert(rows, { onConflict: "football_data_id" });
       if (upsertError) throw new Error(upsertError.message);
 
-      await updateMatchOdds(supabase, seasonId);
+      await updateMatchOdds(supabase, seasonId, lockHours);
 
       // football-data.org gratuit annonce lui-même des scores "délayés" (pas du direct) — c'est
       // documenté sur leur propre page tarifaire, pas un bug de notre synchro. ESPN expose un
@@ -147,14 +156,19 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * Recalcule le favori + l'écart de niveau (odds_tier) de chaque match pas encore joué de la
- * saison, à partir du classement courant (matchs terminés). Suit donc l'avancée du
+ * Recalcule le favori + l'écart de niveau (odds_tier) de chaque match pas encore verrouillé de
+ * la saison, à partir du classement courant (matchs terminés). Suit donc l'avancée du
  * championnat : un promu qui s'installe en haut de tableau redevient favori au fil des matchs.
+ *
+ * Ne touche plus un match une fois son pronostic verrouillé (kickoff_at - lockHours) : sinon le
+ * multiplicateur utilisé par process-scoring pour noter ce match peut encore changer pendant
+ * qu'il se joue, sous l'effet du classement mis à jour par d'autres matchs de la même journée qui
+ * se terminent entretemps — pas la valeur connue du joueur au moment de son pronostic.
  */
-async function updateMatchOdds(supabase: ReturnType<typeof createServiceRoleClient>, seasonId: number) {
+async function updateMatchOdds(supabase: ReturnType<typeof createServiceRoleClient>, seasonId: number, lockHours: number) {
   const { data: seasonMatches } = await supabase
     .from("matches")
-    .select("id, home_team_id, away_team_id, status, home_score, away_score, favorite_team_id, odds_tier, stage")
+    .select("id, home_team_id, away_team_id, status, home_score, away_score, favorite_team_id, odds_tier, stage, kickoff_at")
     .eq("season_id", seasonId);
   if (!seasonMatches || seasonMatches.length === 0) return;
 
@@ -183,8 +197,11 @@ async function updateMatchOdds(supabase: ReturnType<typeof createServiceRoleClie
     ])
   );
 
+  const lockCutoff = Date.now() + lockHours * 60 * 60 * 1000;
   const updates = seasonMatches
-    .filter((m) => m.status === "scheduled" || m.status === "live")
+    .filter(
+      (m) => (m.status === "scheduled" || m.status === "live") && new Date(m.kickoff_at).getTime() > lockCutoff
+    )
     .flatMap((m) => {
       const home = standingByTeam.get(m.home_team_id);
       const away = standingByTeam.get(m.away_team_id);
