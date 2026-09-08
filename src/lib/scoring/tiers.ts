@@ -2,7 +2,7 @@ import type { Position } from "@/types/database";
 
 export type ScoringTier = 1 | 2 | 3 | 4 | 5; // 1 = très probable, 5 = très improbable
 
-const MIN_MINUTES_FOR_STATS = 180;
+const MIN_MINUTES_FOR_STATS = 270;
 
 // Cutoffs de percentile cumulés pour les tiers 1 à 4 (le reste va en tier 5).
 // Reflète la réalité du foot : peu de buteurs/passeurs prolifiques, beaucoup de joueurs qui
