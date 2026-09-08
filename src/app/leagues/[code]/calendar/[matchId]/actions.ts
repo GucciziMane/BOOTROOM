@@ -88,8 +88,17 @@ export async function saveMatchPrediction(
 
   if (error) {
     const locked = error.message.includes("row-level security") || error.code === "42501";
+    // 23505 sur match_predictions_one_double_per_matchday (voir migration 0042) : deux requêtes
+    // concurrentes ont chacune passé le contrôle "pas de x2 déjà actif" ci-dessus avant que l'une
+    // des deux ne committe — la contrainte a bloqué le second upsert. Cas rare, message dédié
+    // plutôt que le message Postgres brut.
+    const doubleConflict = error.code === "23505" && error.message.includes("match_predictions_one_double_per_matchday");
     return {
-      error: locked ? "Ce match est verrouillé, pronostic impossible." : `Erreur : ${error.message}`,
+      error: locked
+        ? "Ce match est verrouillé, pronostic impossible."
+        : doubleConflict
+          ? "Un x2 a été activé sur un autre match entre-temps, réessaie."
+          : `Erreur : ${error.message}`,
       success: false,
     };
   }

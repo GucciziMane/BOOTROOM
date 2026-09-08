@@ -230,8 +230,35 @@ export async function processFinishedMatches(supabase: ServiceClient, config: Po
     }
   }
 
-  if (ledgerInserts.length > 0) await supabase.from("points_ledger").insert(ledgerInserts);
-  if (predictionUpdates.length > 0) await supabase.from("match_predictions").upsert(predictionUpdates, { onConflict: "id" });
+  // upsert + ignoreDuplicates plutôt qu'insert : un INSERT multi-lignes est une seule instruction
+  // atomique en PostgreSQL, donc un conflit sur une seule ligne (deux runs concurrents qui se
+  // chevauchent, cf. la double planification supprimée par ailleurs) aurait fait échouer tout le
+  // lot silencieusement. Avec ignoreDuplicates, un conflit sur points_ledger_user_source_unique
+  // (migration 0024) devient un DO NOTHING par ligne — la première attribution gagne, comme le
+  // filtre alreadyAwarded ci-dessus l'exprime déjà côté application.
+  let ledgerError: string | undefined;
+  if (ledgerInserts.length > 0) {
+    const { error } = await supabase
+      .from("points_ledger")
+      .upsert(ledgerInserts, { onConflict: "user_id,source_type,source_id", ignoreDuplicates: true });
+    ledgerError = error?.message;
+  }
+
+  let predictionError: string | undefined;
+  if (predictionUpdates.length > 0) {
+    const { error } = await supabase.from("match_predictions").upsert(predictionUpdates, { onConflict: "id" });
+    predictionError = error?.message;
+  }
+
+  // points_processed_at ne doit JAMAIS être posé si une des deux écritures ci-dessus a échoué :
+  // la requête qui sélectionne les matchs à traiter (plus haut) filtre sur points_processed_at is
+  // null, donc un match marqué à tort ne serait plus jamais repris par aucun run futur — perte
+  // silencieuse et définitive des points de tout le lot. En cas d'erreur, on ne marque rien : le
+  // prochain run retentera l'intégralité du lot, sans risque de doublon grâce à ignoreDuplicates.
+  if (ledgerError || predictionError) {
+    return { processed: 0, error: ledgerError ?? predictionError };
+  }
+
   await supabase
     .from("matches")
     .update({ points_processed_at: new Date().toISOString() })
