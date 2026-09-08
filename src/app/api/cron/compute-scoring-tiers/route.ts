@@ -25,6 +25,11 @@ export async function GET(request: NextRequest) {
 
   const summary: Array<{ seasonId: number; players: number; error?: string }> = [];
 
+  // Snapshot pré-journée : un match d'aujourd'hui (kickoff_at >= minuit UTC) ne doit jamais
+  // contribuer au tier utilisé pour le scorer lui-même. Calculé une seule fois pour tout le run.
+  const todayStart = new Date();
+  todayStart.setUTCHours(0, 0, 0, 0);
+
   for (const season of seasons) {
     try {
       const { data: teams } = await supabase.from("teams").select("id").eq("league_id", season.league_id);
@@ -42,9 +47,10 @@ export async function GET(request: NextRequest) {
 
       const { data: finishedMatches } = await supabase
         .from("matches")
-        .select("id, home_team_id, away_team_id")
+        .select("id, home_team_id, away_team_id, kickoff_at")
         .eq("season_id", season.id)
-        .eq("status", "finished");
+        .eq("status", "finished")
+        .lt("kickoff_at", todayStart.toISOString());
 
       const matchesPlayedByTeam = new Map<number, number>();
       const matchIds: number[] = [];
