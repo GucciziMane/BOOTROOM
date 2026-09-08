@@ -94,7 +94,7 @@ export default async function CalendarPage() {
     supabase
       .from("match_predictions")
       .select(
-        "match_id, predicted_home_score, predicted_away_score, predicted_scorer_player_id, predicted_assist_player_id"
+        "match_id, predicted_home_score, predicted_away_score, predicted_scorer_player_id, predicted_assist_player_id, is_doubled"
       )
       .eq("user_id", user!.id)
       .in("match_id", upcomingMatchIds.length > 0 ? upcomingMatchIds : [-1]),
@@ -120,6 +120,16 @@ export default async function CalendarPage() {
 
   const predictionByMatchId = new Map((fullPredictions ?? []).map((p) => [p.match_id, p]));
   const goalSubscribedMatchIds = new Set((goalSubscriptions ?? []).map((s) => s.match_id));
+  // x2 : un seul actif par (championnat, journée) — plusieurs championnats se mélangent sur cette
+  // page, donc la clé doit inclure le championnat, pas seulement le numéro de journée.
+  const doubledMatchIdByGroupKey = new Map<string, number>();
+  for (const m of upcoming) {
+    const pred = predictionByMatchId.get(m.id);
+    const leagueId = leagueIdBySeasonId.get(m.season_id);
+    if (pred?.is_doubled && m.matchday != null && leagueId != null) {
+      doubledMatchIdByGroupKey.set(`${leagueId}:${m.matchday}`, m.id);
+    }
+  }
   const playersByTeamId = new Map<number, Array<{ id: number; name: string }>>();
   for (const p of players ?? []) {
     if (!playersByTeamId.has(p.team_id)) playersByTeamId.set(p.team_id, []);
@@ -205,6 +215,12 @@ export default async function CalendarPage() {
                     awayPlayers={awayPlayers}
                     locked={locked}
                     initialGoalSubscribed={goalSubscribedMatchIds.has(m.id)}
+                    initialIsDoubled={existing?.is_doubled ?? false}
+                    doubledElsewhere={(() => {
+                      if (m.matchday == null || leagueId == null) return false;
+                      const key = `${leagueId}:${m.matchday}`;
+                      return doubledMatchIdByGroupKey.has(key) && doubledMatchIdByGroupKey.get(key) !== m.id;
+                    })()}
                     scoring={{
                       matchExactScore,
                       scorerTierPoints: scorerTierPointsObj,

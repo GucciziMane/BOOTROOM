@@ -20,6 +20,7 @@ export async function saveMatchPrediction(
   const scorerId = scorerRaw && scorerRaw !== "" ? Number(scorerRaw) : null;
   const assistRaw = formData.get("predicted_assist_player_id");
   const assistId = assistRaw && assistRaw !== "" ? Number(assistRaw) : null;
+  const isDoubled = formData.get("is_doubled") === "1";
 
   if (!Number.isInteger(homeScore) || homeScore < 0 || !Number.isInteger(awayScore) || awayScore < 0) {
     return { error: "Le score doit être un nombre entier positif.", success: false };
@@ -31,6 +32,46 @@ export async function saveMatchPrediction(
   } = await supabase.auth.getUser();
   if (!user) return { error: "Non connecté.", success: false };
 
+  // x2 : un seul actif à la fois par (utilisateur, championnat, journée) — en activer un nouveau
+  // désactive celui déjà posé ailleurs dans la même journée, sauf si cet autre match est déjà
+  // verrouillé (la policy RLS bloque alors silencieusement la désactivation, 0 ligne affectée : on
+  // le détecte pour refuser proprement plutôt que de se retrouver avec deux x2 actifs à la fois).
+  if (isDoubled) {
+    const { data: thisMatch } = await supabase.from("matches").select("league_id, matchday").eq("id", matchId).maybeSingle();
+    if (thisMatch?.matchday != null) {
+      const { data: siblingMatches } = await supabase
+        .from("matches")
+        .select("id")
+        .eq("league_id", thisMatch.league_id)
+        .eq("matchday", thisMatch.matchday)
+        .neq("id", matchId);
+      const siblingIds = (siblingMatches ?? []).map((m) => m.id);
+      if (siblingIds.length > 0) {
+        const { data: existingDoubled } = await supabase
+          .from("match_predictions")
+          .select("match_id")
+          .eq("user_id", user.id)
+          .in("match_id", siblingIds)
+          .eq("is_doubled", true)
+          .maybeSingle();
+        if (existingDoubled) {
+          const { data: unset } = await supabase
+            .from("match_predictions")
+            .update({ is_doubled: false })
+            .eq("user_id", user.id)
+            .eq("match_id", existingDoubled.match_id)
+            .select("match_id");
+          if (!unset || unset.length === 0) {
+            return {
+              error: "Ton x2 de cette journée est déjà posé sur un autre match déjà verrouillé.",
+              success: false,
+            };
+          }
+        }
+      }
+    }
+  }
+
   const { error } = await supabase.from("match_predictions").upsert(
     {
       user_id: user.id,
@@ -39,6 +80,7 @@ export async function saveMatchPrediction(
       predicted_away_score: awayScore,
       predicted_scorer_player_id: scorerId,
       predicted_assist_player_id: assistId,
+      is_doubled: isDoubled,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "user_id,match_id" }

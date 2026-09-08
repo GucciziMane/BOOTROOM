@@ -279,6 +279,8 @@ export interface Database {
           submitted_at: string;
           updated_at: string;
           points_awarded: number | null;
+          /** "x2" : un seul par (utilisateur, championnat, journée), voir migration 0040. */
+          is_doubled: boolean;
         };
         Insert: Partial<Database["public"]["Tables"]["match_predictions"]["Row"]> & {
           user_id: string;

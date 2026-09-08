@@ -48,6 +48,11 @@ interface Props {
   /** Cloche "but" de ce match : muette par défaut, indépendante par joueur — voir live-tick, qui
    * ne notifie plus que les abonnés d'un match donné plutôt que tout le monde. */
   initialGoalSubscribed: boolean;
+  /** x2 : un seul actif par (championnat, journée) — voir saveMatchPrediction pour la validation. */
+  initialIsDoubled: boolean;
+  /** true si le x2 de cette journée est déjà posé sur un AUTRE match — désactive le bouton ici
+   * plutôt que de permettre d'en avoir deux actifs à la fois. */
+  doubledElsewhere: boolean;
   initial: {
     predictedHomeScore: number | null;
     predictedAwayScore: number | null;
@@ -83,11 +88,14 @@ export function MatchPredictionCard({
   resultOdds,
   locked,
   initialGoalSubscribed,
+  initialIsDoubled,
+  doubledElsewhere,
   initial,
   leagueLabel,
   leagueColor,
   live,
 }: Props) {
+  const [isDoubled, setIsDoubled] = useState(initialIsDoubled);
   const [state, formAction, isPending] = useActionState(saveMatchPrediction, initialState);
   // Affiché dès le tap plutôt qu'à la réponse du serveur (upsert + 3 revalidatePath, quelques
   // centaines de ms) : ça se sent instantané, et repasse tout seul à l'échec puisque optimisticSaved
@@ -127,6 +135,7 @@ export function MatchPredictionCard({
     resultOdds.tier,
     multiplierByTier
   );
+  const pointsMultiplier = isDoubled ? 2 : 1;
 
   // Habillage à part par championnat (image de fond fournie par l'utilisateur) plutôt qu'une
   // carte identique pour tous : demandé explicitement pour que chaque championnat se distingue
@@ -165,6 +174,11 @@ export function MatchPredictionCard({
             ) : (
               leagueLabel && <span>{leagueLabel}</span>
             )}
+            {initialIsDoubled && (
+              <span className="rounded-full bg-reward px-1.5 py-0.5 text-[10px] font-extrabold leading-none text-paper">
+                x2
+              </span>
+            )}
             <GoalBell matchId={matchId} initialSubscribed={initialGoalSubscribed} />
           </span>
         </p>
@@ -192,10 +206,37 @@ export function MatchPredictionCard({
       {background && <LeagueCardBackground image={background.image} light={theme === "light"} />}
       <input type="hidden" name="match_id" value={matchId} />
       <input type="hidden" name="league_code" value={leagueCode} />
+      <input type="hidden" name="is_doubled" value={isDoubled ? "1" : "0"} />
       <p className={`relative mb-2 flex items-center justify-between text-xs font-bold ${textFaint}`}>
         <span>{formatParisDateTime(kickoffAt)}</span>
         <span className="flex items-center gap-2">
           {leagueLabel && <span>{leagueLabel}</span>}
+          <button
+            type="button"
+            onClick={() => setIsDoubled((v) => !v)}
+            disabled={doubledElsewhere}
+            aria-pressed={isDoubled}
+            title={
+              doubledElsewhere
+                ? "x2 déjà utilisé sur un autre match de cette journée"
+                : isDoubled
+                  ? "Désactiver le x2 sur ce match"
+                  : "Doubler les points de ce match (une fois par journée et par championnat)"
+            }
+            className={`rounded-full px-1.5 py-0.5 text-[10px] font-extrabold leading-none transition-colors ${
+              isDoubled
+                ? "bg-reward text-paper"
+                : doubledElsewhere
+                  ? "cursor-not-allowed opacity-30"
+                  : theme === "dark"
+                    ? "bg-white/15 text-white hover:bg-white/25"
+                    : theme === "light"
+                      ? "bg-black/10 text-ink hover:bg-black/20"
+                      : "bg-cream text-mute hover:text-ink"
+            }`}
+          >
+            x2
+          </button>
           <GoalBell matchId={matchId} initialSubscribed={initialGoalSubscribed} />
         </span>
       </p>
@@ -271,8 +312,10 @@ export function MatchPredictionCard({
       </select>
 
       <p className={`relative mt-2 text-center text-xs ${textFaint}`}>
-        Score exact +{exactScorePoints}pts{scorer ? ` · ${scorer.name} +${scorerPoints}pts` : ""}
-        {assister ? ` · ${assister.name} +${assistPoints}pts` : ""}
+        Score exact +{exactScorePoints * pointsMultiplier}pts
+        {scorer ? ` · ${scorer.name} +${scorerPoints * pointsMultiplier}pts` : ""}
+        {assister ? ` · ${assister.name} +${assistPoints * pointsMultiplier}pts` : ""}
+        {isDoubled && " (x2 🔥)"}
       </p>
 
       <button

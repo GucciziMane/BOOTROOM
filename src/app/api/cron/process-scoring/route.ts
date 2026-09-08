@@ -109,7 +109,7 @@ export async function processFinishedMatches(supabase: ServiceClient, config: Po
       supabase
         .from("match_predictions")
         .select(
-          "id, match_id, user_id, predicted_home_score, predicted_away_score, predicted_scorer_player_id, predicted_assist_player_id"
+          "id, match_id, user_id, predicted_home_score, predicted_away_score, predicted_scorer_player_id, predicted_assist_player_id, is_doubled"
         )
         .in("match_id", matchIds),
       supabase.from("match_goals").select("match_id, player_id, assist_player_id").in("match_id", matchIds),
@@ -200,10 +200,18 @@ export async function processFinishedMatches(supabase: ServiceClient, config: Po
         ? resolveAssistTierPoints(assistTierByPlayer.get(pred.predicted_assist_player_id!), assistTierPointsMap)
         : 0;
 
+      // x2 : un seul par (utilisateur, championnat, journée), choisi par le pronostiqueur — voir
+      // saveMatchPrediction pour la validation qui garantit qu'il n'y en a jamais deux actifs à la
+      // fois pour la même journée. Double tout ce que ce match rapporte (score, buteur, passeur).
+      const multiplier = pred.is_doubled ? 2 : 1;
+      const finalScorePoints = scorePoints * multiplier;
+      const finalScorerPoints = scorerPoints * multiplier;
+      const finalAssistPoints = assistPoints * multiplier;
+
       const toAward: Array<[PointsSourceType, number]> = [
-        ["match_score", scorePoints],
-        ["match_scorer", scorerPoints],
-        ["match_assist", assistPoints],
+        ["match_score", finalScorePoints],
+        ["match_scorer", finalScorerPoints],
+        ["match_assist", finalAssistPoints],
       ];
       for (const [sourceType, points] of toAward) {
         if (points > 0 && !alreadyAwarded.has(`${match.id}:${pred.user_id}:${sourceType}`)) {
@@ -217,7 +225,7 @@ export async function processFinishedMatches(supabase: ServiceClient, config: Po
         match_id: match.id,
         predicted_home_score: pred.predicted_home_score,
         predicted_away_score: pred.predicted_away_score,
-        points_awarded: scorePoints + scorerPoints + assistPoints,
+        points_awarded: finalScorePoints + finalScorerPoints + finalAssistPoints,
       });
     }
   }

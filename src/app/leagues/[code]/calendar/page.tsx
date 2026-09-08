@@ -79,7 +79,7 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
     supabase
       .from("match_predictions")
       .select(
-        "match_id, predicted_home_score, predicted_away_score, predicted_scorer_player_id, predicted_assist_player_id"
+        "match_id, predicted_home_score, predicted_away_score, predicted_scorer_player_id, predicted_assist_player_id, is_doubled"
       )
       .eq("user_id", user!.id)
       .in("match_id", upcomingMatchIds.length > 0 ? upcomingMatchIds : [-1]),
@@ -105,6 +105,14 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
 
   const predictionByMatchId = new Map((fullPredictions ?? []).map((p) => [p.match_id, p]));
   const goalSubscribedMatchIds = new Set((goalSubscriptions ?? []).map((s) => s.match_id));
+  // x2 : un seul actif par journée (un seul championnat ici, cette page ne traite que celui-ci) —
+  // retrouve, pour chaque journée, quel match porte le x2 actuellement, pour désactiver le bouton
+  // sur tous les autres matchs de cette même journée plutôt que de laisser deux actifs en même temps.
+  const doubledMatchIdByMatchday = new Map<number, number>();
+  for (const m of allMatches) {
+    const pred = predictionByMatchId.get(m.id);
+    if (pred?.is_doubled && m.matchday != null) doubledMatchIdByMatchday.set(m.matchday, m.id);
+  }
   const playersByTeamId = new Map<number, Array<{ id: number; name: string }>>();
   for (const p of players ?? []) {
     if (!playersByTeamId.has(p.team_id)) playersByTeamId.set(p.team_id, []);
@@ -233,6 +241,12 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
                         awayPlayers={awayPlayers}
                         locked={locked}
                         initialGoalSubscribed={goalSubscribedMatchIds.has(m.id)}
+                        initialIsDoubled={existing?.is_doubled ?? false}
+                        doubledElsewhere={
+                          m.matchday != null &&
+                          doubledMatchIdByMatchday.has(m.matchday) &&
+                          doubledMatchIdByMatchday.get(m.matchday) !== m.id
+                        }
                         scoring={{
                           matchExactScore,
                           scorerTierPoints: scorerTierPointsObj,
