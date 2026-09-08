@@ -95,7 +95,6 @@ export function MatchPredictionCard({
   leagueColor,
   live,
 }: Props) {
-  const [isDoubled, setIsDoubled] = useState(initialIsDoubled);
   const [state, formAction, isPending] = useActionState(saveMatchPrediction, initialState);
   // Affiché dès le tap plutôt qu'à la réponse du serveur (upsert + 3 revalidatePath, quelques
   // centaines de ms) : ça se sent instantané, et repasse tout seul à l'échec puisque optimisticSaved
@@ -104,8 +103,12 @@ export function MatchPredictionCard({
     state.success,
     (_current: boolean, next: boolean) => next
   );
+  // Lequel des deux boutons "Enregistrer" a été cliqué (voir plus bas) détermine is_doubled — lu
+  // directement dans le FormData soumis, pas de case à cocher séparée à synchroniser.
+  const [isDoubled, setIsDoubled] = useOptimistic(initialIsDoubled, (_current: boolean, next: boolean) => next);
   async function optimisticFormAction(formData: FormData) {
     setOptimisticSaved(true);
+    setIsDoubled(formData.get("is_doubled") === "1");
     formAction(formData);
   }
   const [homeScore, setHomeScore] = useState(initial.predictedHomeScore != null ? String(initial.predictedHomeScore) : "");
@@ -158,7 +161,10 @@ export function MatchPredictionCard({
     const lockedScorer = [...homePlayers, ...awayPlayers].find((p) => p.id === initial.predictedScorerPlayerId);
     const lockedAssist = [...homePlayers, ...awayPlayers].find((p) => p.id === initial.predictedAssistPlayerId);
     return (
-      <div className={cardClassName} style={cardStyle}>
+      <div
+        className={`${cardClassName}${initialIsDoubled ? " ring-4 ring-reward" : ""}`}
+        style={cardStyle}
+      >
         {background && <LeagueCardBackground image={background.image} light={theme === "light"} />}
         <p className={`relative mb-2 flex items-center justify-between text-xs font-bold ${textFaint}`}>
           <span>{formatParisDateTime(kickoffAt)}</span>
@@ -173,11 +179,6 @@ export function MatchPredictionCard({
               </span>
             ) : (
               leagueLabel && <span>{leagueLabel}</span>
-            )}
-            {initialIsDoubled && (
-              <span className="rounded-full bg-reward px-1.5 py-0.5 text-[10px] font-extrabold leading-none text-paper">
-                x2
-              </span>
             )}
             <GoalBell matchId={matchId} initialSubscribed={initialGoalSubscribed} />
           </span>
@@ -202,41 +203,18 @@ export function MatchPredictionCard({
   }
 
   return (
-    <form action={optimisticFormAction} className={cardClassName} style={cardStyle}>
+    <form
+      action={optimisticFormAction}
+      className={`${cardClassName}${isDoubled ? " ring-4 ring-reward" : ""}`}
+      style={cardStyle}
+    >
       {background && <LeagueCardBackground image={background.image} light={theme === "light"} />}
       <input type="hidden" name="match_id" value={matchId} />
       <input type="hidden" name="league_code" value={leagueCode} />
-      <input type="hidden" name="is_doubled" value={isDoubled ? "1" : "0"} />
       <p className={`relative mb-2 flex items-center justify-between text-xs font-bold ${textFaint}`}>
         <span>{formatParisDateTime(kickoffAt)}</span>
         <span className="flex items-center gap-2">
           {leagueLabel && <span>{leagueLabel}</span>}
-          <button
-            type="button"
-            onClick={() => setIsDoubled((v) => !v)}
-            disabled={doubledElsewhere}
-            aria-pressed={isDoubled}
-            title={
-              doubledElsewhere
-                ? "x2 déjà utilisé sur un autre match de cette journée"
-                : isDoubled
-                  ? "Désactiver le x2 sur ce match"
-                  : "Doubler les points de ce match (une fois par journée et par championnat)"
-            }
-            className={`rounded-full px-1.5 py-0.5 text-[10px] font-extrabold leading-none transition-colors ${
-              isDoubled
-                ? "bg-reward text-paper"
-                : doubledElsewhere
-                  ? "cursor-not-allowed opacity-30"
-                  : theme === "dark"
-                    ? "bg-white/15 text-white hover:bg-white/25"
-                    : theme === "light"
-                      ? "bg-black/10 text-ink hover:bg-black/20"
-                      : "bg-cream text-mute hover:text-ink"
-            }`}
-          >
-            x2
-          </button>
           <GoalBell matchId={matchId} initialSubscribed={initialGoalSubscribed} />
         </span>
       </p>
@@ -318,14 +296,41 @@ export function MatchPredictionCard({
         {isDoubled && " (x2 🔥)"}
       </p>
 
-      <button
-        type="submit"
-        disabled={isPending}
-        style={buttonStyle}
-        className={`relative mt-2 w-full text-sm ${buttonClassName}`}
-      >
-        {optimisticSaved ? "Enregistré ✓" : "Enregistrer"}
-      </button>
+      {!doubledElsewhere && !isDoubled ? (
+        <div className="relative mt-2 flex gap-2">
+          <button
+            type="submit"
+            name="is_doubled"
+            value="0"
+            disabled={isPending}
+            style={buttonStyle}
+            className={`flex-1 text-sm ${buttonClassName}`}
+          >
+            {optimisticSaved ? "Enregistré ✓" : "Enregistrer"}
+          </button>
+          <button
+            type="submit"
+            name="is_doubled"
+            value="1"
+            disabled={isPending}
+            title="Doubler les points de ce match (une fois par journée et par championnat)"
+            className={`flex-1 text-sm ${buttonPrimary.replace("bg-accent", "bg-reward").replace("hover:bg-accent-hover", "hover:brightness-110")}`}
+          >
+            Enregistrer x2
+          </button>
+        </div>
+      ) : (
+        <button
+          type="submit"
+          name="is_doubled"
+          value={isDoubled ? "1" : "0"}
+          disabled={isPending}
+          style={buttonStyle}
+          className={`relative mt-2 w-full text-sm ${buttonClassName}`}
+        >
+          {optimisticSaved ? "Enregistré ✓" : "Enregistrer"}
+        </button>
+      )}
       {state.error && <p className="relative mt-1 text-center text-xs text-bad">{state.error}</p>}
     </form>
   );
