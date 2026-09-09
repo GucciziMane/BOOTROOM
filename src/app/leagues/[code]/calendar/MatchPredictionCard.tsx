@@ -132,9 +132,6 @@ export function MatchPredictionCard({
     homeScore !== "" && awayScore !== ""
       ? predictedWinnerTeamId(Number(homeScore), Number(awayScore), resultOdds.homeTeamId, resultOdds.awayTeamId)
       : null;
-  // Affiché par défaut avant toute saisie, comme avant : seul un nul REELLEMENT saisi masque la
-  // ligne "Bon résultat" plus bas, jamais l'absence de saisie — sinon elle disparaissait à tort
-  // sur toute carte pas encore remplie.
   const correctResultPoints = applyResultOdds(
     scoring.matchCorrectResultNoScore,
     winnerTeamId,
@@ -143,11 +140,10 @@ export function MatchPredictionCard({
     multiplierByTier
   );
   // Score exact = bon résultat (scalé par la cote ci-dessus) + bonus de précision fixe, jamais
-  // scalé — voir computeExactScoreBonus côté scoring engine, même logique reproduite ici.
+  // scalé — voir computeExactScoreBonus côté scoring engine, même logique reproduite ici. Les deux
+  // lignes s'affichent toujours ensemble, y compris pour un pronostic de nul : l'écart entre les
+  // deux (bon résultat vs score exact précis) reste une information à part entière.
   const exactScorePoints = correctResultPoints + scoring.matchExactScoreBonus;
-  // Un nul correct EST le score exact : jamais de "bon résultat sans le score exact" à part dans
-  // ce cas précis, pour ne pas afficher la même chose deux fois sous deux libellés.
-  const predictedDraw = homeScore !== "" && awayScore !== "" && homeScore === awayScore;
   const pointsMultiplier = isDoubled ? 2 : 1;
 
   // Habillage à part par championnat (image de fond fournie par l'utilisateur) plutôt qu'une
@@ -215,12 +211,8 @@ export function MatchPredictionCard({
         {initial.predictedHomeScore != null && (
           <div className={`relative mt-2 space-y-0.5 text-center text-xs ${textFaint}`}>
             <p>
-              {!predictedDraw && (
-                <>
-                  Bon résultat <strong className={textStrong}>+{correctResultPoints * pointsMultiplier}</strong>
-                  {" · "}
-                </>
-              )}
+              Bon résultat <strong className={textStrong}>+{correctResultPoints * pointsMultiplier}</strong>
+              {" · "}
               Score exact <strong className={textStrong}>+{exactScorePoints * pointsMultiplier}</strong>
             </p>
             {(lockedScorer || lockedAssist) && (
@@ -337,12 +329,8 @@ export function MatchPredictionCard({
           pour les deux) — se lit d'un coup d'œil même avec tout rempli. */}
       <div className={`relative mt-2 space-y-0.5 text-center text-xs ${textFaint}`}>
         <p>
-          {!predictedDraw && (
-            <>
-              Bon résultat <strong className={textStrong}>+{correctResultPoints * pointsMultiplier}</strong>
-              {" · "}
-            </>
-          )}
+          Bon résultat <strong className={textStrong}>+{correctResultPoints * pointsMultiplier}</strong>
+          {" · "}
           Score exact <strong className={textStrong}>+{exactScorePoints * pointsMultiplier}</strong>
         </p>
         {(scorer || assister) && (
