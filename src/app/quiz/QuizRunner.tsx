@@ -6,6 +6,7 @@ import {
   submitQuizAnswer,
   getQuizLeaderboard,
   getQuizSeasonLeaderboard,
+  getPrivateQuizRanking,
   type LeaderboardRow,
   type SeasonLeaderboardRow,
   type SubmitAnswerResult,
@@ -23,6 +24,9 @@ interface Props {
   questions: DailyQuestionPublic[];
   initialAnswers: InitialAnswer[];
   initialFinalScore: number | null;
+  /** Classement privé "Entre nous" (voir PRIVATE_RANKING_USERNAMES) : décidé côté page (a accès à
+   * la session), jamais recalculé ici pour ne pas exposer ce choix au client. */
+  showPrivateRanking: boolean;
 }
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -64,7 +68,7 @@ function deriveStreak(history: AnswerState[]): number {
   return streak;
 }
 
-export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Props) {
+export function QuizRunner({ questions, initialAnswers, initialFinalScore, showPrivateRanking }: Props) {
   // questions.length et non 10 en dur : un jour où une question dynamique n'a pas pu être générée,
   // le quiz du jour compte moins de 10 questions (cf. src/lib/quiz/daily.ts) — sans ça, la dernière
   // question ne serait jamais reconnue comme la fin du quiz.
@@ -84,6 +88,7 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Pro
   const [error, setError] = useState<string | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardRow[] | null>(null);
   const [seasonLeaderboard, setSeasonLeaderboard] = useState<SeasonLeaderboardRow[] | null>(null);
+  const [privateRanking, setPrivateRanking] = useState<SeasonLeaderboardRow[] | null>(null);
   const [leaderboardView, setLeaderboardView] = useState<"today" | "season">("today");
   const [resultPhase, setResultPhase] = useState<ResultPhase>("idle");
   const holdTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -99,8 +104,9 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Pro
     if (finalScore != null) {
       getQuizLeaderboard().then(setLeaderboard);
       getQuizSeasonLeaderboard().then(setSeasonLeaderboard);
+      if (showPrivateRanking) getPrivateQuizRanking().then(setPrivateRanking);
     }
-  }, [finalScore]);
+  }, [finalScore, showPrivateRanking]);
 
   // Le résultat s'affiche un court instant sur la carte (couleur + icône), puis elle s'envole
   // (verte à droite si bonne réponse, rouge à gauche sinon) avant que la suivante n'apparaisse.
@@ -184,6 +190,25 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore }: Pro
         <p className="mt-2 text-lg">
           Ton score du jour : <strong className="text-good">{finalScore} pts</strong>
         </p>
+
+        {showPrivateRanking && privateRanking && privateRanking.length > 0 && (
+          <div className="mt-6">
+            <h3 className="mb-2 text-sm font-bold text-reward">Entre nous 🔒</h3>
+            <ol className="space-y-2">
+              {privateRanking.map((row, i) => (
+                <li
+                  key={row.userId}
+                  className="flex items-center justify-between rounded-xl border border-reward bg-cream p-3 text-sm"
+                >
+                  <span className="font-bold">
+                    {i + 1}. {row.username}
+                  </span>
+                  <span className="font-bold text-reward">{row.totalScore} pts</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
 
         <div className="mb-3 mt-6 flex gap-4 border-b border-line">
           <button

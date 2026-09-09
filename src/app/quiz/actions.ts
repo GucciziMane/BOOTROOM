@@ -2,6 +2,8 @@
 
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 import { getDailyQuiz, parisDateString } from "@/lib/quiz/daily";
+import { LEADERBOARD_RESET_KEY, PRIVATE_RANKING_USERNAMES } from "@/lib/leaderboard-reset";
+import { summarizeQuizResults, type SeasonLeaderboardRow } from "@/lib/quiz/season-summary";
 
 export interface SubmitAnswerResult {
   error: string | null;
@@ -160,42 +162,47 @@ export async function getQuizLeaderboard(): Promise<LeaderboardRow[]> {
   }));
 }
 
-export interface SeasonLeaderboardRow {
-  userId: string;
-  username: string;
-  avatarUrl: string | null;
-  totalScore: number;
-  daysPlayed: number;
-}
+export type { SeasonLeaderboardRow };
 
-/** Cumul de tous les scores quotidiens depuis le début, pour départager un vainqueur en fin de saison. */
+/** Cumul des scores quotidiens depuis la remise à zéro (voir app_settings, LEADERBOARD_RESET_KEY),
+ * pour départager un vainqueur en fin de saison — remise à zéro pour l'arrivée de nouveaux
+ * joueurs, rien n'est supprimé en base, seul ce qui est sommé ici change. */
 export async function getQuizSeasonLeaderboard(): Promise<SeasonLeaderboardRow[]> {
   const admin = createServiceRoleClient();
 
-  const { data: results } = await admin.from("quiz_results").select("user_id, score");
+  const { data: resetSetting } = await admin.from("app_settings").select("value").eq("key", LEADERBOARD_RESET_KEY).maybeSingle();
+  let query = admin.from("quiz_results").select("user_id, score");
+  // completed_at (timestamp précis), pas quiz_date (jour civil) : un quiz déjà complété plus tôt
+  // le jour même de la remise à zéro ne doit pas compter pour le classement général, exactement
+  // comme pour points_ledger.created_at côté pronostics — sinon la coupure ne serait pas la même
+  // heure pour les deux classements.
+  if (resetSetting?.value) query = query.gte("completed_at", resetSetting.value);
+  const { data: results } = await query;
   if (!results || results.length === 0) return [];
-
-  const totals = new Map<string, { total: number; days: number }>();
-  for (const r of results) {
-    const cur = totals.get(r.user_id) ?? { total: 0, days: 0 };
-    cur.total += r.score;
-    cur.days += 1;
-    totals.set(r.user_id, cur);
-  }
 
   const { data: profiles } = await admin
     .from("profiles")
     .select("id, username, avatar_url")
-    .in("id", [...totals.keys()]);
+    .in("id", [...new Set(results.map((r) => r.user_id))]);
   const profileById = new Map((profiles ?? []).map((p) => [p.id, p]));
 
-  return [...totals.entries()]
-    .map(([userId, t]) => ({
-      userId,
-      username: profileById.get(userId)?.username ?? "?",
-      avatarUrl: profileById.get(userId)?.avatar_url ?? null,
-      totalScore: t.total,
-      daysPlayed: t.days,
-    }))
-    .sort((a, b) => b.totalScore - a.totalScore);
+  return summarizeQuizResults(results, profileById);
+}
+
+/** Classement privé "Entre nous" (voir PRIVATE_RANKING_USERNAMES) : totaux complets, avant et
+ * après la remise à zéro — jamais affiché aux autres joueurs, filtré côté page appelante. */
+export async function getPrivateQuizRanking(): Promise<SeasonLeaderboardRow[]> {
+  const admin = createServiceRoleClient();
+
+  const { data: profiles } = await admin.from("profiles").select("id, username, avatar_url").in("username", PRIVATE_RANKING_USERNAMES);
+  if (!profiles || profiles.length === 0) return [];
+  const profileById = new Map(profiles.map((p) => [p.id, p]));
+
+  const { data: results } = await admin
+    .from("quiz_results")
+    .select("user_id, score")
+    .in("user_id", profiles.map((p) => p.id));
+  if (!results) return [];
+
+  return summarizeQuizResults(results, profileById);
 }
