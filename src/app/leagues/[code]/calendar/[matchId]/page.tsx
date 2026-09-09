@@ -2,7 +2,14 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatParisDateTime } from "@/lib/format-date";
 import { bannerWarn, bannerNeutral, card } from "@/lib/ui";
-import { FALLBACK_SCORER_TIER, FALLBACK_ASSIST_TIER } from "@/lib/scoring/points";
+import {
+  FALLBACK_SCORER_TIER,
+  FALLBACK_ASSIST_TIER,
+  applyResultOdds,
+  predictedWinnerTeamId,
+  type OddsTier,
+  type ResultTierMultiplier,
+} from "@/lib/scoring/points";
 import { BackLink } from "@/app/BackLink";
 import { MatchPredictionForm } from "./MatchPredictionForm";
 
@@ -140,7 +147,13 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
 
       {locked ? (
         <div className={card}>
-          <LockedMatchSummary existing={existing ?? null} homePlayers={homePlayers} awayPlayers={awayPlayers} />
+          <LockedMatchSummary
+            existing={existing ?? null}
+            homePlayers={homePlayers}
+            awayPlayers={awayPlayers}
+            scoring={scoring}
+            resultOdds={resultOdds}
+          />
         </div>
       ) : (
         <MatchPredictionForm
@@ -168,6 +181,8 @@ function LockedMatchSummary({
   existing,
   homePlayers,
   awayPlayers,
+  scoring,
+  resultOdds,
 }: {
   existing: {
     predicted_home_score: number;
@@ -177,6 +192,21 @@ function LockedMatchSummary({
   } | null;
   homePlayers: Array<{ id: number; name: string }>;
   awayPlayers: Array<{ id: number; name: string }>;
+  scoring: {
+    matchExactScoreBonus: number;
+    matchCorrectResultNoScore: number;
+    scorerTierPoints: Record<number, number>;
+    playerTier: Record<number, number>;
+    assistTierPoints: Record<number, number>;
+    playerAssistTier: Record<number, number>;
+  };
+  resultOdds: {
+    homeTeamId: number;
+    awayTeamId: number;
+    favoriteTeamId: number | null;
+    tier: OddsTier | null;
+    multiplierByTier: Record<number, ResultTierMultiplier>;
+  };
 }) {
   if (!existing) {
     return <p className="text-mute">Tu n&apos;as pas pronostiqué ce match avant le verrouillage.</p>;
@@ -184,22 +214,69 @@ function LockedMatchSummary({
   const scorer = [...homePlayers, ...awayPlayers].find((p) => p.id === existing.predicted_scorer_player_id);
   const assister = [...homePlayers, ...awayPlayers].find((p) => p.id === existing.predicted_assist_player_id);
 
+  // Même calcul que sur une carte pas encore verrouillée (voir MatchPredictionForm) : les points
+  // en jeu restent tout aussi pertinents une fois le pronostic verrouillé, jusqu'à ce que le match
+  // soit noté — ne devraient pas disparaître juste parce que le formulaire n'est plus modifiable.
+  const scorerPoints = scorer ? (scoring.scorerTierPoints[scoring.playerTier[scorer.id]] ?? 0) : 0;
+  const assistPoints = assister ? (scoring.assistTierPoints[scoring.playerAssistTier[assister.id]] ?? 0) : 0;
+  const multiplierByTier = new Map(
+    Object.entries(resultOdds.multiplierByTier).map(([tier, mult]) => [Number(tier) as OddsTier, mult])
+  );
+  const winnerTeamId = predictedWinnerTeamId(
+    existing.predicted_home_score,
+    existing.predicted_away_score,
+    resultOdds.homeTeamId,
+    resultOdds.awayTeamId
+  );
+  const correctResultPoints = applyResultOdds(
+    scoring.matchCorrectResultNoScore,
+    winnerTeamId,
+    resultOdds.favoriteTeamId,
+    resultOdds.tier,
+    multiplierByTier
+  );
+  const exactScorePoints = correctResultPoints + scoring.matchExactScoreBonus;
+
   return (
-    <dl className="space-y-4 text-sm">
-      <div>
-        <dt className="text-mute">Ton pronostic</dt>
-        <dd className="text-2xl font-bold">
-          {existing.predicted_home_score} – {existing.predicted_away_score}
-        </dd>
+    <>
+      <dl className="space-y-4 text-sm">
+        <div>
+          <dt className="text-mute">Ton pronostic</dt>
+          <dd className="text-2xl font-bold">
+            {existing.predicted_home_score} – {existing.predicted_away_score}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-mute">Buteur pronostiqué</dt>
+          <dd className="text-lg font-bold">{scorer?.name ?? "—"}</dd>
+        </div>
+        <div>
+          <dt className="text-mute">Passeur décisif pronostiqué</dt>
+          <dd className="text-lg font-bold">{assister?.name ?? "—"}</dd>
+        </div>
+      </dl>
+
+      <div className="mt-6 rounded-xl border border-line bg-cream p-4 text-sm">
+        <p className="mb-2 font-bold">Points en jeu</p>
+        <ul className="space-y-1 text-mute">
+          <li>
+            Score exact : <strong className="text-ink">+{exactScorePoints} pts</strong>
+          </li>
+          <li>
+            Bon résultat sans le score exact : <strong className="text-ink">+{correctResultPoints} pts</strong>
+          </li>
+          {scorer && (
+            <li>
+              {scorer.name} marque : <strong className="text-ink">+{scorerPoints} pts</strong>
+            </li>
+          )}
+          {assister && (
+            <li>
+              {assister.name} passeur décisif : <strong className="text-ink">+{assistPoints} pts</strong>
+            </li>
+          )}
+        </ul>
       </div>
-      <div>
-        <dt className="text-mute">Buteur pronostiqué</dt>
-        <dd className="text-lg font-bold">{scorer?.name ?? "—"}</dd>
-      </div>
-      <div>
-        <dt className="text-mute">Passeur décisif pronostiqué</dt>
-        <dd className="text-lg font-bold">{assister?.name ?? "—"}</dd>
-      </div>
-    </dl>
+    </>
   );
 }

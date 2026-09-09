@@ -208,6 +208,39 @@ export function MatchPredictionCard({
           {lockedAssist && ` · Passeur : ${lockedAssist.name}`}
           {!live && " · Verrouillé"}
         </p>
+        {/* Même enjeu de points qu'une carte pas encore verrouillée (voir plus bas) : un
+            pronostic verrouillé n'a plus de formulaire, mais les points en jeu restent tout aussi
+            pertinents jusqu'à ce que le match soit noté — masqué seulement s'il n'y a aucun
+            pronostic du tout (rien à mettre en jeu). */}
+        {initial.predictedHomeScore != null && (
+          <div className={`relative mt-2 space-y-0.5 text-center text-xs ${textFaint}`}>
+            <p>
+              {!predictedDraw && (
+                <>
+                  Bon résultat <strong className={textStrong}>+{correctResultPoints * pointsMultiplier}</strong>
+                  {" · "}
+                </>
+              )}
+              Score exact <strong className={textStrong}>+{exactScorePoints * pointsMultiplier}</strong>
+            </p>
+            {(lockedScorer || lockedAssist) && (
+              <p>
+                {lockedScorer && (
+                  <>
+                    ⚽ {lockedScorer.name} <strong className={textStrong}>+{scorerPoints * pointsMultiplier}</strong>
+                  </>
+                )}
+                {lockedScorer && lockedAssist && "   "}
+                {lockedAssist && (
+                  <>
+                    🎯 {lockedAssist.name} <strong className={textStrong}>+{assistPoints * pointsMultiplier}</strong>
+                  </>
+                )}
+              </p>
+            )}
+            {initialIsDoubled && <p className="font-bold text-reward">x2 🔥 — tout est doublé</p>}
+          </div>
+        )}
       </div>
     );
   }
