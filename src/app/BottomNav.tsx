@@ -20,7 +20,11 @@ export function BottomNav() {
   return (
     <nav
       style={{ viewTransitionName: "bottom-nav" }}
-      className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-paper pb-[env(safe-area-inset-bottom)] lg:hidden"
+      // transform-gpu (translateZ(0)) : sans sa propre couche de composition, cette barre fixed
+      // reste peinte avec le reste du document sur certains WebKit mobiles — un scroll rapide la
+      // fait alors "traîner"/se figer un instant avant de rattraper la bonne position, au lieu de
+      // rester pleinement collée au bas de l'écran comme une barre native.
+      className="fixed inset-x-0 bottom-0 z-20 transform-gpu border-t border-line bg-paper pb-[env(safe-area-inset-bottom)] lg:hidden"
     >
       {/* Sans viewTransitionName + les 3 règles CSS "bottom-nav" ci-dessous (globals.css), le
           crossfade racine (::view-transition-old/new(root), 180ms) inclut cette nav fixe dans son
