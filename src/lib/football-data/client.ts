@@ -86,7 +86,24 @@ export interface FdMatch {
   stage: string;
   homeTeam: { id: number; name: string };
   awayTeam: { id: number; name: string };
-  score: { fullTime: { home: number | null; away: number | null } };
+  score: {
+    /** Toujours présent, y compris pour un match pas encore joué (`null` alors `winner`/défaut
+     * "REGULAR" observés en interrogeant l'API en direct sur un match SCHEDULED). */
+    winner: "HOME_TEAM" | "AWAY_TEAM" | "DRAW" | null;
+    duration: "REGULAR" | "EXTRA_TIME" | "PENALTY_SHOOTOUT";
+    /** Score "plein temps" tel quel côté provider : pour un match PENALTY_SHOOTOUT, inclut déjà
+     * les buts de la séance de tirs au but (fullTime = regularTime + extraTime + penalties,
+     * vérifié en interrogeant l'API en direct sur des matchs C1 réels décidés aux tirs au but) —
+     * voir resolveMatchScore dans sync-fixtures, qui retranche `penalties` pour n'en tirer que le
+     * score du match. Jamais à utiliser tel quel pour un match PENALTY_SHOOTOUT.
+     */
+    fullTime: { home: number | null; away: number | null };
+    /** Présent uniquement pour un match qui n'a pas été décidé en 90 minutes. */
+    regularTime?: { home: number | null; away: number | null };
+    extraTime?: { home: number | null; away: number | null };
+    /** Présent uniquement si `duration === "PENALTY_SHOOTOUT"`. */
+    penalties?: { home: number | null; away: number | null };
+  };
 }
 
 export interface FdCompetitionMatchesResponse {

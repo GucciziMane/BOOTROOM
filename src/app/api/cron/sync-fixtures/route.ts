@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
-import { footballData, normalizeMatchStatus } from "@/lib/football-data/client";
+import { footballData, normalizeMatchStatus, type FdMatch } from "@/lib/football-data/client";
 import { highlightly, type HlMatch } from "@/lib/highlightly/client";
 import { getEspnScoreboard, getEspnMatchEvents, ESPN_LEAGUE_SLUG } from "@/lib/espn/client";
 import { teamNamesMatch, matchPlayerByName } from "@/lib/sync/name-match";
@@ -19,6 +19,38 @@ const EVENTS_SYNC_TIME_BUDGET_MS = 200_000;
  * Sync quotidien : calendrier + résultats (football-data.org), puis pour les matchs
  * fraîchement terminés, récupération des buteurs/passeurs (API-Football, par date).
  */
+/**
+ * Score à stocker pour un match : pour un match décidé aux tirs au but, `score.fullTime` de
+ * football-data.org inclut déjà les buts de la séance (fullTime = regularTime + extraTime +
+ * penalties, vérifié en interrogeant l'API en direct sur des matchs C1 réels) — le score du
+ * match lui-même (celui utilisé pour les pronostics score exact/résultat) est retrouvé en
+ * retranchant les tirs au but, jamais en le devinant. Pour tout autre `duration`, comportement
+ * strictement inchangé (score.fullTime tel quel).
+ */
+export function resolveMatchScore(
+  score: FdMatch["score"],
+  homeTeamId: number,
+  awayTeamId: number
+): { homeScore: number | null; awayScore: number | null; penaltyWinnerTeamId: number | null } {
+  if (score.duration !== "PENALTY_SHOOTOUT") {
+    return { homeScore: score.fullTime.home, awayScore: score.fullTime.away, penaltyWinnerTeamId: null };
+  }
+
+  const homePenalties = score.penalties?.home ?? 0;
+  const awayPenalties = score.penalties?.away ?? 0;
+  const homeScore = score.fullTime.home != null ? score.fullTime.home - homePenalties : null;
+  const awayScore = score.fullTime.away != null ? score.fullTime.away - awayPenalties : null;
+
+  // Ne jamais déduire le vainqueur aux tirs au but du score : seule une valeur explicite
+  // HOME_TEAM/AWAY_TEAM de `score.winner` est retenue, sinon NULL (donnée provider incomplète ou
+  // inattendue — jamais de supposition).
+  let penaltyWinnerTeamId: number | null = null;
+  if (score.winner === "HOME_TEAM") penaltyWinnerTeamId = homeTeamId;
+  else if (score.winner === "AWAY_TEAM") penaltyWinnerTeamId = awayTeamId;
+
+  return { homeScore, awayScore, penaltyWinnerTeamId };
+}
+
 export async function GET(request: NextRequest) {
   const unauthorized = requireCronSecret(request);
   if (unauthorized) return unauthorized;
@@ -108,6 +140,8 @@ export async function GET(request: NextRequest) {
           return [];
         }
 
+        const { homeScore, awayScore, penaltyWinnerTeamId } = resolveMatchScore(m.score, homeTeamId, awayTeamId);
+
         return [
           {
             league_id: league.id,
@@ -117,8 +151,9 @@ export async function GET(request: NextRequest) {
             away_team_id: awayTeamId,
             kickoff_at: m.utcDate,
             status,
-            home_score: m.score.fullTime.home,
-            away_score: m.score.fullTime.away,
+            home_score: homeScore,
+            away_score: awayScore,
+            penalty_winner_team_id: penaltyWinnerTeamId,
             matchday: m.matchday ?? syntheticMatchdayByStage.get(m.stage) ?? null,
             stage: m.stage,
           },

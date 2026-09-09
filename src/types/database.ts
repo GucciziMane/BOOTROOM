@@ -129,6 +129,7 @@ export interface Database {
           matchday: number | null;
           live_clock: string | null;
           stage: string | null;
+          penalty_winner_team_id: number | null;
         };
         Insert: Partial<Database["public"]["Tables"]["matches"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["matches"]["Row"]>;

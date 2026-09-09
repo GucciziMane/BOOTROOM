@@ -379,19 +379,24 @@ async function processFinishedSeasons(supabase: ServiceClient, config: PointConf
     if (isCup) {
       const { data: finalMatch } = await supabase
         .from("matches")
-        .select("home_team_id, away_team_id, home_score, away_score")
+        .select("home_team_id, away_team_id, home_score, away_score, penalty_winner_team_id")
         .eq("season_id", season.id)
         .eq("stage", "FINAL")
         .eq("status", "finished")
         .maybeSingle();
       if (finalMatch && finalMatch.home_score !== null && finalMatch.away_score !== null) {
         actualFinalists = [finalMatch.home_team_id, finalMatch.away_team_id];
+        // penalty_winner_team_id (O5) prioritaire quand renseigné : home_score/away_score stocke
+        // désormais le score du match hors tirs au but (voir sync-fixtures/resolveMatchScore),
+        // donc une finale décidée aux tirs au but y est à égalité — jamais déduire ce vainqueur du
+        // score, seule la colonne explicite fait foi.
         actualWinnerTeamId =
-          finalMatch.home_score > finalMatch.away_score
+          finalMatch.penalty_winner_team_id ??
+          (finalMatch.home_score > finalMatch.away_score
             ? finalMatch.home_team_id
             : finalMatch.away_score > finalMatch.home_score
               ? finalMatch.away_team_id
-              : null; // égalité au score plein temps : vainqueur (tirs au but) non suivi ici
+              : null);
       }
     }
 
