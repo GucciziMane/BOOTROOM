@@ -139,12 +139,19 @@ export function MatchPredictionCard({
     resultOdds.tier,
     multiplierByTier
   );
-  // Score prédit à égalité (nul) : jamais de "bon résultat sans le score exact" à part, un nul
-  // correct EST le score exact — éviter d'afficher la même chose deux fois sous deux libellés.
-  const correctResultPoints =
-    homeScore !== "" && awayScore !== "" && homeScore !== awayScore
-      ? applyResultOdds(scoring.matchCorrectResultNoScore, winnerTeamId, resultOdds.favoriteTeamId, resultOdds.tier, multiplierByTier)
-      : 0;
+  // Même calcul que exactScorePoints (affiché par défaut avant toute saisie, comme "Score
+  // exact") : seul un nul REELLEMENT saisi masque cette ligne, jamais l'absence de saisie — sinon
+  // "Bon résultat" disparaissait à tort sur toute carte pas encore remplie.
+  const correctResultPoints = applyResultOdds(
+    scoring.matchCorrectResultNoScore,
+    winnerTeamId,
+    resultOdds.favoriteTeamId,
+    resultOdds.tier,
+    multiplierByTier
+  );
+  // Un nul correct EST le score exact : jamais de "bon résultat sans le score exact" à part dans
+  // ce cas précis, pour ne pas afficher la même chose deux fois sous deux libellés.
+  const predictedDraw = homeScore !== "" && awayScore !== "" && homeScore === awayScore;
   const pointsMultiplier = isDoubled ? 2 : 1;
 
   // Habillage à part par championnat (image de fond fournie par l'utilisateur) plutôt qu'une
@@ -301,7 +308,7 @@ export function MatchPredictionCard({
           pour les deux) — se lit d'un coup d'œil même avec tout rempli. */}
       <div className={`relative mt-2 space-y-0.5 text-center text-xs ${textFaint}`}>
         <p>
-          {correctResultPoints > 0 && (
+          {!predictedDraw && (
             <>
               Bon résultat <strong className={textStrong}>+{correctResultPoints * pointsMultiplier}</strong>
               {" · "}
