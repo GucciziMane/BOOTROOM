@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
       // données.
       const { data: existingMatches } = await supabase
         .from("matches")
-        .select("football_data_id, status, home_score, away_score")
+        .select("id, football_data_id, status, home_score, away_score, kickoff_at")
         .eq("league_id", league.id);
       const existingByFdId = new Map((existingMatches ?? []).map((m) => [m.football_data_id, m]));
 
@@ -128,6 +128,21 @@ export async function GET(request: NextRequest) {
         .from("matches")
         .upsert(rows, { onConflict: "football_data_id" });
       if (upsertError) throw new Error(upsertError.message);
+
+      // Un vrai report (nouveau kickoff_at, ex. match postponed rejoué à une autre date) ne doit
+      // pas laisser un rappel déjà loggé pour l'ancienne date bloquer silencieusement tout futur
+      // rappel pour la nouvelle : reminder_log est unique par (user, kind, match_id), sans notion
+      // de date. Comparaison par instant (pas par chaîne) pour ignorer les écarts de format
+      // (ex. "Z" vs "+00:00") qui ne sont pas de vrais changements de date.
+      const rescheduledMatchIds = matches.flatMap((m) => {
+        const existing = existingByFdId.get(m.id);
+        if (!existing) return [];
+        const changed = new Date(existing.kickoff_at).getTime() !== new Date(m.utcDate).getTime();
+        return changed ? [existing.id] : [];
+      });
+      if (rescheduledMatchIds.length > 0) {
+        await supabase.from("reminder_log").delete().eq("kind", "match").in("source_id", rescheduledMatchIds);
+      }
 
       await updateMatchOdds(supabase, seasonId, lockHours);
 
