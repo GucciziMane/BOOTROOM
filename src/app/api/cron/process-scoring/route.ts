@@ -154,6 +154,23 @@ export async function processFinishedMatches(supabase: ServiceClient, config: Po
   const scorerTierByPlayer = new Map((scorerTierRows ?? []).map((r) => [r.player_id, r.tier]));
   const assistTierByPlayer = new Map((assistTierRows ?? []).map((r) => [r.player_id, r.tier]));
 
+  // Garde défensive contre une course entre la sélection initiale (plus haut, points_processed_at
+  // is null) et l'écriture plus bas : un run concurrent (double planification, retry, live-tick
+  // sur le même match) a pu marquer points_processed_at entre-temps, pendant les calculs
+  // ci-dessus. Re-vérifié ici, juste avant de construire les écritures, pour réduire au minimum
+  // la fenêtre de course plutôt que de se fier à la sélection devenue potentiellement obsolète.
+  // Un double paiement était déjà exclu par la contrainte unique de points_ledger (onConflict +
+  // ignoreDuplicates plus bas, migration 0024) — cette garde évite en plus tout travail inutile
+  // (recalcul, réécriture de match_predictions/points_processed_at) sur un match déjà traité.
+  const { data: stillUnprocessed } = await supabase
+    .from("matches")
+    .select("id")
+    .in("id", matchIds)
+    .is("points_processed_at", null);
+  const stillUnprocessedIds = new Set((stillUnprocessed ?? []).map((m) => m.id));
+  const matchesToProcess = finishedMatches.filter((m) => stillUnprocessedIds.has(m.id));
+  if (matchesToProcess.length === 0) return { processed: 0 };
+
   const ledgerInserts: Array<{ user_id: string; league_id: number; source_type: PointsSourceType; source_id: number; points: number }> = [];
   const predictionUpdates: Array<{
     id: number;
@@ -164,7 +181,7 @@ export async function processFinishedMatches(supabase: ServiceClient, config: Po
     points_awarded: number;
   }> = [];
 
-  for (const match of finishedMatches) {
+  for (const match of matchesToProcess) {
     const homeScore = match.home_score as number;
     const awayScore = match.away_score as number;
     const actualScorers = scorersByMatch.get(match.id) ?? new Set();
@@ -259,17 +276,22 @@ export async function processFinishedMatches(supabase: ServiceClient, config: Po
     return { processed: 0, error: ledgerError ?? predictionError };
   }
 
+  const matchIdsToProcess = matchesToProcess.map((m) => m.id);
   await supabase
     .from("matches")
     .update({ points_processed_at: new Date().toISOString() })
-    .in("id", matchIds);
+    .in("id", matchIdsToProcess)
+    // Condition atomique en plus du filtre applicatif ci-dessus : même si un run concurrent a
+    // traité l'un de ces matchs dans la toute petite fenêtre entre la re-vérification et cette
+    // écriture, Postgres n'y touche pas une deuxième fois (déjà non nul).
+    .is("points_processed_at", null);
 
-  const touchedMatchdayGroups = finishedMatches
+  const touchedMatchdayGroups = matchesToProcess
     .filter((m): m is typeof m & { matchday: number } => m.matchday != null)
     .map((m) => ({ seasonId: m.season_id, leagueId: m.league_id, matchday: m.matchday }));
   await postMatchdayRecaps(supabase, touchedMatchdayGroups);
 
-  return { processed: finishedMatches.length };
+  return { processed: matchesToProcess.length };
 }
 
 async function processFinishedSeasons(supabase: ServiceClient, config: PointConfig) {
