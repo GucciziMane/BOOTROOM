@@ -32,6 +32,7 @@ interface Props {
   awayPlayers: PlayerOption[];
   scoring: {
     matchExactScore: number;
+    matchCorrectResultNoScore: number;
     scorerTierPoints: Record<number, number>;
     playerTier: Record<number, number>;
     assistTierPoints: Record<number, number>;
@@ -138,6 +139,12 @@ export function MatchPredictionCard({
     resultOdds.tier,
     multiplierByTier
   );
+  // Score prédit à égalité (nul) : jamais de "bon résultat sans le score exact" à part, un nul
+  // correct EST le score exact — éviter d'afficher la même chose deux fois sous deux libellés.
+  const correctResultPoints =
+    homeScore !== "" && awayScore !== "" && homeScore !== awayScore
+      ? applyResultOdds(scoring.matchCorrectResultNoScore, winnerTeamId, resultOdds.favoriteTeamId, resultOdds.tier, multiplierByTier)
+      : 0;
   const pointsMultiplier = isDoubled ? 2 : 1;
 
   // Habillage à part par championnat (image de fond fournie par l'utilisateur) plutôt qu'une
@@ -291,6 +298,7 @@ export function MatchPredictionCard({
 
       <p className={`relative mt-2 text-center text-xs ${textFaint}`}>
         Score exact +{exactScorePoints * pointsMultiplier}pts
+        {correctResultPoints > 0 ? ` · Bon résultat +${correctResultPoints * pointsMultiplier}pts` : ""}
         {scorer ? ` · ${scorer.name} +${scorerPoints * pointsMultiplier}pts` : ""}
         {assister ? ` · ${assister.name} +${assistPoints * pointsMultiplier}pts` : ""}
         {isDoubled && " (x2 🔥)"}
