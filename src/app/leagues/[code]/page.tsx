@@ -4,8 +4,13 @@ import { bannerWarn, bannerNeutral, card } from "@/lib/ui";
 import { BackLink } from "@/app/BackLink";
 import { SeasonPredictionForm, type PlayerOption, type TeamOption } from "./SeasonPredictionForm";
 
-export default async function LeagueSeasonPage({ params }: PageProps<"/leagues/[code]">) {
+export default async function LeagueSeasonPage({ params, searchParams }: PageProps<"/leagues/[code]">) {
   const { code } = await params;
+  // Redirection automatique depuis le proxy (voir src/lib/supabase/middleware.ts) quand ce
+  // championnat est le premier où il manque un pronostic de saison — affiche pourquoi on est
+  // arrivé ici plutôt que de laisser deviner.
+  const sp = await searchParams;
+  const cameFromReminder = sp?.rappel === "pronostics-saison";
   const supabase = await createClient();
   // getSession() : le proxy a déjà validé la session pour cette requête (voir layout.tsx), pas
   // besoin de repayer un aller-retour réseau à Supabase Auth ici.
@@ -78,6 +83,12 @@ export default async function LeagueSeasonPage({ params }: PageProps<"/leagues/[
         <h1 className="text-3xl font-bold">{league.name}</h1>
         <BackLink href="/leagues" />
       </div>
+
+      {cameFromReminder && !locked && (
+        <div className={`mb-4 ${bannerWarn}`}>
+          👋 Tu n&apos;as pas encore fait tes pronostics de saison pour {league.name} — c&apos;est le moment !
+        </div>
+      )}
 
       <div className={`mb-6 ${locked ? bannerNeutral : bannerWarn}`}>
         {locked
