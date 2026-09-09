@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
     regressions?: number;
     espnRefreshed?: number;
     error?: string;
+    matchdayConflicts?: string[];
   }> = [];
 
   for (const league of leagues) {
@@ -69,7 +70,7 @@ export async function GET(request: NextRequest) {
       // données.
       const { data: existingMatches } = await supabase
         .from("matches")
-        .select("id, football_data_id, status, home_score, away_score, kickoff_at")
+        .select("id, football_data_id, status, home_score, away_score, kickoff_at, league_id, matchday")
         .eq("league_id", league.id);
       const existingByFdId = new Map((existingMatches ?? []).map((m) => [m.football_data_id, m]));
 
@@ -127,7 +128,54 @@ export async function GET(request: NextRequest) {
       const { error: upsertError } = await supabase
         .from("matches")
         .upsert(rows, { onConflict: "football_data_id" });
-      if (upsertError) throw new Error(upsertError.message);
+
+      const matchdayConflicts: string[] = [];
+      if (upsertError) {
+        // Un match dont league_id/matchday change peut faire entrer en collision deux x2 actifs
+        // du même utilisateur (contrainte match_predictions_one_double_per_matchday, migration
+        // 0042) : le trigger matches_sync_prediction_matchday lève alors une exception qui fait
+        // échouer TOUT le batch upsert (une seule instruction SQL multi-lignes), y compris les
+        // matchs sans aucun rapport avec la collision — cf. audit Phase 2.6C.
+        //
+        // On ne retente en isolation QUE sur cette signature d'erreur précise (23505 sur cet
+        // index précis) : toute autre erreur (réseau, contrainte différente...) continue de faire
+        // échouer toute la ligue comme avant, sans tentative de contournement qui masquerait un
+        // problème inattendu.
+        const isMatchdayCollision =
+          upsertError.code === "23505" && upsertError.message.includes("match_predictions_one_double_per_matchday");
+        if (!isMatchdayCollision) throw new Error(upsertError.message);
+
+        // Seuls les matchs dont league_id/matchday change réellement peuvent déclencher ce trigger
+        // (WHEN old.league_id IS DISTINCT FROM new.league_id OR old.matchday IS DISTINCT FROM
+        // new.matchday) : c'est le seul sous-ensemble à risque, jamais toute la ligue. Les autres
+        // repassent en un seul batch (chemin normal, aucun changement de comportement/performance
+        // pour eux).
+        const changedRows = rows.filter((r) => {
+          const existing = existingByFdId.get(r.football_data_id);
+          return existing != null && (existing.league_id !== r.league_id || existing.matchday !== r.matchday);
+        });
+        const changedFdIds = new Set(changedRows.map((r) => r.football_data_id));
+        const unchangedRows = rows.filter((r) => !changedFdIds.has(r.football_data_id));
+
+        if (unchangedRows.length > 0) {
+          const { error: unchangedError } = await supabase
+            .from("matches")
+            .upsert(unchangedRows, { onConflict: "football_data_id" });
+          if (unchangedError) throw new Error(unchangedError.message);
+        }
+
+        for (const row of changedRows) {
+          const { error: rowError } = await supabase.from("matches").upsert([row], { onConflict: "football_data_id" });
+          if (rowError) {
+            const matchId = existingByFdId.get(row.football_data_id)?.id;
+            matchdayConflicts.push(
+              `football_data_id=${row.football_data_id}${matchId != null ? ` (match_id=${matchId})` : ""}: ${rowError.message}`
+            );
+            // Pas de throw : ce match reste à son ancien league_id/matchday en base (aucune donnée
+            // inventée) et sera retenté au prochain run — les autres matchs de la ligue continuent.
+          }
+        }
+      }
 
       // Un vrai report (nouveau kickoff_at, ex. match postponed rejoué à une autre date) ne doit
       // pas laisser un rappel déjà loggé pour l'ancienne date bloquer silencieusement tout futur
@@ -154,7 +202,13 @@ export async function GET(request: NextRequest) {
       // effectifs (pas sensible au délai).
       const espnRefreshed = await refreshRecentScoresFromEspn(supabase, league.football_data_code, league.id, teams ?? []);
 
-      matchesSummary.push({ league: league.football_data_code, matches: rows.length, regressions, espnRefreshed });
+      matchesSummary.push({
+        league: league.football_data_code,
+        matches: rows.length,
+        regressions,
+        espnRefreshed,
+        ...(matchdayConflicts.length > 0 ? { matchdayConflicts } : {}),
+      });
       await sleep(700);
     } catch (err) {
       matchesSummary.push({
