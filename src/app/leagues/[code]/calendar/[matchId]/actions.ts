@@ -20,7 +20,7 @@ export async function saveMatchPrediction(
   const scorerId = scorerRaw && scorerRaw !== "" ? Number(scorerRaw) : null;
   const assistRaw = formData.get("predicted_assist_player_id");
   const assistId = assistRaw && assistRaw !== "" ? Number(assistRaw) : null;
-  const isDoubled = formData.get("is_doubled") === "1";
+  const isDoubledField = formData.get("is_doubled");
 
   if (!Number.isInteger(homeScore) || homeScore < 0 || !Number.isInteger(awayScore) || awayScore < 0) {
     return { error: "Le score doit être un nombre entier positif.", success: false };
@@ -31,6 +31,25 @@ export async function saveMatchPrediction(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { error: "Non connecté.", success: false };
+
+  // Certains formulaires (page détail d'un match) ne gèrent pas le x2 et n'envoient jamais ce
+  // champ : dans ce cas, préserve la valeur déjà enregistrée en base plutôt que de la réinitialiser
+  // à false par défaut — sans ça, une sauvegarde depuis cette page désactivait silencieusement un
+  // x2 déjà activé via MatchPredictionCard (seul endroit qui expose réellement l'activation/
+  // désactivation du x2). Relu en base à chaque fois, jamais fait confiance à une valeur transmise
+  // par le client : le serveur reste la seule source de vérité pour ce cas.
+  let isDoubled: boolean;
+  if (isDoubledField === null) {
+    const { data: currentPrediction } = await supabase
+      .from("match_predictions")
+      .select("is_doubled")
+      .eq("user_id", user.id)
+      .eq("match_id", matchId)
+      .maybeSingle();
+    isDoubled = currentPrediction?.is_doubled ?? false;
+  } else {
+    isDoubled = isDoubledField === "1";
+  }
 
   // x2 : un seul actif à la fois par (utilisateur, championnat, journée) — en activer un nouveau
   // désactive celui déjà posé ailleurs dans la même journée, sauf si cet autre match est déjà
