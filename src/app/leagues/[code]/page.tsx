@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { formatParisDateTime } from "@/lib/format-date";
 import { bannerWarn, bannerNeutral, card } from "@/lib/ui";
 import { BackLink } from "@/app/BackLink";
 import { SeasonPredictionForm, type PlayerOption, type TeamOption } from "./SeasonPredictionForm";
@@ -68,7 +67,10 @@ export default async function LeagueSeasonPage({ params }: PageProps<"/leagues/[
     teamName: teamNameById.get(p.team_id) ?? "",
   }));
 
-  const locked = new Date(season.predictions_lock_at) <= new Date();
+  // Plus de date limite globale (de nouveaux entrants continueront d'arriver) : le verrouillage
+  // est désormais individuel — un pronostic déjà enregistré n'est plus modifiable du tout (voir
+  // migration 0045, policy RLS insert-only), indépendamment de predictions_lock_at.
+  const locked = Boolean(existing);
 
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 p-6">
@@ -79,8 +81,8 @@ export default async function LeagueSeasonPage({ params }: PageProps<"/leagues/[
 
       <div className={`mb-6 ${locked ? bannerNeutral : bannerWarn}`}>
         {locked
-          ? `Pronostics verrouillés depuis le ${formatParisDateTime(season.predictions_lock_at)}.`
-          : `Pronostics à envoyer avant le ${formatParisDateTime(season.predictions_lock_at)} — plus aucune modification possible après.`}
+          ? "Pronostics enregistrés — plus aucune modification possible."
+          : "Pronostics ouverts, à envoyer en une seule fois — aucune modification possible après l'envoi."}
       </div>
 
       {locked ? (
