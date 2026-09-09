@@ -5,6 +5,7 @@ import { listCard } from "@/lib/ui";
 import { FavoriteTeamBadge } from "@/app/profile/FavoriteTeamBadge";
 import { BackLink } from "@/app/BackLink";
 import { LEADERBOARD_RESET_KEY, PRIVATE_RANKING_USERNAMES } from "@/lib/leaderboard-reset";
+import { LEAGUE_FLAG } from "@/lib/country-flags";
 
 export default async function LeaderboardPage() {
   const supabase = await createClient();
@@ -21,7 +22,7 @@ export default async function LeaderboardPage() {
   ] = await Promise.all([
     supabase.auth.getSession(),
     supabase.from("profiles").select("id, username, avatar_url, favorite_team_id").order("username"),
-    supabase.from("leagues").select("id, name").eq("active", true).order("name"),
+    supabase.from("leagues").select("id, name, football_data_code").eq("active", true).order("name"),
     supabase.from("points_ledger").select("user_id, league_id, points, created_at"),
     supabase.from("app_settings").select("value").eq("key", LEADERBOARD_RESET_KEY).maybeSingle(),
   ]);
@@ -133,29 +134,41 @@ export default async function LeaderboardPage() {
       </ul>
 
       <h2 className="mb-3 text-lg font-bold">Détail par championnat</h2>
-      <div className="overflow-x-auto rounded-2xl border border-line bg-paper">
-        <table className="w-full text-sm">
+      {/* table-fixed + colonnes en % (via colgroup) plutôt que overflow-x-auto : avec les noms
+          complets des championnats en en-tête, la table dépassait la largeur de l'écran sur
+          mobile et obligeait à scroller horizontalement — les drapeaux (déjà utilisés ailleurs,
+          voir /leagues) tiennent sur une seule colonne étroite, toute la page reste visible sans
+          scroll latéral. */}
+      <div className="overflow-hidden rounded-2xl border border-line bg-paper">
+        <table className="w-full table-fixed text-xs sm:text-sm">
+          <colgroup>
+            <col style={{ width: "30%" }} />
+            {(leagues ?? []).map((l) => (
+              <col key={l.id} style={{ width: `${(leagues?.length ?? 0) > 0 ? 54 / (leagues?.length ?? 1) : 0}%` }} />
+            ))}
+            <col style={{ width: "16%" }} />
+          </colgroup>
           <thead>
             <tr className="border-b border-line bg-cream">
-              <th className="p-3 text-left">Joueur</th>
+              <th className="p-1.5 text-left sm:p-3">Joueur</th>
               {(leagues ?? []).map((l) => (
-                <th key={l.id} className="p-3 text-right">
-                  {l.name}
+                <th key={l.id} className="p-1.5 text-right sm:p-3" title={l.name}>
+                  {LEAGUE_FLAG[l.football_data_code] ?? l.name.slice(0, 3)}
                 </th>
               ))}
-              <th className="p-3 text-right">Total</th>
+              <th className="p-1.5 text-right sm:p-3">Total</th>
             </tr>
           </thead>
           <tbody>
             {ranked.map((p) => (
               <tr key={p.id} className="border-b border-line last:border-0">
-                <td className="p-3 font-bold">{p.username}</td>
+                <td className="truncate p-1.5 font-bold sm:p-3">{p.username}</td>
                 {(leagues ?? []).map((l) => (
-                  <td key={l.id} className="p-3 text-right text-mute">
+                  <td key={l.id} className="p-1.5 text-right text-mute sm:p-3">
                     {byUserByLeague.get(p.id)?.get(l.id) ?? 0}
                   </td>
                 ))}
-                <td className="p-3 text-right font-bold">{p.total}</td>
+                <td className="p-1.5 text-right font-bold sm:p-3">{p.total}</td>
               </tr>
             ))}
           </tbody>
