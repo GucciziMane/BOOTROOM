@@ -1,5 +1,8 @@
 export interface PointConfig {
-  matchExactScore: number;
+  /** Bonus fixe ajouté au-dessus du "bon résultat" quand le score exact est trouvé — jamais scalé
+   * par la cote (contrairement au bon résultat lui-même), pour rester une récompense de précision
+   * constante quel que soit l'écart de niveau entre les deux équipes. */
+  matchExactScoreBonus: number;
   matchCorrectResultNoScore: number;
   seasonPositionExact: number;
   seasonPositionPresence: number;
@@ -11,18 +14,33 @@ export interface PointConfig {
   seasonFinalWinner: number;
 }
 
-/** Score exact = plein pot, bon résultat (victoire/nul/défaite) sans le score = petit bonus. */
-export function computeMatchScorePoints(
+/** Bon résultat (victoire/nul/défaite) trouvé, indépendamment du score exact — scalé par la cote
+ * via applyResultOdds côté appelant (le nul n'a pas de "camp", donc jamais scalé, voir cette
+ * fonction). Le score exact ajoute son propre bonus fixe par-dessus, voir computeExactScoreBonus. */
+export function computeMatchResultPoints(
   predictedHome: number,
   predictedAway: number,
   actualHome: number,
   actualAway: number,
   config: PointConfig
 ): number {
-  if (predictedHome === actualHome && predictedAway === actualAway) return config.matchExactScore;
   const predictedResult = Math.sign(predictedHome - predictedAway);
   const actualResult = Math.sign(actualHome - actualAway);
   return predictedResult === actualResult ? config.matchCorrectResultNoScore : 0;
+}
+
+/** Bonus fixe pour un score exact, en plus du bon résultat — jamais scalé par la cote (précision
+ * pure), 0 si le bon résultat lui-même n'est pas trouvé (un score exact implique toujours un bon
+ * résultat, mais le vérifier explicitement évite tout résultat surprenant si jamais ce n'était
+ * pas le cas). */
+export function computeExactScoreBonus(
+  predictedHome: number,
+  predictedAway: number,
+  actualHome: number,
+  actualAway: number,
+  config: PointConfig
+): number {
+  return predictedHome === actualHome && predictedAway === actualAway ? config.matchExactScoreBonus : 0;
 }
 
 /** Position exacte dans le trio (top3/bottom3) = plein pot, présence dans le trio = bonus réduit. */

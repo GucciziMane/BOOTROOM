@@ -83,8 +83,8 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
   const assistTierPoints = new Map((assistTierPointsRows ?? []).map((r) => [r.tier, r.points]));
   const playerAssistTierById = new Map((playerAssistTierRows ?? []).map((r) => [r.player_id, r.tier]));
   const scoring = {
-    matchExactScore: pointConfigMap.get("match_exact_score") ?? 30,
-    matchCorrectResultNoScore: pointConfigMap.get("match_correct_result_no_score") ?? 10,
+    matchExactScoreBonus: pointConfigMap.get("match_exact_score") ?? 20,
+    matchCorrectResultNoScore: pointConfigMap.get("match_correct_result_no_score") ?? 50,
     scorerTierPoints: Object.fromEntries(scorerTierPoints),
     playerTier: Object.fromEntries(
       [...homePlayers, ...awayPlayers].map((p) => [p.id, playerTierById.get(p.id) ?? FALLBACK_SCORER_TIER])

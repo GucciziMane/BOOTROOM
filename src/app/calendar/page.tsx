@@ -142,8 +142,8 @@ export default async function CalendarPage() {
   const playerTierById = new Map((playerTierRows ?? []).map((r) => [r.player_id, r.tier]));
   const assistTierPoints = new Map((assistTierPointsRows ?? []).map((r) => [r.tier, r.points]));
   const playerAssistTierById = new Map((playerAssistTierRows ?? []).map((r) => [r.player_id, r.tier]));
-  const matchExactScore = pointConfigMap.get("match_exact_score") ?? 30;
-  const matchCorrectResultNoScore = pointConfigMap.get("match_correct_result_no_score") ?? 10;
+  const matchExactScoreBonus = pointConfigMap.get("match_exact_score") ?? 20;
+  const matchCorrectResultNoScore = pointConfigMap.get("match_correct_result_no_score") ?? 50;
   const scorerTierPointsObj = Object.fromEntries(scorerTierPoints);
   const assistTierPointsObj = Object.fromEntries(assistTierPoints);
   const multiplierByTierObj = Object.fromEntries(
@@ -223,7 +223,7 @@ export default async function CalendarPage() {
                       return doubledMatchIdByGroupKey.has(key) && doubledMatchIdByGroupKey.get(key) !== m.id;
                     })()}
                     scoring={{
-                      matchExactScore,
+                      matchExactScoreBonus,
                       matchCorrectResultNoScore,
                       scorerTierPoints: scorerTierPointsObj,
                       playerTier: Object.fromEntries(

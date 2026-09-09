@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import {
-  computeMatchScorePoints,
+  computeMatchResultPoints,
+  computeExactScoreBonus,
   computeSeasonPositionPoints,
   resolveScorerTierPoints,
   resolveAssistTierPoints,
@@ -30,8 +31,8 @@ export async function loadPointConfig(supabase: ServiceClient): Promise<PointCon
   const { data } = await supabase.from("point_config").select("key, points");
   const map = new Map((data ?? []).map((r) => [r.key, r.points]));
   return {
-    matchExactScore: map.get("match_exact_score") ?? 30,
-    matchCorrectResultNoScore: map.get("match_correct_result_no_score") ?? 10,
+    matchExactScoreBonus: map.get("match_exact_score") ?? 20,
+    matchCorrectResultNoScore: map.get("match_correct_result_no_score") ?? 50,
     seasonPositionExact: map.get("season_position_exact") ?? 50,
     seasonPositionPresence: map.get("season_position_presence") ?? 15,
     seasonSurpriseTeam: map.get("season_surprise_team") ?? 40,
@@ -195,7 +196,7 @@ export async function processFinishedMatches(supabase: ServiceClient, config: Po
     const substituteByPlayer = substituteByMatch.get(match.id) ?? new Map();
 
     for (const pred of predictionsByMatch.get(match.id) ?? []) {
-      const baseScorePoints = computeMatchScorePoints(
+      const baseResultPoints = computeMatchResultPoints(
         pred.predicted_home_score,
         pred.predicted_away_score,
         homeScore,
@@ -208,13 +209,23 @@ export async function processFinishedMatches(supabase: ServiceClient, config: Po
         match.home_team_id,
         match.away_team_id
       );
-      const scorePoints = applyResultOdds(
-        baseScorePoints,
+      const resultPoints = applyResultOdds(
+        baseResultPoints,
         winnerTeamId,
         match.favorite_team_id,
         match.odds_tier,
         resultMultiplierMap
       );
+      // Bonus de précision fixe, jamais scalé par la cote (contrairement au bon résultat
+      // ci-dessus) — voir computeExactScoreBonus.
+      const exactScoreBonus = computeExactScoreBonus(
+        pred.predicted_home_score,
+        pred.predicted_away_score,
+        homeScore,
+        awayScore,
+        config
+      );
+      const scorePoints = resultPoints + exactScoreBonus;
 
       const scorerPoints = predictionCoveredByPlayer(pred.predicted_scorer_player_id, actualScorers, substituteByPlayer)
         ? resolveScorerTierPoints(scorerTierByPlayer.get(pred.predicted_scorer_player_id!), tierPointsMap)

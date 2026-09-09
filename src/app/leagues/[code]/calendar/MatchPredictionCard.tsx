@@ -31,7 +31,7 @@ interface Props {
   homePlayers: PlayerOption[];
   awayPlayers: PlayerOption[];
   scoring: {
-    matchExactScore: number;
+    matchExactScoreBonus: number;
     matchCorrectResultNoScore: number;
     scorerTierPoints: Record<number, number>;
     playerTier: Record<number, number>;
@@ -132,16 +132,9 @@ export function MatchPredictionCard({
     homeScore !== "" && awayScore !== ""
       ? predictedWinnerTeamId(Number(homeScore), Number(awayScore), resultOdds.homeTeamId, resultOdds.awayTeamId)
       : null;
-  const exactScorePoints = applyResultOdds(
-    scoring.matchExactScore,
-    winnerTeamId,
-    resultOdds.favoriteTeamId,
-    resultOdds.tier,
-    multiplierByTier
-  );
-  // Même calcul que exactScorePoints (affiché par défaut avant toute saisie, comme "Score
-  // exact") : seul un nul REELLEMENT saisi masque cette ligne, jamais l'absence de saisie — sinon
-  // "Bon résultat" disparaissait à tort sur toute carte pas encore remplie.
+  // Affiché par défaut avant toute saisie, comme avant : seul un nul REELLEMENT saisi masque la
+  // ligne "Bon résultat" plus bas, jamais l'absence de saisie — sinon elle disparaissait à tort
+  // sur toute carte pas encore remplie.
   const correctResultPoints = applyResultOdds(
     scoring.matchCorrectResultNoScore,
     winnerTeamId,
@@ -149,6 +142,9 @@ export function MatchPredictionCard({
     resultOdds.tier,
     multiplierByTier
   );
+  // Score exact = bon résultat (scalé par la cote ci-dessus) + bonus de précision fixe, jamais
+  // scalé — voir computeExactScoreBonus côté scoring engine, même logique reproduite ici.
+  const exactScorePoints = correctResultPoints + scoring.matchExactScoreBonus;
   // Un nul correct EST le score exact : jamais de "bon résultat sans le score exact" à part dans
   // ce cas précis, pour ne pas afficher la même chose deux fois sous deux libellés.
   const predictedDraw = homeScore !== "" && awayScore !== "" && homeScore === awayScore;

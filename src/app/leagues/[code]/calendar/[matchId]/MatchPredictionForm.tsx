@@ -11,7 +11,7 @@ interface PlayerOption {
 }
 
 interface ScoringInfo {
-  matchExactScore: number;
+  matchExactScoreBonus: number;
   matchCorrectResultNoScore: number;
   scorerTierPoints: Record<number, number>;
   playerTier: Record<number, number>;
@@ -83,13 +83,6 @@ export function MatchPredictionForm({
   const backingFavorite = winnerTeamId !== null && winnerTeamId === resultOdds.favoriteTeamId;
   const backingUnderdog =
     winnerTeamId !== null && resultOdds.favoriteTeamId !== null && winnerTeamId !== resultOdds.favoriteTeamId;
-  const exactScorePoints = applyResultOdds(
-    scoring.matchExactScore,
-    winnerTeamId,
-    resultOdds.favoriteTeamId,
-    resultOdds.tier,
-    multiplierByTier
-  );
   const correctResultPoints = applyResultOdds(
     scoring.matchCorrectResultNoScore,
     winnerTeamId,
@@ -97,6 +90,9 @@ export function MatchPredictionForm({
     resultOdds.tier,
     multiplierByTier
   );
+  // Score exact = bon résultat (scalé par la cote ci-dessus) + bonus de précision fixe, jamais
+  // scalé — voir computeExactScoreBonus côté scoring engine, même logique reproduite ici.
+  const exactScorePoints = correctResultPoints + scoring.matchExactScoreBonus;
 
   return (
     <form action={formAction} className={`space-y-6 ${card}`}>
