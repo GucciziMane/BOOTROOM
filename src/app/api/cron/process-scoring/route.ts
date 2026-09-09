@@ -51,7 +51,13 @@ export async function GET(request: NextRequest) {
   const matchesResult = await processFinishedMatches(supabase, config);
   const seasonsResult = await processFinishedSeasons(supabase, config);
 
-  return NextResponse.json({ matches: matchesResult, seasons: seasonsResult });
+  // QStash/le monitoring ne peuvent détecter un échec réel du traitement (upsert points_ledger en
+  // erreur, etc.) que via le statut HTTP : processFinishedMatches/processFinishedSeasons portaient
+  // déjà l'erreur dans leur champ `error`, mais la réponse restait 200 quoi qu'il arrive. Un
+  // `processed: 0` sans `error` (aucun match/saison à traiter ce run) reste un succès métier normal.
+  const failed = ("error" in matchesResult && Boolean(matchesResult.error)) || ("error" in seasonsResult && Boolean(seasonsResult.error));
+
+  return NextResponse.json({ matches: matchesResult, seasons: seasonsResult }, failed ? { status: 500 } : undefined);
 }
 
 /**
