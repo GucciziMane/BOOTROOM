@@ -38,35 +38,45 @@ export async function saveMatchPrediction(
   // le détecte pour refuser proprement plutôt que de se retrouver avec deux x2 actifs à la fois).
   if (isDoubled) {
     const { data: thisMatch } = await supabase.from("matches").select("league_id, matchday").eq("id", matchId).maybeSingle();
-    if (thisMatch?.matchday != null) {
-      const { data: siblingMatches } = await supabase
-        .from("matches")
-        .select("id")
-        .eq("league_id", thisMatch.league_id)
-        .eq("matchday", thisMatch.matchday)
-        .neq("id", matchId);
-      const siblingIds = (siblingMatches ?? []).map((m) => m.id);
-      if (siblingIds.length > 0) {
-        const { data: existingDoubled } = await supabase
+    // matchday NULL (match introuvable, ou stage hors des tours à élimination directe connus de
+    // sync-fixtures, cf. KNOCKOUT_STAGE_ORDER) : le contrôle d'unicité ci-dessous ne peut pas
+    // s'appliquer (NULL n'est jamais égal à un autre NULL pour l'index unique
+    // match_predictions_one_double_per_matchday), donc plusieurs x2 pourraient coexister sans
+    // qu'aucune vérification, applicative ou en base, ne les détecte. Refuser explicitement
+    // plutôt que de sauter silencieusement le contrôle.
+    if (thisMatch?.matchday == null) {
+      return {
+        error: "Impossible d'activer le x2 sur ce match pour l'instant (journée non déterminée).",
+        success: false,
+      };
+    }
+    const { data: siblingMatches } = await supabase
+      .from("matches")
+      .select("id")
+      .eq("league_id", thisMatch.league_id)
+      .eq("matchday", thisMatch.matchday)
+      .neq("id", matchId);
+    const siblingIds = (siblingMatches ?? []).map((m) => m.id);
+    if (siblingIds.length > 0) {
+      const { data: existingDoubled } = await supabase
+        .from("match_predictions")
+        .select("match_id")
+        .eq("user_id", user.id)
+        .in("match_id", siblingIds)
+        .eq("is_doubled", true)
+        .maybeSingle();
+      if (existingDoubled) {
+        const { data: unset } = await supabase
           .from("match_predictions")
-          .select("match_id")
+          .update({ is_doubled: false })
           .eq("user_id", user.id)
-          .in("match_id", siblingIds)
-          .eq("is_doubled", true)
-          .maybeSingle();
-        if (existingDoubled) {
-          const { data: unset } = await supabase
-            .from("match_predictions")
-            .update({ is_doubled: false })
-            .eq("user_id", user.id)
-            .eq("match_id", existingDoubled.match_id)
-            .select("match_id");
-          if (!unset || unset.length === 0) {
-            return {
-              error: "Ton x2 de cette journée est déjà posé sur un autre match déjà verrouillé.",
-              success: false,
-            };
-          }
+          .eq("match_id", existingDoubled.match_id)
+          .select("match_id");
+        if (!unset || unset.length === 0) {
+          return {
+            error: "Ton x2 de cette journée est déjà posé sur un autre match déjà verrouillé.",
+            success: false,
+          };
         }
       }
     }
