@@ -296,13 +296,36 @@ export function MatchPredictionCard({
         </optgroup>
       </select>
 
-      <p className={`relative mt-2 text-center text-xs ${textFaint}`}>
-        Score exact +{exactScorePoints * pointsMultiplier}pts
-        {correctResultPoints > 0 ? ` · Bon résultat +${correctResultPoints * pointsMultiplier}pts` : ""}
-        {scorer ? ` · ${scorer.name} +${scorerPoints * pointsMultiplier}pts` : ""}
-        {assister ? ` · ${assister.name} +${assistPoints * pointsMultiplier}pts` : ""}
-        {isDoubled && " (x2 🔥)"}
-      </p>
+      {/* Une ligne par nature de points plutôt qu'une seule phrase à rallonge : buteur/passeur
+          distingués par emoji (jamais juste deux noms à la suite, ambigu si même joueur choisi
+          pour les deux) — se lit d'un coup d'œil même avec tout rempli. */}
+      <div className={`relative mt-2 space-y-0.5 text-center text-xs ${textFaint}`}>
+        <p>
+          Score exact <strong className={textStrong}>+{exactScorePoints * pointsMultiplier}</strong>
+          {correctResultPoints > 0 && (
+            <>
+              {" "}
+              · Bon résultat <strong className={textStrong}>+{correctResultPoints * pointsMultiplier}</strong>
+            </>
+          )}
+        </p>
+        {(scorer || assister) && (
+          <p>
+            {scorer && (
+              <>
+                ⚽ {scorer.name} <strong className={textStrong}>+{scorerPoints * pointsMultiplier}</strong>
+              </>
+            )}
+            {scorer && assister && "   "}
+            {assister && (
+              <>
+                🎯 {assister.name} <strong className={textStrong}>+{assistPoints * pointsMultiplier}</strong>
+              </>
+            )}
+          </p>
+        )}
+        {isDoubled && <p className="font-bold text-reward">x2 🔥 — tout est doublé</p>}
+      </div>
 
       {!doubledElsewhere && !isDoubled ? (
         <div className="relative mt-2 flex gap-2">
