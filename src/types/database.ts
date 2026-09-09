@@ -136,7 +136,12 @@ export interface Database {
         Relationships: [];
       };
       match_result_tier_multipliers: {
-        Row: { tier: 1 | 2 | 3 | 4 | 5; favorite_multiplier_pct: number; underdog_multiplier_pct: number };
+        Row: {
+          tier: 1 | 2 | 3 | 4 | 5;
+          favorite_multiplier_pct: number;
+          underdog_multiplier_pct: number;
+          draw_multiplier_pct: number;
+        };
         Insert: Partial<Database["public"]["Tables"]["match_result_tier_multipliers"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["match_result_tier_multipliers"]["Row"]>;
         Relationships: [];

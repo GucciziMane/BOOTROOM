@@ -94,11 +94,15 @@ export async function processFinishedMatches(supabase: ServiceClient, config: Po
 
   const { data: resultMultipliers } = await supabase
     .from("match_result_tier_multipliers")
-    .select("tier, favorite_multiplier_pct, underdog_multiplier_pct");
+    .select("tier, favorite_multiplier_pct, underdog_multiplier_pct, draw_multiplier_pct");
   const resultMultiplierMap = new Map<OddsTier, ResultTierMultiplier>(
     (resultMultipliers ?? []).map((r) => [
       r.tier,
-      { favoriteMultiplierPct: r.favorite_multiplier_pct, underdogMultiplierPct: r.underdog_multiplier_pct },
+      {
+        favoriteMultiplierPct: r.favorite_multiplier_pct,
+        underdogMultiplierPct: r.underdog_multiplier_pct,
+        drawMultiplierPct: r.draw_multiplier_pct,
+      },
     ])
   );
 

@@ -74,7 +74,7 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
     supabase.from("player_scoring_tier").select("player_id, tier").eq("season_id", match.season_id),
     supabase.from("match_assist_tier_points").select("tier, points"),
     supabase.from("player_assist_tier").select("player_id, tier").eq("season_id", match.season_id),
-    supabase.from("match_result_tier_multipliers").select("tier, favorite_multiplier_pct, underdog_multiplier_pct"),
+    supabase.from("match_result_tier_multipliers").select("tier, favorite_multiplier_pct, underdog_multiplier_pct, draw_multiplier_pct"),
   ]);
   const homeTeam = teams?.find((t) => t.id === match.home_team_id);
   const awayTeam = teams?.find((t) => t.id === match.away_team_id);
@@ -115,7 +115,11 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
     multiplierByTier: Object.fromEntries(
       (resultMultiplierRows ?? []).map((r) => [
         r.tier,
-        { favoriteMultiplierPct: r.favorite_multiplier_pct, underdogMultiplierPct: r.underdog_multiplier_pct },
+        {
+          favoriteMultiplierPct: r.favorite_multiplier_pct,
+          underdogMultiplierPct: r.underdog_multiplier_pct,
+          drawMultiplierPct: r.draw_multiplier_pct,
+        },
       ])
     ),
   };

@@ -96,6 +96,10 @@ export type OddsTier = 1 | 2 | 3 | 4 | 5;
 export interface ResultTierMultiplier {
   favoriteMultiplierPct: number;
   underdogMultiplierPct: number;
+  /** Un nul contre un favori plus fort est déjà un petit exploit pour l'outsider — entre la
+   * valeur "favori" et la valeur "outsider" du même tier, jamais figé à une seule valeur quel
+   * que soit l'écart de niveau (voir migration 0046). */
+  drawMultiplierPct: number;
 }
 
 /** Équipe désignée vainqueur par le pronostic (score prédit), ou null si nul pronostiqué. */
@@ -111,8 +115,11 @@ export function predictedWinnerTeamId(
 
 /**
  * Ajuste les points de score selon la cote du match : un pronostic gagnant sur l'outsider
- * rapporte plus qu'un pronostic gagnant sur le favori "logique". Sans favori connu (début de
- * saison, ou équipes trop proches) ou pronostic nul, les points de base ne sont pas modifiés.
+ * rapporte plus qu'un pronostic gagnant sur le favori "logique", et un nul est lui aussi scalé
+ * (plus l'écart de niveau est grand, plus un nul rapporte — voir drawMultiplierPct). Sans tier
+ * connu (début de saison, historique insuffisant) les points de base ne sont pas modifiés ; sans
+ * favori connu mais avec un tier, seul le cas "victoire" reste non scalé (impossible de dire qui
+ * est favori/outsider), le nul l'est quand même.
  */
 export function applyResultOdds(
   basePoints: number,
@@ -121,9 +128,11 @@ export function applyResultOdds(
   tier: OddsTier | null,
   multiplierByTier: Map<OddsTier, ResultTierMultiplier>
 ): number {
-  if (basePoints <= 0 || winnerTeamId === null || favoriteTeamId === null || tier === null) return basePoints;
+  if (basePoints <= 0 || tier === null) return basePoints;
   const mult = multiplierByTier.get(tier);
   if (!mult) return basePoints;
+  if (winnerTeamId === null) return Math.round((basePoints * mult.drawMultiplierPct) / 100);
+  if (favoriteTeamId === null) return basePoints;
   const pct = winnerTeamId === favoriteTeamId ? mult.favoriteMultiplierPct : mult.underdogMultiplierPct;
   return Math.round((basePoints * pct) / 100);
 }
