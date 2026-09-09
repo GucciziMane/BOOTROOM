@@ -3,8 +3,7 @@ import Image from "next/image";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { computeStandings } from "@/lib/scoring/standings";
-import { formatParisDateTime } from "@/lib/format-date";
-import { bannerWarn, bannerNeutral, linkMuted } from "@/lib/ui";
+import { bannerWarn, linkMuted } from "@/lib/ui";
 import { BackLink } from "@/app/BackLink";
 
 const TOP_N = 10;
@@ -30,7 +29,7 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
   const [{ data: seasons }, { data: teamsData }] = await Promise.all([
     supabase
       .from("seasons")
-      .select("id, predictions_lock_at")
+      .select("id")
       .eq("league_id", league.id)
       .order("year", { ascending: false })
       .limit(1),
@@ -111,7 +110,9 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
   // Bandeau pronostics de saison : glissé ici plutôt qu'en section à part, puisque c'est
   // exactement la page où on vient déjà voir "qui est devant" — le contexte le plus naturel pour
   // rappeler qu'un pronostic reste à faire, ou pour comparer un pronostic déjà fait à la réalité.
-  const locked = new Date(season.predictions_lock_at) <= new Date();
+  // Pronostics ouverts sans date limite (migration 0045) : l'état affiché dépend uniquement de
+  // l'envoi (immuable une fois fait), jamais d'une date de coupure.
+  const predicted = Boolean(seasonPrediction);
   const top3 = (seasonPrediction?.top3 as Record<string, number>) ?? {};
   const bottom3 = (seasonPrediction?.bottom3 as Record<string, number>) ?? {};
   const badgesByTeamId = new Map<number, string[]>();
@@ -143,26 +144,15 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
         <BackLink href="/calendar/classements" />
       </div>
 
-      {!locked && !seasonPrediction && (
+      {!predicted && (
         <div className={`mb-6 flex flex-wrap items-center justify-between gap-3 ${bannerWarn}`}>
-          <span>
-            🔮 Pronostics de saison pas encore faits pour ce championnat — à envoyer avant le{" "}
-            {formatParisDateTime(season.predictions_lock_at)}.
-          </span>
+          <span>🔮 Pronostics de saison pas encore faits pour ce championnat.</span>
           <Link href={`/leagues/${code}`} className="shrink-0 font-bold underline">
             Pronostiquer →
           </Link>
         </div>
       )}
-      {!locked && seasonPrediction && (
-        <div className={`mb-6 flex flex-wrap items-center justify-between gap-3 ${bannerNeutral}`}>
-          <span>🔮 Pronostics de saison enregistrés, modifiables jusqu&apos;au {formatParisDateTime(season.predictions_lock_at)}.</span>
-          <Link href={`/leagues/${code}`} className="shrink-0 font-bold underline">
-            Modifier →
-          </Link>
-        </div>
-      )}
-      {locked && seasonPrediction && (
+      {predicted && (
         <p className="mb-4 text-xs text-mute">
           {code === "CL"
             ? "🎯 = ton top 3 pronostiqué · 🏆 = ton finaliste pronostiqué · 👑 = ton vainqueur pronostiqué —"

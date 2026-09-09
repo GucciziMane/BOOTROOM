@@ -131,10 +131,14 @@ export async function GET(request: NextRequest) {
     // un match qui n'a pas encore commencé, déjà filtré ci-dessus).
     if (espnMatch.status === "live" || espnMatch.status === "finished") {
       const [{ data: existingGoals }, { data: existingSubs }] = await Promise.all([
-        supabase.from("match_goals").select("id, player_id, assist_player_id, minute, scorer_name").eq("match_id", match.id),
+        supabase
+          .from("match_goals")
+          .select("id, player_id, assist_player_id, assist_name, minute, scorer_name")
+          .eq("match_id", match.id),
         supabase.from("match_substitutions").select("player_out_id, player_in_id").eq("match_id", match.id),
       ]);
-      const existingKeys = new Set((existingGoals ?? []).map((g) => goalKey(g.player_id, g.scorer_name, g.minute)));
+      const existingGoalByKey = new Map((existingGoals ?? []).map((g) => [goalKey(g.player_id, g.scorer_name, g.minute), g]));
+      const existingKeys = new Set(existingGoalByKey.keys());
       const existingSubKeys = new Set((existingSubs ?? []).map((s) => `${s.player_out_id}:${s.player_in_id}`));
 
       let goals: Awaited<ReturnType<typeof getEspnMatchEvents>>["goals"] = [];
@@ -220,6 +224,29 @@ export async function GET(request: NextRequest) {
             notifyGoal(supabase, match, home.name, away.name, espnMatch.homeScore ?? 0, espnMatch.awayScore ?? 0, goal, playerInToOut)
           );
         }
+      }
+
+      // Passeur attaché tardivement par ESPN (souvent quelques minutes après le but lui-même) :
+      // goalKey ne porte que sur buteur/minute, donc un but déjà en base ne serait jamais mis à
+      // jour sans ce bloc dédié — uniquement pour compléter un passeur encore manquant, jamais pour
+      // écraser une valeur déjà enregistrée.
+      const assistBackfills = goals.flatMap((g) => {
+        if (!g.assistName) return [];
+        const teamId = teamNamesMatch(g.teamName, home.name) ? match.home_team_id : match.away_team_id;
+        const candidates = teamId === match.home_team_id ? homePlayers : awayPlayers;
+        const scorer = matchPlayerByName(g.scorerName, candidates);
+        const key = goalKey(scorer?.id ?? null, g.scorerName, g.minute);
+        const existing = existingGoalByKey.get(key);
+        if (!existing || existing.assist_player_id != null || existing.assist_name != null) return [];
+        const assist = matchPlayerByName(g.assistName, candidates);
+        return [{ id: existing.id, assist_player_id: assist?.id ?? null, assist_name: g.assistName }];
+      });
+      if (assistBackfills.length > 0) {
+        await Promise.all(
+          assistBackfills.map((row) =>
+            supabase.from("match_goals").update({ assist_player_id: row.assist_player_id, assist_name: row.assist_name }).eq("id", row.id)
+          )
+        );
       }
 
       // But annulé (VAR, hors-jeu revu après coup...) : arrive assez souvent pour qu'on ne puisse

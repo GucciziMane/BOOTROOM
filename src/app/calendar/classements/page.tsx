@@ -25,12 +25,12 @@ export default async function CalendarStandingsPage() {
   const [{ data: seasons }, { data: predictions }] = await Promise.all([
     supabase
       .from("seasons")
-      .select("id, league_id, predictions_lock_at")
+      .select("id, league_id")
       .in("league_id", leagueIds.length > 0 ? leagueIds : [-1])
       .order("year", { ascending: false }),
     supabase.from("season_predictions").select("season_id").eq("user_id", user!.id),
   ]);
-  const currentSeasonByLeague = new Map<number, { id: number; predictions_lock_at: string }>();
+  const currentSeasonByLeague = new Map<number, { id: number }>();
   for (const s of seasons ?? []) {
     if (!currentSeasonByLeague.has(s.league_id)) currentSeasonByLeague.set(s.league_id, s);
   }
@@ -52,8 +52,7 @@ export default async function CalendarStandingsPage() {
       <ul className={listCard}>
         {(leagues ?? []).map((league) => {
           const season = currentSeasonByLeague.get(league.id);
-          const predictionPending =
-            season && new Date(season.predictions_lock_at) > new Date() && !predictedSeasonIds.has(season.id);
+          const predictionPending = season && !predictedSeasonIds.has(season.id);
 
           return (
             <li key={league.id}>

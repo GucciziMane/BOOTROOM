@@ -1,8 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
-import { formatParisDateTime } from "@/lib/format-date";
-import { bannerWarn, listCard } from "@/lib/ui";
+import { listCard } from "@/lib/ui";
 import { LEAGUE_FLAG } from "@/lib/country-flags";
 import { BackLink } from "@/app/BackLink";
 
@@ -21,14 +20,10 @@ export default async function LeaguesPage() {
       .select("id, name, country, football_data_code, logo_url")
       .eq("active", true)
       .order("name"),
-    supabase.from("seasons").select("id, league_id, predictions_lock_at, status"),
+    supabase.from("seasons").select("id, league_id, status"),
     supabase.from("season_predictions").select("season_id").eq("user_id", user!.id),
   ]);
   const predictedSeasonIds = new Set((predictions ?? []).map((p) => p.season_id));
-  const nextLockAt = (seasons ?? [])
-    .map((s) => s.predictions_lock_at)
-    .filter((d) => new Date(d) > new Date())
-    .sort()[0];
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 p-6">
@@ -41,17 +36,9 @@ export default async function LeaguesPage() {
         Pronostics de saison : meilleur buteur, meilleur passeur, top 3, flop 3, équipe surprise et équipe flop.
       </p>
 
-      {nextLockAt && (
-        <div className={`mb-6 ${bannerWarn}`}>
-          Pronostics à envoyer avant le <strong>{formatParisDateTime(nextLockAt)}</strong> — plus aucune
-          modification possible après.
-        </div>
-      )}
-
       <ul className={listCard}>
         {(leagues ?? []).map((league) => {
           const season = (seasons ?? []).find((s) => s.league_id === league.id);
-          const locked = season ? new Date(season.predictions_lock_at) <= new Date() : false;
           const predicted = season ? predictedSeasonIds.has(season.id) : false;
 
           return (
@@ -76,8 +63,6 @@ export default async function LeaguesPage() {
                 <div className="text-sm font-bold">
                   {predicted ? (
                     <span className="text-good">Pronostics envoyés</span>
-                  ) : locked ? (
-                    <span className="text-mute">Verrouillé</span>
                   ) : (
                     <span className="rounded-full bg-accent-soft px-2.5 py-1 text-xs text-accent">À faire</span>
                   )}
