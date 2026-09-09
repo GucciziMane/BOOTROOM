@@ -301,13 +301,13 @@ export function MatchPredictionCard({
           pour les deux) — se lit d'un coup d'œil même avec tout rempli. */}
       <div className={`relative mt-2 space-y-0.5 text-center text-xs ${textFaint}`}>
         <p>
-          Score exact <strong className={textStrong}>+{exactScorePoints * pointsMultiplier}</strong>
           {correctResultPoints > 0 && (
             <>
-              {" "}
-              · Bon résultat <strong className={textStrong}>+{correctResultPoints * pointsMultiplier}</strong>
+              Bon résultat <strong className={textStrong}>+{correctResultPoints * pointsMultiplier}</strong>
+              {" · "}
             </>
           )}
+          Score exact <strong className={textStrong}>+{exactScorePoints * pointsMultiplier}</strong>
         </p>
         {(scorer || assister) && (
           <p>
