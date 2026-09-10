@@ -30,7 +30,7 @@ export function getLeagueCardStyle(leagueCode: string, leagueColor?: string, pad
     backgroundImage: background?.image,
     cardClassName:
       theme === "none"
-        ? `rounded-2xl border border-line bg-paper shadow-sm ${padding}`
+        ? `rounded-2xl border border-line bg-surface shadow-sm ${padding}`
         : `relative overflow-hidden rounded-2xl shadow-md ${padding}`,
     cardStyle: theme === "none" && leagueColor ? { borderLeftColor: leagueColor, borderLeftWidth: 4 } : undefined,
     textFaint: theme === "light" ? "text-mute" : theme === "dark" ? "text-white/70" : "text-mute",

@@ -15,7 +15,7 @@ function Pulse({ className = "" }: { className?: string }) {
  * quand le contenu réel apparaît par-dessus. */
 export function SkeletonMatchCard() {
   return (
-    <div className="rounded-2xl border border-line bg-paper p-4 shadow-sm">
+    <div className="rounded-2xl border border-line bg-surface p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
         <Pulse className="h-3 w-24" />
         <Pulse className="h-3 w-16" />
@@ -68,7 +68,7 @@ export function SkeletonListRow({ avatar = true }: { avatar?: boolean }) {
 /** Liste complète, dans un conteneur `listCard` pour rester identique au rendu final. */
 export function SkeletonList({ count = 6, avatar = true }: { count?: number; avatar?: boolean }) {
   return (
-    <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
+    <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface">
       {Array.from({ length: count }).map((_, i) => (
         <SkeletonListRow key={i} avatar={avatar} />
       ))}

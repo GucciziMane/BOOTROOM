@@ -93,14 +93,16 @@ async function getClubTheme(): Promise<ClubTheme> {
 // Isolé ici, le reste de la page peut s'afficher immédiatement pendant que ça résout.
 async function ClubThemeLayer() {
   const clubTheme = await getClubTheme();
+  const stadiumMode = clubTheme.loggedIn && !clubTheme.enabled;
   return (
     <>
-      <StadiumBackdrop show={clubTheme.loggedIn && !clubTheme.enabled} />
+      <StadiumBackdrop show={stadiumMode} />
       <ClubCrestWatermark enabled={clubTheme.enabled} crestUrl={clubTheme.crestUrl} />
       <ThemeApplier
         enabled={clubTheme.enabled}
         primaryColor={clubTheme.primaryColor}
         secondaryColor={clubTheme.secondaryColor}
+        stadiumMode={stadiumMode}
       />
     </>
   );

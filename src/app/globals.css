@@ -54,6 +54,27 @@
   --font-sans: var(--font-comic);
 }
 
+/* Mode "trophée" (pas de thème de club actif) : voir StadiumBackdrop/ThemeApplier
+   (ThemeApplier.tsx) qui posent l'attribut data-stadium sur <html> et la photo de stade en fond.
+   Seuls ink/mute/line/surface basculent en clair-sur-sombre pour rester lisibles sur la photo —
+   paper et cream restent volontairement inchangés : utilisés ailleurs comme "toujours blanc/clair"
+   quel que soit le thème (texte sur bulle de chat colorée, pastille caméra, etc.), les faire
+   basculer casserait leur contraste à ces endroits-là. --color-surface (jusqu'ici inutilisé, cf.
+   @theme inline plus haut) sert de fond de carte dédié pour ne pas dépendre de --color-paper. */
+:root[data-stadium="true"] {
+  color-scheme: dark;
+  --color-ink: #f5f7fb;
+  --color-mute: rgba(245, 247, 251, 0.68);
+  --color-line: rgba(245, 247, 251, 0.18);
+  --color-surface: rgba(11, 16, 32, 0.55);
+  --color-surface-raised: rgba(11, 16, 32, 0.7);
+}
+:root[data-stadium="true"] .bg-surface,
+:root[data-stadium="true"] .bg-surface-raised {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
 html {
   min-height: 100%;
   background: var(--color-cream);

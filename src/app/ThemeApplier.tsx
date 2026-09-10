@@ -40,11 +40,23 @@ export function ThemeApplier({
   enabled,
   primaryColor,
   secondaryColor,
+  stadiumMode,
 }: {
   enabled: boolean;
   primaryColor: string | null;
   secondaryColor: string | null;
+  /** Mode "trophée" (voir StadiumBackdrop) : bascule ink/mute/line/surface en clair-sur-sombre
+   * (globals.css, sélecteur [data-stadium="true"]) pour rester lisible sur la photo de fond. */
+  stadiumMode: boolean;
 }) {
+  useEffect(() => {
+    if (stadiumMode) {
+      document.documentElement.dataset.stadium = "true";
+    } else {
+      delete document.documentElement.dataset.stadium;
+    }
+  }, [stadiumMode]);
+
   useEffect(() => {
     const root = document.documentElement.style;
 
