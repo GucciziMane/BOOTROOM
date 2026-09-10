@@ -123,9 +123,16 @@ export default async function LeaderboardPage() {
 
       <p className="mb-4 text-sm text-mute">
         Clique sur un joueur pour voir tous ses pronostics passés : score prédit, score réel, points gagnés, et si
-        son buteur/passeur pronostiqué s&apos;est vérifié.
+        son buteur/passeur pronostiqué s&apos;est vérifié. Bons = bon résultat trouvé (score exact inclus).
       </p>
 
+      <div className="mb-2 flex items-center gap-3 px-4 text-right text-[11px] font-bold uppercase tracking-wide text-mute">
+        <span className="flex-1 text-left">Joueur</span>
+        <span className="w-9">Bons</span>
+        <span className="w-9">Exacts</span>
+        <span className="w-14">Points</span>
+        <span className="w-3" aria-hidden />
+      </div>
       <ul className={`mb-8 ${listCard}`}>
         {ranked.map((p, i) => (
           <li key={p.id}>
@@ -135,29 +142,29 @@ export default async function LeaderboardPage() {
               // Toute la liste est visible sans scroll (petit groupe d'amis) : sans ça, le profil de
               // chaque joueur précharge en arrière-plan dès l'affichage de cette page.
               prefetch={false}
-              className="flex items-center justify-between gap-3 p-4 transition-colors hover:bg-cream"
+              className="flex items-center gap-3 p-4 transition-colors hover:bg-cream"
             >
-              <span className="flex items-center gap-4">
-                <span className="w-6 text-mute">{i + 1}</span>
-                <span className="relative h-16 w-16 shrink-0">
-                  <span className="relative block h-16 w-16 overflow-hidden rounded-full border-2 border-line bg-cream">
+              <span className="flex min-w-0 flex-1 items-center gap-3">
+                <span className="w-5 shrink-0 text-mute">{i + 1}</span>
+                <span className="relative h-12 w-12 shrink-0">
+                  <span className="relative block h-12 w-12 overflow-hidden rounded-full border-2 border-line bg-cream">
                     {p.avatar_url ? (
-                      <Image src={p.avatar_url} alt="" fill sizes="64px" className="object-cover" />
+                      <Image src={p.avatar_url} alt="" fill sizes="48px" className="object-cover" />
                     ) : (
-                      <span className="flex h-full w-full items-center justify-center text-2xl font-bold text-mute">
+                      <span className="flex h-full w-full items-center justify-center text-lg font-bold text-mute">
                         {p.username.slice(0, 1).toUpperCase()}
                       </span>
                     )}
                   </span>
-                  <FavoriteTeamBadge logoUrl={p.favorite_team_id ? (teamLogoById.get(p.favorite_team_id) ?? null) : null} size={22} />
+                  <FavoriteTeamBadge logoUrl={p.favorite_team_id ? (teamLogoById.get(p.favorite_team_id) ?? null) : null} size={18} />
                 </span>
-                <span className="text-lg font-bold">{p.username}</span>
+                <span className="truncate font-bold">{p.username}</span>
               </span>
-              <span className="flex items-center gap-2">
-                <span className="font-bold">{p.total} pts</span>
-                <span aria-hidden className="text-mute">
-                  ›
-                </span>
+              <span className="w-9 shrink-0 text-right font-bold">{goodPredictionsByUser.get(p.id) ?? 0}</span>
+              <span className="w-9 shrink-0 text-right font-bold">{exactScoresByUser.get(p.id) ?? 0}</span>
+              <span className="w-14 shrink-0 text-right font-bold">{p.total}</span>
+              <span aria-hidden className="w-3 shrink-0 text-right text-mute">
+                ›
               </span>
             </Link>
           </li>
@@ -201,36 +208,6 @@ export default async function LeaderboardPage() {
                   </td>
                 ))}
                 <td className="p-1.5 text-right font-bold sm:p-3">{p.total}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <h2 className="mb-3 mt-8 text-lg font-bold">Précision des pronostics</h2>
-      <p className="mb-3 text-sm text-mute">
-        Bons pronos = bon résultat trouvé (score exact inclus) — championnats actifs uniquement.
-      </p>
-      <div className="overflow-hidden rounded-2xl border border-line bg-paper">
-        <table className="w-full table-fixed text-xs sm:text-sm">
-          <colgroup>
-            <col style={{ width: "46%" }} />
-            <col style={{ width: "27%" }} />
-            <col style={{ width: "27%" }} />
-          </colgroup>
-          <thead>
-            <tr className="border-b border-line bg-cream">
-              <th className="p-1.5 text-left sm:p-3">Joueur</th>
-              <th className="p-1.5 text-right sm:p-3">Bons pronos</th>
-              <th className="p-1.5 text-right sm:p-3">Score exact</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ranked.map((p) => (
-              <tr key={p.id} className="border-b border-line last:border-0">
-                <td className="truncate p-1.5 font-bold sm:p-3">{p.username}</td>
-                <td className="p-1.5 text-right text-mute sm:p-3">{goodPredictionsByUser.get(p.id) ?? 0}</td>
-                <td className="p-1.5 text-right text-mute sm:p-3">{exactScoresByUser.get(p.id) ?? 0}</td>
               </tr>
             ))}
           </tbody>
