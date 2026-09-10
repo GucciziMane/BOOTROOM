@@ -82,7 +82,7 @@ export function LeaderboardFilter({ rows, leagues }: { rows: LeaderboardRow[]; l
                 <span className="flex min-w-0 flex-1 items-center gap-3">
                   <span className="w-5 shrink-0 text-mute">{i + 1}</span>
                   <span className="relative h-12 w-12 shrink-0">
-                    <span className="relative block h-12 w-12 overflow-hidden rounded-full border-2 border-line bg-cream">
+                    <span className="relative block h-12 w-12 overflow-hidden rounded-full border-2 border-line bg-surface">
                       {p.avatarUrl ? (
                         <Image src={p.avatarUrl} alt="" fill sizes="48px" className="object-cover" />
                       ) : (
@@ -117,7 +117,7 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
       type="button"
       onClick={onClick}
       className={`shrink-0 whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-bold transition-colors ${
-        active ? "bg-accent text-white shadow-sm" : "border border-line bg-paper text-mute hover:border-accent hover:text-accent"
+        active ? "bg-accent text-white shadow-sm" : "border border-line bg-surface text-mute hover:border-accent hover:text-accent"
       }`}
     >
       {label}

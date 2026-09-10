@@ -596,7 +596,7 @@ export function ChatRoom({
             type="button"
             onClick={toggleNotifications}
             className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${
-              notifications.on ? "bg-accent-soft text-accent-hover" : `bg-paper text-mute shadow-sm hover:text-ink`
+              notifications.on ? "bg-accent-soft text-accent-hover" : `bg-surface text-mute shadow-sm hover:text-ink`
             }`}
           >
             {notifications.on ? "🔔 Notifications activées" : "🔕 Activer les notifications"}
@@ -608,7 +608,7 @@ export function ChatRoom({
           if (m.isSystem) {
             const mentionsMe = !!currentUsername && m.content.includes(`@${currentUsername}`);
             return (
-              <div key={m.id} className="mx-auto max-w-[90%] rounded-2xl bg-cream px-4 py-3 text-center shadow-sm">
+              <div key={m.id} className="mx-auto max-w-[90%] rounded-2xl bg-surface px-4 py-3 text-center shadow-sm">
                 <p className="mb-1.5 flex items-center justify-center gap-1.5 text-xs font-bold text-mute">
                   <span aria-hidden>🎙️</span>
                   {SYSTEM_SENDER_NAME}
@@ -644,7 +644,7 @@ export function ChatRoom({
             <div key={m.id} className={`flex items-end gap-2 ${isOwn ? "flex-row-reverse" : ""}`}>
               {!isOwn && (
                 <span className="relative h-7 w-7 shrink-0">
-                  <span className="relative block h-7 w-7 overflow-hidden rounded-full bg-cream">
+                  <span className="relative block h-7 w-7 overflow-hidden rounded-full bg-surface">
                     {profile?.avatarUrl ? (
                       <Image src={profile.avatarUrl} alt="" fill sizes="28px" className="object-cover" />
                     ) : (
@@ -673,7 +673,7 @@ export function ChatRoom({
                     <span className="text-sm font-bold">Photo à voir une fois — appuie</span>
                   </button>
                 ) : isConsumedEphemeral ? (
-                  <div className="flex items-center gap-2 rounded-2xl rounded-bl-md bg-paper px-4 py-3 text-mute shadow-sm">
+                  <div className="flex items-center gap-2 rounded-2xl rounded-bl-md bg-surface px-4 py-3 text-mute shadow-sm">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z" />
                       <path d="M4 4l16 16" />
@@ -711,7 +711,7 @@ export function ChatRoom({
                             ? "rounded-2xl rounded-br-md bg-accent text-paper"
                             : mentionsMe
                               ? "rounded-2xl rounded-bl-md bg-accent-soft text-ink ring-1 ring-inset ring-accent"
-                              : "rounded-2xl rounded-bl-md bg-paper text-ink shadow-sm"
+                              : "rounded-2xl rounded-bl-md bg-surface text-ink shadow-sm"
                         }`}
                       >
                         {splitContentByMentions(m.content, allUsernames).map((part, i) =>
@@ -739,7 +739,7 @@ export function ChatRoom({
                   </button>
                   {openPickerFor === m.id && (
                     <div
-                      className={`absolute bottom-full z-10 mb-1 flex gap-1 rounded-xl bg-paper p-1.5 shadow-md ${isOwn ? "right-0" : "left-0"}`}
+                      className={`absolute bottom-full z-10 mb-1 flex gap-1 rounded-xl bg-surface p-1.5 shadow-md ${isOwn ? "right-0" : "left-0"}`}
                     >
                       {QUICK_REACTIONS.map((emoji) => (
                         <button
@@ -765,7 +765,7 @@ export function ChatRoom({
                         type="button"
                         onClick={() => toggleReaction(m.id, emoji).catch(() => {})}
                         className={`rounded-full px-1.5 py-0.5 text-xs shadow-sm transition-colors ${
-                          userIds.includes(currentUserId) ? "bg-accent-soft text-accent-hover" : "bg-paper text-ink"
+                          userIds.includes(currentUserId) ? "bg-accent-soft text-accent-hover" : "bg-surface text-ink"
                         }`}
                       >
                         {emoji} {userIds.length}
@@ -849,7 +849,7 @@ export function ChatRoom({
           type="button"
           onClick={openCamera}
           aria-label="Prendre une photo (vue une seule fois)"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-paper text-mute shadow-sm transition-colors hover:text-ink"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface text-mute shadow-sm transition-colors hover:text-ink"
         >
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M4 8h3l1.5-2.5h7L17 8h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
@@ -860,7 +860,7 @@ export function ChatRoom({
           type="button"
           onClick={() => galleryInputRef.current?.click()}
           aria-label="Choisir depuis la pellicule"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-paper text-mute shadow-sm transition-colors hover:text-ink"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface text-mute shadow-sm transition-colors hover:text-ink"
         >
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="5" width="18" height="15" rx="2.5" />
@@ -870,7 +870,7 @@ export function ChatRoom({
         </button>
         <div className="relative flex-1">
           {mentionQuery && matchingUsers.length > 0 && (
-            <div className="absolute bottom-full left-0 z-10 mb-1 max-h-40 w-48 overflow-y-auto rounded-xl border border-line bg-paper shadow-md">
+            <div className="absolute bottom-full left-0 z-10 mb-1 max-h-40 w-48 overflow-y-auto rounded-xl border border-line bg-surface shadow-md">
               {matchingUsers.map((u) => (
                 <button
                   key={u.id}
@@ -892,7 +892,7 @@ export function ChatRoom({
             autoComplete="off"
             value={messageText}
             onChange={handleMessageChange}
-            className="w-full rounded-full border border-line bg-paper px-4 py-2.5 text-ink shadow-sm placeholder:text-mute focus:border-accent focus:outline-none"
+            className="w-full rounded-full border border-line bg-surface px-4 py-2.5 text-ink shadow-sm placeholder:text-mute focus:border-accent focus:outline-none"
           />
         </div>
         <button

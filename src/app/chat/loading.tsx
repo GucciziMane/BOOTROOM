@@ -27,7 +27,7 @@ export default function Loading() {
         <h1 className="text-3xl font-bold">3ème mi-temps 🍻</h1>
         <BackLink href="/" />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col justify-end gap-3 overflow-hidden rounded-[28px] bg-paper/60 py-4">
+      <div className="flex min-h-0 flex-1 flex-col justify-end gap-3 overflow-hidden rounded-[28px] bg-surface/60 py-4">
         {BUBBLES.map((b, i) => (
           <Bubble key={i} mine={b.mine} widthPct={b.widthPct} />
         ))}

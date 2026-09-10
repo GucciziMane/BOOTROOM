@@ -198,7 +198,7 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
               {privateRanking.map((row, i) => (
                 <li
                   key={row.userId}
-                  className="flex items-center justify-between rounded-xl border border-reward bg-cream p-3 text-sm"
+                  className="flex items-center justify-between rounded-xl border border-reward bg-surface-raised p-3 text-sm"
                 >
                   <span className="font-bold">
                     {i + 1}. {row.username}
@@ -241,7 +241,7 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
               {leaderboard.map((row, i) => (
                 <li
                   key={row.userId}
-                  className="flex items-center justify-between rounded-xl border border-line bg-cream p-3 text-sm"
+                  className="flex items-center justify-between rounded-xl border border-line bg-surface-raised p-3 text-sm"
                 >
                   <span className="font-bold">
                     {i + 1}. {row.username}
@@ -262,7 +262,7 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
             {seasonLeaderboard.map((row, i) => (
               <li
                 key={row.userId}
-                className="flex items-center justify-between rounded-xl border border-line bg-cream p-3 text-sm"
+                className="flex items-center justify-between rounded-xl border border-line bg-surface-raised p-3 text-sm"
               >
                 <span className="font-bold">
                   {i + 1}. {row.username}

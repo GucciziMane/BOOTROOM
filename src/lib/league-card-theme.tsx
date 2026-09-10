@@ -33,14 +33,17 @@ export function getLeagueCardStyle(leagueCode: string, leagueColor?: string, pad
         ? `rounded-2xl border border-line bg-surface shadow-sm ${padding}`
         : `relative overflow-hidden rounded-2xl shadow-md ${padding}`,
     cardStyle: theme === "none" && leagueColor ? { borderLeftColor: leagueColor, borderLeftWidth: 4 } : undefined,
-    textFaint: theme === "light" ? "text-mute" : theme === "dark" ? "text-white/70" : "text-mute",
-    textStrong: theme === "light" ? "text-ink" : theme === "dark" ? "text-white" : "",
+    // theme "light" : voile blanc fixe (LeagueCardBackground ci-dessous), toujours clair quel que
+    // soit le thème de l'appli — texte en gris/noir fixes (pas text-ink/text-mute, qui basculent
+    // en clair en mode "trophée" via [data-stadium] et casseraient le contraste ici).
+    textFaint: theme === "light" ? "text-[#67758d]" : theme === "dark" ? "text-white/70" : "text-mute",
+    textStrong: theme === "light" ? "text-[#10182a]" : theme === "dark" ? "text-white" : "",
   };
 }
 
 /** Couleur du nom d'équipe / des pastilles vides sous le logo, alignée sur le thème de la carte. */
 export function leagueCardTeamTextClass(theme: CardTheme): string {
-  return theme === "dark" ? "text-white" : theme === "light" ? "text-ink" : "";
+  return theme === "dark" ? "text-white" : theme === "light" ? "text-[#10182a]" : "";
 }
 export function leagueCardTeamPlaceholderClass(theme: CardTheme): string {
   return theme === "dark" ? "bg-white/20" : "bg-cream";

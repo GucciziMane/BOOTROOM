@@ -92,7 +92,7 @@ export default async function ChatPage() {
         <h1 className="text-3xl font-bold">3ème mi-temps 🍻</h1>
         <BackLink href="/" />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] bg-paper/60">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[28px] bg-surface/60 backdrop-blur-md">
         <ChatRoom
           initialMessages={initialMessages}
           initialReactions={reactions ?? []}
