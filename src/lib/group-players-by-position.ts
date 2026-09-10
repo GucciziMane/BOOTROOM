@@ -11,18 +11,19 @@ export interface PositionGroup {
 }
 
 const POSITION_ORDER: Position[] = ["Goalkeeper", "Defender", "Midfielder", "Attacker"];
-const POSITION_LABEL: Record<Position, string> = {
-  Goalkeeper: "Gardiens",
-  Defender: "Défenseurs",
-  Midfielder: "Milieux",
-  Attacker: "Attaquants",
+const POSITION_TAG: Record<Position, string> = {
+  Goalkeeper: "G",
+  Defender: "D",
+  Midfielder: "M",
+  Attacker: "A",
 };
 
 /**
- * Regroupe les effectifs des deux équipes par poste (gardien/défenseur/milieu/attaquant) plutôt
- * que par équipe : un <select> HTML n'autorise qu'un seul niveau d'<optgroup> (impossible
- * d'imbriquer "équipe > poste"), donc le poste devient le groupe et le nom de l'équipe est ajouté
- * entre parenthèses à chaque option pour rester capable de distinguer les deux effectifs.
+ * Groupe par équipe (comme avant), un groupe par équipe — mais les joueurs y sont triés par poste
+ * (gardien/défenseur/milieu/attaquant) plutôt qu'alphabétiquement, avec une courte étiquette de
+ * poste devant chaque nom : un <select> HTML n'autorise qu'un seul niveau d'<optgroup> (impossible
+ * d'imbriquer "équipe > poste"), donc les sous-parties par poste sont rendues à l'intérieur de
+ * l'optgroup de chaque équipe via cet ordre + cette étiquette plutôt qu'un vrai sous-groupe.
  */
 export function groupPlayersByPosition(
   homePlayers: Array<{ id: number; name: string; position: Position }>,
@@ -30,15 +31,17 @@ export function groupPlayersByPosition(
   awayPlayers: Array<{ id: number; name: string; position: Position }>,
   awayTeamName: string
 ): PositionGroup[] {
-  const tagged = [
-    ...homePlayers.map((p) => ({ ...p, teamName: homeTeamName })),
-    ...awayPlayers.map((p) => ({ ...p, teamName: awayTeamName })),
-  ];
-  return POSITION_ORDER.map((position) => ({
-    label: POSITION_LABEL[position],
-    options: tagged
-      .filter((p) => p.position === position)
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((p) => ({ id: p.id, label: `${p.name} (${p.teamName})` })),
-  })).filter((group) => group.options.length > 0);
+  const buildGroup = (players: Array<{ id: number; name: string; position: Position }>, teamName: string): PositionGroup => ({
+    label: teamName,
+    options: [...players]
+      .sort((a, b) => {
+        const positionDiff = POSITION_ORDER.indexOf(a.position) - POSITION_ORDER.indexOf(b.position);
+        return positionDiff !== 0 ? positionDiff : a.name.localeCompare(b.name);
+      })
+      .map((p) => ({ id: p.id, label: `${POSITION_TAG[p.position]} · ${p.name}` })),
+  });
+
+  return [buildGroup(homePlayers, homeTeamName), buildGroup(awayPlayers, awayTeamName)].filter(
+    (group) => group.options.length > 0
+  );
 }
