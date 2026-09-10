@@ -12,36 +12,39 @@ import { loadPointConfig, processFinishedMatches, type ServiceClient } from "@/a
 // sort de la fenêtre de suivi minute par minute et retombe sur le filet de sécurité (sync-fixtures
 // + process-scoring, toutes les 30 min) plutôt que d'être interrogé indéfiniment.
 const LIVE_WINDOW_MS = 150 * 60 * 1000;
+// Anticipe un coup d'envoi à venir : sans ça, ce tick ne remarque un match qu'une fois son
+// kickoff_at déjà passé — la chaîne démarre maintenant quelques minutes AVANT le coup d'envoi réel
+// (réveillée par sync-fixtures, voir plus bas), déjà "chaude" au moment où le match démarre pour
+// de vrai plutôt que de le découvrir avec du retard.
+const LOOKAHEAD_MS = 5 * 60 * 1000;
 
 const APP_URL = "https://bootroom.online";
 
-// QStash ne planifie pas plus finement que la minute (syntaxe cron standard) : le schedule
-// "* * * * *" est déjà le maximum. Pour se rapprocher davantage du direct pendant qu'un match est
-// réellement en cours, ce tick s'auto-replanifie 3 fois dans la minute qui suit (toutes les 15s)
-// via un message QStash à retardement — repli sur le rythme normal (60s) dès qu'aucun match n'est
-// live, pour ne pas payer ce surcoût le reste du temps (le point du filtre "fenêtre" en haut).
-const FOLLOWUP_DELAYS_SECONDS = [15, 30, 45];
+// Pas de schedule QStash fixe pour ce cron (voir incident du 10/09/2026 : "* * * * *" en continu,
+// 1440 messages/jour rien que pour ce tick, a fait exploser le quota gratuit QStash de 1000
+// messages/jour en pleine soirée de Ligue des Champions — plus aucun cron n'a tourné du tout,
+// scores/temps de jeu figés toute la soirée). Ce tick s'auto-réveille désormais lui-même : chaque
+// exécution qui trouve encore un match à suivre (pas encore terminé) programme la suivante via un
+// message QStash à retardement, court (20s) tant qu'un match est réellement en direct, plus large
+// (60s) sinon (avant coup d'envoi, ou ESPN pas encore à jour) — et s'arrête d'elle-même dès qu'il
+// n'y a plus rien à suivre. Le réveil initial (avant tout coup d'envoi) est délégué à sync-fixtures
+// (toutes les 30 min, anticipation de 35 min — supérieure à son propre intervalle, aucun coup
+// d'envoi ne peut donc jamais passer entre deux réveils sans qu'une chaîne ne soit déjà en cours).
+const LIVE_TICK_DELAY_SECONDS = 20;
+const WARMUP_TICK_DELAY_SECONDS = 60;
 
-async function scheduleFollowUpTicks(): Promise<void> {
+async function scheduleNextTick(delaySeconds: number): Promise<void> {
   const token = process.env.QSTASH_TOKEN;
   const cronSecret = process.env.CRON_SECRET;
   if (!token || !cronSecret) return;
 
   const client = new QStashClient({ token });
-  await Promise.all(
-    FOLLOWUP_DELAYS_SECONDS.map((delay) =>
-      client.publish({
-        url: `${APP_URL}/api/cron/live-tick`,
-        method: "GET",
-        headers: { Authorization: `Bearer ${cronSecret}` },
-        delay,
-        // Un tick de suivi par tranche de 15s de la même minute, pas un par appel : deux
-        // exécutions du cron régulier qui se chevaucheraient (peu probable mais pas exclu)
-        // ne doivent pas empiler leurs relances respectives.
-        deduplicationId: `bootroom-live-tick-followup-${Math.floor(Date.now() / 60_000)}-${delay}`,
-      })
-    )
-  );
+  await client.publish({
+    url: `${APP_URL}/api/cron/live-tick`,
+    method: "GET",
+    headers: { Authorization: `Bearer ${cronSecret}` },
+    delay: delaySeconds,
+  });
 }
 
 export async function GET(request: NextRequest) {
@@ -51,19 +54,19 @@ export async function GET(request: NextRequest) {
   const supabase = createServiceRoleClient();
   const now = new Date();
   const windowStart = new Date(now.getTime() - LIVE_WINDOW_MS).toISOString();
+  const windowEnd = new Date(now.getTime() + LOOKAHEAD_MS).toISOString();
 
   const { data: inWindowMatches } = await supabase
     .from("matches")
     .select("id, league_id, season_id, home_team_id, away_team_id, status, home_score, away_score, kickoff_at, favorite_team_id, odds_tier")
     .in("status", ["scheduled", "live"])
-    .lte("kickoff_at", now.toISOString())
+    .lte("kickoff_at", windowEnd)
     .gt("kickoff_at", windowStart);
 
-  // Rien à faire tant qu'aucun match suivi n'est en train de se jouer : sortir avant le moindre
-  // appel ESPN, pour que ce cron (déclenché toutes les minutes) ne coûte quasiment rien le reste
-  // du temps.
+  // Rien à faire (et rien à re-planifier, voir scheduleNextTick plus bas) : sortir avant le moindre
+  // appel ESPN.
   if (!inWindowMatches || inWindowMatches.length === 0) {
-    return NextResponse.json({ inWindow: 0 });
+    return NextResponse.json({ inWindow: 0, pending: 0 });
   }
 
   const [{ data: leagues }, { data: teams }] = await Promise.all([
@@ -86,6 +89,11 @@ export async function GET(request: NextRequest) {
   const goalPushJobs: Array<() => Promise<void>> = [];
   let liveCount = 0;
   let updatedCount = 0;
+  // Piloté la chaîne d'auto-réveil (voir scheduleNextTick) : incrémenté pour tout match d'un
+  // championnat suivi qui n'est pas encore confirmé "finished" — pas encore commencé, en cours, ou
+  // ESPN pas encore à jour ce tick-ci (retenter au prochain). Reste à 0 (donc chaîne arrêtée) si
+  // tous les matchs suivis sont soit terminés, soit d'un championnat désactivé.
+  let pendingCount = 0;
 
   for (const match of inWindowMatches) {
     const slug = slugByLeague.get(match.league_id);
@@ -104,12 +112,21 @@ export async function GET(request: NextRequest) {
       }
       scoreboardCache.set(cacheKey, dayEvents);
     }
-    if (!dayEvents) continue;
+    if (!dayEvents) {
+      pendingCount++; // ESPN indisponible ce tick-ci : à retenter, pas une fin de suivi.
+      continue;
+    }
 
     const espnMatch = dayEvents.find((e) => teamNamesMatch(e.homeTeam, home.name) && teamNamesMatch(e.awayTeam, away.name));
-    if (!espnMatch || espnMatch.status === "scheduled") continue;
+    if (!espnMatch || espnMatch.status === "scheduled") {
+      pendingCount++; // Pas encore commencé (ou pas encore listé par ESPN) : à retenter.
+      continue;
+    }
 
-    if (espnMatch.status === "live") liveCount++;
+    if (espnMatch.status === "live") {
+      liveCount++;
+      pendingCount++;
+    }
     const justFinished = match.status !== "finished" && espnMatch.status === "finished";
 
     const scoreOrStatusChanged =
@@ -291,16 +308,17 @@ export async function GET(request: NextRequest) {
     await notifyFinalResults(supabase, newlyFinishedMatchIds, teamById);
   }
 
-  if (liveCount > 0) {
+  if (pendingCount > 0) {
     try {
-      await scheduleFollowUpTicks();
+      await scheduleNextTick(liveCount > 0 ? LIVE_TICK_DELAY_SECONDS : WARMUP_TICK_DELAY_SECONDS);
     } catch {
-      // Pas grave : le prochain tick régulier (dans la minute) reprendra la main normalement.
+      // Pas grave : le prochain réveil de sync-fixtures (au plus 30 min) reprendra la main.
     }
   }
 
   return NextResponse.json({
     inWindow: inWindowMatches.length,
+    pending: pendingCount,
     live: liveCount,
     updated: updatedCount,
     goalsNotified: goalPushJobs.length,

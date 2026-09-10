@@ -22,6 +22,17 @@ const headers = { Authorization: `Bearer ${cronSecret}` };
 
 // process-scoring décalé de 5 min après sync-fixtures pour lui laisser le temps de finir
 // (sync-fixtures peut prendre jusqu'à ~3-4 min, cf. EVENTS_SYNC_TIME_BUDGET_MS côté route).
+//
+// PAS de schedule récurrent pour live-tick ici (incident du 10/09/2026) : un tick fixe "* * * * *"
+// (1440 messages/jour, à lui seul) a fait exploser le quota gratuit QStash de 1000 messages/jour en
+// pleine soirée de Ligue des Champions — plus aucun des trois crons ci-dessous n'a tourné du tout
+// pendant des heures (le quota est partagé au niveau du compte, pas par schedule). live-tick se
+// réveille désormais lui-même : sync-fixtures (ci-dessous) le déclenche dès qu'un coup d'envoi
+// approche (35 min d'anticipation, supérieure à son propre intervalle de 30 min — aucun coup
+// d'envoi ne peut donc passer entre deux réveils), puis live-tick s'auto-replanifie tant qu'un
+// match suivi n'est pas terminé, et s'arrête de lui-même sinon — voir
+// src/app/api/cron/live-tick/route.ts (scheduleNextTick) et sync-fixtures/route.ts
+// (wakeLiveTickIfNeeded).
 const schedules = [
   {
     label: "sync-fixtures",
@@ -34,17 +45,6 @@ const schedules = [
     destination: `${APP_URL}/api/cron/process-scoring`,
     cron: "5,35 * * * *",
     deduplicationId: "bootroom-process-scoring",
-  },
-  // Toutes les minutes : suit les matchs en cours (score, minute, buteurs) et pousse les
-  // notifs de but/résultat en quasi temps réel. Sort tout de suite si rien n'est en cours
-  // (une requête DB, aucun appel externe), donc peu coûteux le reste du temps malgré la
-  // fréquence — voir src/app/api/cron/live-tick/route.ts.
-  {
-    label: "live-tick",
-    destination: `${APP_URL}/api/cron/live-tick`,
-    cron: "* * * * *",
-    deduplicationId: "bootroom-live-tick",
-    retries: 1,
   },
 ];
 

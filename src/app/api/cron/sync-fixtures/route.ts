@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Client as QStashClient } from "@upstash/qstash";
 import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { footballData, normalizeMatchStatus, type FdMatch } from "@/lib/football-data/client";
@@ -14,6 +15,45 @@ const MAX_EVENT_CALLS_PER_RUN = 40; // reste sous le quota de 100 req/jour de Hi
 // répondre à temps même si Highlightly est lent ce jour-là, plutôt que de faire échouer tout le
 // run (et avec lui, sans "process scoring" en filet, la distribution des points de ce cycle).
 const EVENTS_SYNC_TIME_BUDGET_MS = 200_000;
+
+const APP_URL = "https://bootroom.online";
+// live-tick n'a plus de schedule QStash récurrent (voir incident du 10/09/2026 — un tick fixe
+// toutes les minutes, 24h/24, épuisait à lui seul le quota gratuit QStash de 1000 messages/jour en
+// plein milieu d'une soirée de Ligue des Champions, arrêtant net TOUS les crons, pas seulement
+// celui-ci). Ce cron (toutes les 30 min) sert désormais de réveil : 35 min d'anticipation, strictement
+// supérieur à son propre intervalle de 30 min, garantit qu'aucun coup d'envoi ne peut jamais passer
+// entre deux passages sans qu'une chaîne live-tick ne soit déjà réveillée pour le couvrir — voir
+// scheduleNextTick côté live-tick pour la suite de la chaîne (auto-réveil tant qu'un match suivi
+// n'est pas terminé, silence total sinon).
+const LIVE_TICK_WAKEUP_LOOKAHEAD_MS = 35 * 60 * 1000;
+const LIVE_TICK_WAKEUP_TRAILING_MS = 150 * 60 * 1000; // même fenêtre que LIVE_WINDOW_MS côté live-tick
+
+async function wakeLiveTickIfNeeded(supabase: ReturnType<typeof createServiceRoleClient>): Promise<void> {
+  const token = process.env.QSTASH_TOKEN;
+  const cronSecret = process.env.CRON_SECRET;
+  if (!token || !cronSecret) return;
+
+  const now = Date.now();
+  const { count } = await supabase
+    .from("matches")
+    .select("id", { count: "exact", head: true })
+    .in("status", ["scheduled", "live"])
+    .gt("kickoff_at", new Date(now - LIVE_TICK_WAKEUP_TRAILING_MS).toISOString())
+    .lte("kickoff_at", new Date(now + LIVE_TICK_WAKEUP_LOOKAHEAD_MS).toISOString());
+  if (!count || count === 0) return;
+
+  try {
+    const client = new QStashClient({ token });
+    await client.publish({
+      url: `${APP_URL}/api/cron/live-tick`,
+      method: "GET",
+      headers: { Authorization: `Bearer ${cronSecret}` },
+    });
+  } catch {
+    // Pas grave : le prochain passage de ce cron (30 min) retentera — un coup d'envoi imminent
+    // reste de toute façon couvert par la marge de 35 min ci-dessus.
+  }
+}
 
 /**
  * Sync quotidien : calendrier + résultats (football-data.org), puis pour les matchs
@@ -255,6 +295,7 @@ export async function GET(request: NextRequest) {
   }
 
   const eventsSummary = await syncGoalEvents(supabase, leagues, startedAt);
+  await wakeLiveTickIfNeeded(supabase);
 
   return NextResponse.json({ matches: matchesSummary, events: eventsSummary });
 }
