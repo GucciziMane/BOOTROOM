@@ -21,7 +21,15 @@ import { LEAGUE_BACKGROUND } from "@/lib/league-background";
 // attendre sans raison avant d'être affichée.
 const POLL_MS = 10_000;
 
-export function LiveMatchesBanner({ initialMatches }: { initialMatches: LiveMatchDto[] }) {
+export function LiveMatchesBanner({
+  initialMatches,
+  variant = "light",
+}: {
+  initialMatches: LiveMatchDto[];
+  /** "dark" : libellé/puce éclaircis pour rester lisibles sur un fond sombre (photo, etc.) — les
+   * cartes de match gardent leur propre habillage par championnat, inchangé dans les deux cas. */
+  variant?: "light" | "dark";
+}) {
   const [matches, setMatches] = useState(initialMatches);
   const inFlight = useRef(false);
 
@@ -54,14 +62,14 @@ export function LiveMatchesBanner({ initialMatches }: { initialMatches: LiveMatc
 
   return (
     <div className="mb-5">
-      <div className="mb-2 flex items-center gap-1.5 text-sm font-bold text-mute">
+      <div className={`mb-2 flex items-center gap-1.5 text-sm font-bold ${variant === "dark" ? "text-paper/80" : "text-mute"}`}>
         {anyLive ? (
           <span className="relative flex h-2 w-2">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-bad opacity-75" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-bad" />
           </span>
         ) : (
-          <span className="h-2 w-2 rounded-full bg-line" />
+          <span className={`h-2 w-2 rounded-full ${variant === "dark" ? "bg-paper/40" : "bg-line"}`} />
         )}
         {anyLive ? "En direct" : "Résultats récents"}
       </div>

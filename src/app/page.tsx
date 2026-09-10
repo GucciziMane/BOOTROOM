@@ -61,102 +61,140 @@ export default async function DashboardPage() {
       // simplement à la taille de son contenu au lieu d'être plafonné à l'écran. Ancré directement
       // sur le viewport réel (moins les paddings connus posés par <body>, cf. layout.tsx) plutôt
       // que de dépendre de cette chaîne de hauteurs.
-      className="mx-auto flex h-[calc(100dvh-env(safe-area-inset-top)-8rem)] min-h-0 w-full max-w-7xl flex-1 flex-col p-6 lg:h-[calc(100dvh-env(safe-area-inset-top))]"
+      className={`relative mx-auto flex h-[calc(100dvh-env(safe-area-inset-top)-8rem)] min-h-0 w-full max-w-7xl flex-1 flex-col p-6 lg:h-[calc(100dvh-env(safe-area-inset-top))] ${
+        clubHomeData ? "" : "overflow-hidden"
+      }`}
     >
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Boot Room</h1>
-        <div className="flex items-center gap-4">
-          {profile?.is_admin && (
-            <Link href="/admin" className={`text-sm ${linkMuted}`}>
-              Administration
-            </Link>
-          )}
-          <Link href="/profile" className="relative flex h-16 w-16 shrink-0 items-center gap-2">
-            <span className="relative h-16 w-16 overflow-hidden rounded-full border-2 border-line bg-cream">
-              {profile?.avatar_url ? (
-                <Image src={profile.avatar_url} alt="" fill sizes="64px" className="object-cover" />
-              ) : (
-                <span className="flex h-full w-full items-center justify-center text-2xl font-bold text-mute">
-                  {(profile?.username ?? "?").slice(0, 1).toUpperCase()}
-                </span>
-              )}
-            </span>
-            <FavoriteTeamBadge logoUrl={favoriteTeamLogoUrl ?? null} size={22} />
-          </Link>
-          <form action={signOut}>
-            <button type="submit" className={`text-sm ${linkMuted}`}>
-              Déconnexion
-            </button>
-          </form>
-        </div>
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-lg text-mute">Salut {profile?.username ?? user?.email}.</p>
-        <div className="flex items-center gap-2">
-          <ThemeModeToggle
-            initialUseClubTheme={profile?.use_club_theme ?? false}
-            favoriteTeamLogoUrl={favoriteTeamLogoUrl ?? null}
-            hasFavoriteTeam={!!profile?.favorite_team_id}
+      {!clubHomeData && (
+        // Pas de thème de club actif : photo de stade en fond plutôt que la page neutre, pour que
+        // l'écran d'accueil ait tout de suite un vrai visuel "produit sport" au lieu d'un fond uni.
+        // Même convention que le filigrane de blason (ThemeApplier.tsx) : bloc absolute z-0, le
+        // contenu réel passe dans un wrapper relative z-10 pour peindre par-dessus.
+        <div className="absolute inset-0 z-0" aria-hidden="true">
+          <Image
+            src="/images/dashboard-hero.jpg"
+            alt=""
+            fill
+            sizes="100vw"
+            priority
+            className="object-cover"
           />
-        </div>
-      </div>
-
-      <div className="mt-4">
-        <LiveMatchesBanner initialMatches={liveMatches} />
-      </div>
-
-      {clubHomeData ? (
-        <div className="mt-5">
-          <ClubHomeDashboard data={clubHomeData} />
-          <div className="mt-7">
-            <div className="mb-2 text-sm font-bold text-mute">Le reste de l&rsquo;appli</div>
-            <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-5">
-              <QuickLink href="/calendar" emoji="🎯" label="Pronostics" />
-              <QuickLink href="/calendar/classements" emoji="🏆" label="Classements" />
-              <QuickLink href="/leaderboard" emoji="🏅" label="Général" />
-              <QuickLink href="/chat" emoji="🍻" label="Chat" badgeCount={unreadChatCount ?? 0} />
-              <QuickLink href="/quiz" emoji="🧠" label="Quiz" />
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="flex min-h-0 flex-1 overflow-hidden">
-          <NavCardCarousel
-            cards={[
-              {
-                href: "/calendar",
-                title: "Pronostics 🎯",
-                description: "Calendrier des matchs : score et buteur, championnat par championnat.",
-              },
-              {
-                href: "/calendar/classements",
-                title: "Classements & buteurs 🏆",
-                description:
-                  "Le classement réel de chaque championnat, mis à jour après chaque match, plus les buteurs et passeurs.",
-              },
-              {
-                href: "/leaderboard",
-                title: "Classement général 🏅",
-                description: "Le total des points de chacun entre potes, et le détail par championnat.",
-              },
-              {
-                href: "/chat",
-                title: "3ème mi‑temps 🍻",
-                description: "La discussion entre tous les membres.",
-                badgeCount: unreadChatCount ?? 0,
-              },
-              {
-                href: "/quiz",
-                title: "Quiz du jour 🧠",
-                description: "10 questions sur le foot, un nouveau quiz chaque jour à minuit. Classement quotidien entre potes.",
-              },
-            ]}
-          />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/45 to-black/78" />
         </div>
       )}
 
-      {!profile?.favorite_team_id && <FavoriteTeamOnboarding leagues={leagues} />}
+      <div className={`relative z-10 flex min-h-0 flex-1 flex-col ${clubHomeData ? "" : "text-paper"}`}>
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold">Boot Room</h1>
+          <div className="flex items-center gap-4">
+            {profile?.is_admin && (
+              <Link
+                href="/admin"
+                className={clubHomeData ? `text-sm ${linkMuted}` : "text-sm font-bold text-paper/80 hover:text-paper"}
+              >
+                Administration
+              </Link>
+            )}
+            <Link href="/profile" className="relative flex h-16 w-16 shrink-0 items-center gap-2">
+              <span
+                className={`relative h-16 w-16 overflow-hidden rounded-full border-2 ${
+                  clubHomeData ? "border-line bg-cream" : "border-paper/30 bg-ink/30"
+                }`}
+              >
+                {profile?.avatar_url ? (
+                  <Image src={profile.avatar_url} alt="" fill sizes="64px" className="object-cover" />
+                ) : (
+                  <span
+                    className={`flex h-full w-full items-center justify-center text-2xl font-bold ${
+                      clubHomeData ? "text-mute" : "text-paper/90"
+                    }`}
+                  >
+                    {(profile?.username ?? "?").slice(0, 1).toUpperCase()}
+                  </span>
+                )}
+              </span>
+              <FavoriteTeamBadge logoUrl={favoriteTeamLogoUrl ?? null} size={22} />
+            </Link>
+            <form action={signOut}>
+              <button
+                type="submit"
+                className={clubHomeData ? `text-sm ${linkMuted}` : "text-sm font-bold text-paper/80 hover:text-paper"}
+              >
+                Déconnexion
+              </button>
+            </form>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <p className={`text-lg ${clubHomeData ? "text-mute" : "text-paper/85"}`}>
+            Salut {profile?.username ?? user?.email}.
+          </p>
+          <div className="flex items-center gap-2">
+            <ThemeModeToggle
+              initialUseClubTheme={profile?.use_club_theme ?? false}
+              favoriteTeamLogoUrl={favoriteTeamLogoUrl ?? null}
+              hasFavoriteTeam={!!profile?.favorite_team_id}
+            />
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <LiveMatchesBanner initialMatches={liveMatches} variant={clubHomeData ? "light" : "dark"} />
+        </div>
+
+        {clubHomeData ? (
+          <div className="mt-5">
+            <ClubHomeDashboard data={clubHomeData} />
+            <div className="mt-7">
+              <div className="mb-2 text-sm font-bold text-mute">Le reste de l&rsquo;appli</div>
+              <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-5">
+                <QuickLink href="/calendar" emoji="🎯" label="Pronostics" />
+                <QuickLink href="/calendar/classements" emoji="🏆" label="Classements" />
+                <QuickLink href="/leaderboard" emoji="🏅" label="Général" />
+                <QuickLink href="/chat" emoji="🍻" label="Chat" badgeCount={unreadChatCount ?? 0} />
+                <QuickLink href="/quiz" emoji="🧠" label="Quiz" />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1 overflow-hidden">
+            <NavCardCarousel
+              cards={[
+                {
+                  href: "/calendar",
+                  title: "Pronostics 🎯",
+                  description: "Calendrier des matchs : score et buteur, championnat par championnat.",
+                },
+                {
+                  href: "/calendar/classements",
+                  title: "Classements & buteurs 🏆",
+                  description:
+                    "Le classement réel de chaque championnat, mis à jour après chaque match, plus les buteurs et passeurs.",
+                },
+                {
+                  href: "/leaderboard",
+                  title: "Classement général 🏅",
+                  description: "Le total des points de chacun entre potes, et le détail par championnat.",
+                },
+                {
+                  href: "/chat",
+                  title: "3ème mi‑temps 🍻",
+                  description: "La discussion entre tous les membres.",
+                  badgeCount: unreadChatCount ?? 0,
+                },
+                {
+                  href: "/quiz",
+                  title: "Quiz du jour 🧠",
+                  description: "10 questions sur le foot, un nouveau quiz chaque jour à minuit. Classement quotidien entre potes.",
+                },
+              ]}
+            />
+          </div>
+        )}
+
+        {!profile?.favorite_team_id && <FavoriteTeamOnboarding leagues={leagues} />}
+      </div>
     </main>
   );
 }
