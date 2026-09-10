@@ -6,6 +6,7 @@ import { saveMatchPrediction, type SaveMatchPredictionState } from "./[matchId]/
 import { GoalBell } from "./GoalBell";
 import { buttonPrimary, input } from "@/lib/ui";
 import { applyResultOdds, predictedWinnerTeamId, type OddsTier, type ResultTierMultiplier } from "@/lib/scoring/points";
+import type { FormResult } from "@/lib/scoring/team-form";
 import { formatParisDateTime } from "@/lib/format-date";
 import { LEAGUE_BACKGROUND } from "@/lib/league-background";
 import {
@@ -28,6 +29,12 @@ interface Props {
   awayTeamName: string;
   homeLogoUrl: string | null;
   awayLogoUrl: string | null;
+  /** 3 derniers matchs terminés de chaque équipe (championnat + coupes confondus), du plus
+   * ancien au plus récent — tableau plus court si l'équipe n'a pas encore 3 matchs joués cette
+   * saison (début de saison). Recalculé à chaque affichage à partir des matchs déjà en base,
+   * donc à jour dès qu'un match se termine (pas de valeur mise en cache à rafraîchir). */
+  homeForm: FormResult[];
+  awayForm: FormResult[];
   homePlayers: PlayerOption[];
   awayPlayers: PlayerOption[];
   scoring: {
@@ -83,6 +90,8 @@ export function MatchPredictionCard({
   awayTeamName,
   homeLogoUrl,
   awayLogoUrl,
+  homeForm,
+  awayForm,
   homePlayers,
   awayPlayers,
   scoring,
@@ -190,13 +199,13 @@ export function MatchPredictionCard({
           </span>
         </p>
         <div className="relative flex items-center justify-center gap-3">
-          <TeamBadge name={homeTeamName} logoUrl={homeLogoUrl} theme={theme} />
+          <TeamBadge name={homeTeamName} logoUrl={homeLogoUrl} theme={theme} form={homeForm} />
           <span className={`text-lg font-bold ${textStrong}`}>
             {live ? (live.homeScore ?? 0) : (initial.predictedHomeScore ?? "–")}
             {" – "}
             {live ? (live.awayScore ?? 0) : (initial.predictedAwayScore ?? "–")}
           </span>
-          <TeamBadge name={awayTeamName} logoUrl={awayLogoUrl} theme={theme} />
+          <TeamBadge name={awayTeamName} logoUrl={awayLogoUrl} theme={theme} form={awayForm} />
         </div>
         <p className={`relative mt-2 text-center text-xs ${textFaint}`}>
           {live && <span>Ton prono : {initial.predictedHomeScore ?? "–"}-{initial.predictedAwayScore ?? "–"} · </span>}
@@ -255,7 +264,7 @@ export function MatchPredictionCard({
       </p>
 
       <div className="relative flex items-center justify-center gap-2">
-        <TeamBadge name={homeTeamName} logoUrl={homeLogoUrl} theme={theme} />
+        <TeamBadge name={homeTeamName} logoUrl={homeLogoUrl} theme={theme} form={homeForm} />
         <input
           type="number"
           name="predicted_home_score"
@@ -275,7 +284,7 @@ export function MatchPredictionCard({
           onChange={(e) => setAwayScore(e.target.value)}
           className={`w-12 text-center font-bold ${input}`}
         />
-        <TeamBadge name={awayTeamName} logoUrl={awayLogoUrl} theme={theme} />
+        <TeamBadge name={awayTeamName} logoUrl={awayLogoUrl} theme={theme} form={awayForm} />
       </div>
 
       <select
@@ -391,15 +400,52 @@ export function MatchPredictionCard({
   );
 }
 
-function TeamBadge({ name, logoUrl, theme }: { name: string; logoUrl: string | null; theme: "none" | "dark" | "light" }) {
+function TeamBadge({
+  name,
+  logoUrl,
+  theme,
+  form,
+}: {
+  name: string;
+  logoUrl: string | null;
+  theme: "none" | "dark" | "light";
+  form: FormResult[];
+}) {
   return (
-    <span className="flex w-20 flex-col items-center gap-1.5 text-center">
+    <span className="flex w-20 flex-col items-center gap-1 text-center">
       {logoUrl ? (
         <Image src={logoUrl} alt="" width={40} height={40} className="h-10 w-10 shrink-0 object-contain" />
       ) : (
         <span className={`block h-10 w-10 shrink-0 rounded-full ${leagueCardTeamPlaceholderClass(theme)}`} />
       )}
+      <FormDots form={form} />
       <span className={`text-[11px] font-bold leading-tight ${leagueCardTeamTextClass(theme)}`}>{name}</span>
+    </span>
+  );
+}
+
+const FORM_LABEL: Record<FormResult, string> = { W: "V", D: "N", L: "D" };
+const FORM_BG: Record<FormResult, string> = { W: "bg-good", D: "bg-mute", L: "bg-bad" };
+const FORM_TITLE: Record<FormResult, string> = { W: "Victoire", D: "Match nul", L: "Défaite" };
+
+/** 3 derniers résultats d'une équipe (V/N/D), du plus ancien au plus récent — pastilles pleines
+ * plutôt que du texte coloré seul : reste lisible quel que soit le fond de carte (image de
+ * championnat sombre ou claire, voir getLeagueCardStyle), et la lettre porte l'info en plus de la
+ * couleur (accessibilité — jamais la couleur seule). Rien à afficher tant qu'aucun match n'a
+ * encore été joué cette saison (tableau vide, ex: tout début de saison). */
+function FormDots({ form }: { form: FormResult[] }) {
+  if (form.length === 0) return null;
+  return (
+    <span className="flex items-center gap-0.5">
+      {form.map((result, i) => (
+        <span
+          key={i}
+          title={FORM_TITLE[result]}
+          className={`flex h-3.5 w-3.5 items-center justify-center rounded-full text-[8px] font-bold text-white ${FORM_BG[result]}`}
+        >
+          {FORM_LABEL[result]}
+        </span>
+      ))}
     </span>
   );
 }

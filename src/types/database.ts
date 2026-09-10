@@ -287,6 +287,9 @@ export interface Database {
           points_awarded: number | null;
           /** "x2" : un seul par (utilisateur, championnat, journée), voir migration 0040. */
           is_doubled: boolean;
+          /** Dénormalisé depuis matches, maintenu par trigger — voir migration 0042. */
+          league_id: number | null;
+          matchday: number | null;
         };
         Insert: Partial<Database["public"]["Tables"]["match_predictions"]["Row"]> & {
           user_id: string;

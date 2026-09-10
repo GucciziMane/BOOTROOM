@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatParisDateTime } from "@/lib/format-date";
 import { listCard } from "@/lib/ui";
 import { FALLBACK_SCORER_TIER, FALLBACK_ASSIST_TIER, type OddsTier } from "@/lib/scoring/points";
+import { computeTeamForm } from "@/lib/scoring/team-form";
 import { KNOCKOUT_STAGE_LABEL } from "@/lib/knockout-stage-label";
 import { BackLink } from "@/app/BackLink";
 import { MatchPredictionCard } from "./MatchPredictionCard";
@@ -61,6 +62,20 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
     .filter((m) => m.status === "finished")
     .sort((a, b) => b.kickoff_at.localeCompare(a.kickoff_at))
     .slice(0, 10);
+
+  // Forme récente (3 derniers résultats) affichée sous le logo de chaque équipe sur les cartes de
+  // pronostic — recalculée depuis les matchs déjà en base à chaque affichage, donc toujours à jour
+  // dès qu'un match se termine, sans rien à rafraîchir séparément.
+  const finishedForForm = allMatches
+    .filter((m) => m.status === "finished" && m.home_score != null && m.away_score != null)
+    .map((m) => ({
+      homeTeamId: m.home_team_id,
+      awayTeamId: m.away_team_id,
+      homeScore: m.home_score as number,
+      awayScore: m.away_score as number,
+      kickoffAt: m.kickoff_at,
+    }));
+  const teamFormById = new Map(teamIds.map((id) => [id, computeTeamForm(finishedForForm, id)]));
 
   const upcomingMatchIds = [...live, ...upcoming].map((m) => m.id);
 
@@ -253,6 +268,8 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
                         awayTeamName={away.name}
                         homeLogoUrl={home.logoUrl}
                         awayLogoUrl={away.logoUrl}
+                        homeForm={teamFormById.get(m.home_team_id) ?? []}
+                        awayForm={teamFormById.get(m.away_team_id) ?? []}
                         homePlayers={homePlayers}
                         awayPlayers={awayPlayers}
                         locked={locked}

@@ -19,12 +19,20 @@ export default async function LeaderboardPage() {
     { data: leagues },
     { data: ledgerAll },
     { data: resetSetting },
+    { data: predictions },
+    { data: finishedMatches },
   ] = await Promise.all([
     supabase.auth.getSession(),
     supabase.from("profiles").select("id, username, avatar_url, favorite_team_id").order("username"),
     supabase.from("leagues").select("id, name, football_data_code").eq("active", true).order("name"),
     supabase.from("points_ledger").select("user_id, league_id, points, created_at"),
     supabase.from("app_settings").select("value").eq("key", LEADERBOARD_RESET_KEY).maybeSingle(),
+    // Nombre de bons pronos (résultat trouvé) / scores exacts : pas de colonne dédiée dans
+    // points_ledger (correctResultPoints et exactScoreBonus sont fondus dans une seule ligne
+    // "match_score" depuis la refonte du barème, voir computeMatchResultPoints/computeExactScoreBonus)
+    // — reconstruit ici en comparant chaque pronostic au score réel du match.
+    supabase.from("match_predictions").select("user_id, match_id, league_id, predicted_home_score, predicted_away_score"),
+    supabase.from("matches").select("id, home_score, away_score, kickoff_at").eq("status", "finished"),
   ]);
   const user = session?.user ?? null;
 
@@ -49,6 +57,30 @@ export default async function LeaderboardPage() {
     if (!byUserByLeague.has(row.user_id)) byUserByLeague.set(row.user_id, new Map());
     const perLeague = byUserByLeague.get(row.user_id)!;
     if (row.league_id) perLeague.set(row.league_id, (perLeague.get(row.league_id) ?? 0) + row.points);
+  }
+
+  // Bons pronos (résultat trouvé, score exact inclus) / scores exacts, scopés aux ligues actives et
+  // à la même coupure de remise à zéro que les points ci-dessus — comparé directement au score réel
+  // du match plutôt que relu depuis points_ledger, qui ne distingue plus les deux depuis la refonte
+  // du barème (une seule ligne "match_score" par match).
+  const finishedById = new Map((finishedMatches ?? []).map((m) => [m.id, m]));
+  const goodPredictionsByUser = new Map<string, number>();
+  const exactScoresByUser = new Map<string, number>();
+  for (const pred of predictions ?? []) {
+    if (pred.league_id != null && !activeLeagueIds.has(pred.league_id)) continue;
+    const match = finishedById.get(pred.match_id);
+    if (!match || match.home_score == null || match.away_score == null) continue;
+    if (resetAt && match.kickoff_at < resetAt) continue;
+
+    const exact = pred.predicted_home_score === match.home_score && pred.predicted_away_score === match.away_score;
+    const predictedDiff = Math.sign(pred.predicted_home_score - pred.predicted_away_score);
+    const actualDiff = Math.sign(match.home_score - match.away_score);
+    if (exact || predictedDiff === actualDiff) {
+      goodPredictionsByUser.set(pred.user_id, (goodPredictionsByUser.get(pred.user_id) ?? 0) + 1);
+    }
+    if (exact) {
+      exactScoresByUser.set(pred.user_id, (exactScoresByUser.get(pred.user_id) ?? 0) + 1);
+    }
   }
 
   const ranked = (profiles ?? [])
@@ -169,6 +201,36 @@ export default async function LeaderboardPage() {
                   </td>
                 ))}
                 <td className="p-1.5 text-right font-bold sm:p-3">{p.total}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <h2 className="mb-3 mt-8 text-lg font-bold">Précision des pronostics</h2>
+      <p className="mb-3 text-sm text-mute">
+        Bons pronos = bon résultat trouvé (score exact inclus) — championnats actifs uniquement.
+      </p>
+      <div className="overflow-hidden rounded-2xl border border-line bg-paper">
+        <table className="w-full table-fixed text-xs sm:text-sm">
+          <colgroup>
+            <col style={{ width: "46%" }} />
+            <col style={{ width: "27%" }} />
+            <col style={{ width: "27%" }} />
+          </colgroup>
+          <thead>
+            <tr className="border-b border-line bg-cream">
+              <th className="p-1.5 text-left sm:p-3">Joueur</th>
+              <th className="p-1.5 text-right sm:p-3">Bons pronos</th>
+              <th className="p-1.5 text-right sm:p-3">Score exact</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ranked.map((p) => (
+              <tr key={p.id} className="border-b border-line last:border-0">
+                <td className="truncate p-1.5 font-bold sm:p-3">{p.username}</td>
+                <td className="p-1.5 text-right text-mute sm:p-3">{goodPredictionsByUser.get(p.id) ?? 0}</td>
+                <td className="p-1.5 text-right text-mute sm:p-3">{exactScoresByUser.get(p.id) ?? 0}</td>
               </tr>
             ))}
           </tbody>

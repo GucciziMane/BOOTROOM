@@ -3,6 +3,7 @@ import { formatParisDateTime } from "@/lib/format-date";
 import { LEAGUE_FLAG, LEAGUE_COLOR } from "@/lib/country-flags";
 import { KNOCKOUT_STAGE_LABEL } from "@/lib/knockout-stage-label";
 import { FALLBACK_SCORER_TIER, FALLBACK_ASSIST_TIER, type OddsTier } from "@/lib/scoring/points";
+import { computeTeamForm } from "@/lib/scoring/team-form";
 import { MatchPredictionCard } from "@/app/leagues/[code]/calendar/MatchPredictionCard";
 import { BackLink } from "@/app/BackLink";
 import { CalendarTabs } from "./CalendarTabs";
@@ -110,6 +111,7 @@ export default async function CalendarPage() {
     { data: playerAssistTierRows },
     { data: resultMultiplierRows },
     { data: goalSubscriptions },
+    { data: finishedMatches },
   ] = await Promise.all([
     supabase
       .from("match_predictions")
@@ -142,10 +144,27 @@ export default async function CalendarPage() {
       .select("match_id")
       .eq("user_id", user!.id)
       .in("match_id", upcomingMatchIds.length > 0 ? upcomingMatchIds : [-1]),
+    // Forme récente (3 derniers résultats) affichée sous le logo de chaque équipe : les matchs déjà
+    // terminés de cette même saison suffisent, pas besoin de connaître les équipes à l'avance.
+    supabase
+      .from("matches")
+      .select("home_team_id, away_team_id, home_score, away_score, kickoff_at")
+      .in("season_id", seasonIds.length > 0 ? seasonIds : [-1])
+      .eq("status", "finished"),
   ]);
 
   const predictionByMatchId = new Map((fullPredictions ?? []).map((p) => [p.match_id, p]));
   const goalSubscribedMatchIds = new Set((goalSubscriptions ?? []).map((s) => s.match_id));
+  const finishedForForm = (finishedMatches ?? [])
+    .filter((m) => m.home_score != null && m.away_score != null)
+    .map((m) => ({
+      homeTeamId: m.home_team_id,
+      awayTeamId: m.away_team_id,
+      homeScore: m.home_score as number,
+      awayScore: m.away_score as number,
+      kickoffAt: m.kickoff_at,
+    }));
+  const teamFormById = new Map(teamIds.map((id) => [id, computeTeamForm(finishedForForm, id)]));
   // x2 : un seul actif par (championnat, journée) — plusieurs championnats se mélangent sur cette
   // page, donc la clé doit inclure le championnat, pas seulement le numéro de journée. Construit à
   // partir de matchdaySiblings (toute la journée, tous statuts confondus), pas seulement `upcoming`
@@ -245,6 +264,8 @@ export default async function CalendarPage() {
                     awayTeamName={away.name}
                     homeLogoUrl={home.logoUrl}
                     awayLogoUrl={away.logoUrl}
+                    homeForm={teamFormById.get(m.home_team_id) ?? []}
+                    awayForm={teamFormById.get(m.away_team_id) ?? []}
                     homePlayers={homePlayers}
                     awayPlayers={awayPlayers}
                     locked={locked}
