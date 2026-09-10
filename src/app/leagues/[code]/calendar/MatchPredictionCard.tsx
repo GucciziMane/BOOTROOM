@@ -418,8 +418,8 @@ function TeamBadge({
       ) : (
         <span className={`block h-10 w-10 shrink-0 rounded-full ${leagueCardTeamPlaceholderClass(theme)}`} />
       )}
-      <FormDots form={form} />
       <span className={`text-[11px] font-bold leading-tight ${leagueCardTeamTextClass(theme)}`}>{name}</span>
+      <FormDots form={form} />
     </span>
   );
 }
