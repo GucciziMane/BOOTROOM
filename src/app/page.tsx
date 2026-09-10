@@ -68,9 +68,12 @@ export default async function DashboardPage() {
       {!clubHomeData && (
         // Pas de thème de club actif : photo de stade en fond plutôt que la page neutre, pour que
         // l'écran d'accueil ait tout de suite un vrai visuel "produit sport" au lieu d'un fond uni.
-        // Même convention que le filigrane de blason (ThemeApplier.tsx) : bloc absolute z-0, le
-        // contenu réel passe dans un wrapper relative z-10 pour peindre par-dessus.
-        <div className="absolute inset-0 z-0" aria-hidden="true">
+        // fixed (pas absolute) : couvre tout le viewport, jusque sous la barre de statut et sous
+        // la BottomNav — sinon confiné à la boîte de main, donc sous les paddings safe-area du
+        // body (fond clair visible en haut/bas). Même convention que le filigrane de blason
+        // (ThemeApplier.tsx) : bloc positionné z-0, le contenu réel passe dans un wrapper
+        // relative z-10 pour peindre par-dessus.
+        <div className="fixed inset-0 z-0" aria-hidden="true">
           <Image
             src="/images/dashboard-hero.jpg"
             alt=""
