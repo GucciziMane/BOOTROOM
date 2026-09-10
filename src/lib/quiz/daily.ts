@@ -716,17 +716,35 @@ async function getOrGenerateDynamicQuestions(
   // essaie les 3 autres types avant d'abandonner ce créneau. Vu en prod : un quiz coincé à
   // seulement 3 questions (les statiques) alors que les données existaient, juste pas pour le type
   // tiré au hasard sur ce créneau précis.
+  //
+  // usedTypes, partagé entre toutes les positions de cette génération : un type dont le texte de
+  // question ne varie pas selon l'entité tirée (ex: guess_crest, toujours "Quel club est représenté
+  // par ce blason ?") produirait deux questions visuellement identiques (même texte, bonne réponse
+  // différente) si son repli était choisi deux fois le même jour — les ensembles
+  // usedTeamIdsForCrest etc. empêchent déjà de retirer la MÊME équipe/joueur/match, mais pas de
+  // retomber sur le MÊME TYPE avec une entité différente. Les types jamais encore utilisés sont
+  // donc essayés avant ceux déjà pris, un repli sur un type déjà utilisé restant préférable à un
+  // créneau vide si vraiment aucun type frais ne peut être satisfait ce jour-là.
+  const usedTypes = new Set<DynamicType>();
   const generated = dynamicPositions
     .map((position, idx) => {
       const primaryType = typeOrder[idx % typeOrder.length];
       const seedStr = `${quizDate}-${position}`;
-      const fallbackTypes = seededShuffle(
-        ALL_DYNAMIC_TYPES.filter((t) => t !== primaryType),
-        `${seedStr}-fallback`
+      const remainingTypes = ALL_DYNAMIC_TYPES.filter((t) => t !== primaryType);
+      const freshFallbacks = seededShuffle(
+        remainingTypes.filter((t) => !usedTypes.has(t)),
+        `${seedStr}-fallback-fresh`
       );
-      for (const type of [primaryType, ...fallbackTypes]) {
+      const repeatFallbacks = seededShuffle(
+        remainingTypes.filter((t) => usedTypes.has(t)),
+        `${seedStr}-fallback-repeat`
+      );
+      for (const type of [primaryType, ...freshFallbacks, ...repeatFallbacks]) {
         const question = generateByType(type, position, seedStr);
-        if (question) return question;
+        if (question) {
+          usedTypes.add(type);
+          return question;
+        }
       }
       return null;
     })
@@ -734,10 +752,21 @@ async function getOrGenerateDynamicQuestions(
 
   if (generated.length === 0) return new Map();
 
-  // upsert + ignoreDuplicates : si deux requêtes génèrent en même temps (première visite du jour),
-  // la base ne garde que la première version insérée pour chaque position — on relit ensuite pour
-  // que tout le monde converge sur cette version-là, y compris le processus qui a "perdu" la course.
-  await supabase.from("quiz_daily_dynamic").upsert(
+  // INSERT brut (pas upsert+ignoreDuplicates) : un lot multi-lignes est une seule instruction
+  // atomique en PostgreSQL — tout le tirage du jour passe, ou rien. Avec l'ancien upsert (résolu
+  // ligne par ligne), deux requêtes qui génèrent en même temps (première visite du jour) pouvaient
+  // chacune "gagner" sur des POSITIONS différentes : chaque tirage évite bien les répétitions en
+  // interne (les ensembles usedTeamIdsForCrest etc. ci-dessus), mais deux tirages indépendants ne se
+  // coordonnent pas entre eux — le résultat mélangé pouvait afficher la même question deux fois le
+  // même jour (ex: "Quel club est représenté par ce blason ?" ou le même match), chacune avec une
+  // bonne réponse différente. Confirmé en base sur 8 des 10 derniers jours. Avec un insert atomique,
+  // le perdant de la course abandonne entièrement son propre tirage (erreur 23505 ci-dessous) et
+  // relit celui du gagnant plus bas, jamais un mélange des deux.
+  // Une erreur ici (23505 = quelqu'un d'autre a gagné la course entre notre lecture de `cached`
+  // plus haut et cet insert, ou autre chose) reste silencieuse — comportement préexistant, jamais
+  // vérifié côté appelant — on relit simplement l'état actuel de la table ci-dessous, qui reflète
+  // soit notre propre insert (gagné), soit celui du gagnant (perdu), jamais un mélange des deux.
+  await supabase.from("quiz_daily_dynamic").insert(
     generated.map((q) => ({
       quiz_date: quizDate,
       position: q.position,
@@ -748,8 +777,7 @@ async function getOrGenerateDynamicQuestions(
       choices: q.choices,
       correct_index: q.correctIndex,
       explanation: q.explanation,
-    })),
-    { onConflict: "quiz_date,position", ignoreDuplicates: true }
+    }))
   );
 
   const { data: finalRows } = await supabase
