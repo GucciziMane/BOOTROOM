@@ -1,11 +1,9 @@
-import Link from "next/link";
-import Image from "next/image";
 import { createClient } from "@/lib/supabase/server";
 import { listCard } from "@/lib/ui";
-import { FavoriteTeamBadge } from "@/app/profile/FavoriteTeamBadge";
 import { BackLink } from "@/app/BackLink";
 import { LEADERBOARD_RESET_KEY, PRIVATE_RANKING_USERNAMES } from "@/lib/leaderboard-reset";
 import { LEAGUE_FLAG } from "@/lib/country-flags";
+import { LeaderboardFilter, type LeaderboardRow } from "./LeaderboardFilter";
 
 export default async function LeaderboardPage() {
   const supabase = await createClient();
@@ -43,29 +41,30 @@ export default async function LeaderboardPage() {
     .in("id", favoriteTeamIds.length > 0 ? favoriteTeamIds : [-1]);
   const teamLogoById = new Map((favoriteTeams ?? []).map((t) => [t.id, t.logo_url]));
   const activeLeagueIds = new Set((leagues ?? []).map((l) => l.id));
-  // Ledger complet (avant/après remise à zéro), scopé aux ligues actives comme avant — seule base
-  // commune aux deux classements ci-dessous.
+  // Ledger complet (avant/après remise à zéro), scopé aux ligues actives comme avant.
   const ledgerAllTime = (ledgerAll ?? []).filter((row) => !row.league_id || activeLeagueIds.has(row.league_id));
   const resetAt = resetSetting?.value ?? null;
   const ledger = resetAt ? ledgerAllTime.filter((row) => row.created_at >= resetAt) : ledgerAllTime;
 
   const totalByUser = new Map<string, number>();
-  const byUserByLeague = new Map<string, Map<number, number>>();
+  const pointsByUserByLeague = new Map<string, Map<number, number>>();
 
   for (const row of ledger) {
     totalByUser.set(row.user_id, (totalByUser.get(row.user_id) ?? 0) + row.points);
-    if (!byUserByLeague.has(row.user_id)) byUserByLeague.set(row.user_id, new Map());
-    const perLeague = byUserByLeague.get(row.user_id)!;
+    if (!pointsByUserByLeague.has(row.user_id)) pointsByUserByLeague.set(row.user_id, new Map());
+    const perLeague = pointsByUserByLeague.get(row.user_id)!;
     if (row.league_id) perLeague.set(row.league_id, (perLeague.get(row.league_id) ?? 0) + row.points);
   }
 
-  // Bons pronos (résultat trouvé, score exact inclus) / scores exacts, scopés aux ligues actives et
-  // à la même coupure de remise à zéro que les points ci-dessus — comparé directement au score réel
-  // du match plutôt que relu depuis points_ledger, qui ne distingue plus les deux depuis la refonte
-  // du barème (une seule ligne "match_score" par match).
+  // Bons pronos (résultat trouvé, score exact inclus) / scores exacts, par joueur ET par
+  // championnat (pour le filtre) — comparé directement au score réel du match plutôt que relu
+  // depuis points_ledger, qui ne distingue plus les deux depuis la refonte du barème (une seule
+  // ligne "match_score" par match).
   const finishedById = new Map((finishedMatches ?? []).map((m) => [m.id, m]));
-  const goodPredictionsByUser = new Map<string, number>();
-  const exactScoresByUser = new Map<string, number>();
+  const goodTotalByUser = new Map<string, number>();
+  const exactTotalByUser = new Map<string, number>();
+  const goodByUserByLeague = new Map<string, Map<number, number>>();
+  const exactByUserByLeague = new Map<string, Map<number, number>>();
   for (const pred of predictions ?? []) {
     if (pred.league_id != null && !activeLeagueIds.has(pred.league_id)) continue;
     const match = finishedById.get(pred.match_id);
@@ -75,17 +74,43 @@ export default async function LeaderboardPage() {
     const exact = pred.predicted_home_score === match.home_score && pred.predicted_away_score === match.away_score;
     const predictedDiff = Math.sign(pred.predicted_home_score - pred.predicted_away_score);
     const actualDiff = Math.sign(match.home_score - match.away_score);
-    if (exact || predictedDiff === actualDiff) {
-      goodPredictionsByUser.set(pred.user_id, (goodPredictionsByUser.get(pred.user_id) ?? 0) + 1);
-    }
-    if (exact) {
-      exactScoresByUser.set(pred.user_id, (exactScoresByUser.get(pred.user_id) ?? 0) + 1);
+    const good = exact || predictedDiff === actualDiff;
+
+    if (good) goodTotalByUser.set(pred.user_id, (goodTotalByUser.get(pred.user_id) ?? 0) + 1);
+    if (exact) exactTotalByUser.set(pred.user_id, (exactTotalByUser.get(pred.user_id) ?? 0) + 1);
+    if (pred.league_id != null) {
+      if (good) {
+        if (!goodByUserByLeague.has(pred.user_id)) goodByUserByLeague.set(pred.user_id, new Map());
+        const m = goodByUserByLeague.get(pred.user_id)!;
+        m.set(pred.league_id, (m.get(pred.league_id) ?? 0) + 1);
+      }
+      if (exact) {
+        if (!exactByUserByLeague.has(pred.user_id)) exactByUserByLeague.set(pred.user_id, new Map());
+        const m = exactByUserByLeague.get(pred.user_id)!;
+        m.set(pred.league_id, (m.get(pred.league_id) ?? 0) + 1);
+      }
     }
   }
 
-  const ranked = (profiles ?? [])
-    .map((p) => ({ ...p, total: totalByUser.get(p.id) ?? 0 }))
-    .sort((a, b) => b.total - a.total);
+  const rows: LeaderboardRow[] = (profiles ?? []).map((p) => ({
+    id: p.id,
+    username: p.username,
+    avatarUrl: p.avatar_url,
+    favoriteTeamLogoUrl: p.favorite_team_id ? (teamLogoById.get(p.favorite_team_id) ?? null) : null,
+    total: totalByUser.get(p.id) ?? 0,
+    good: goodTotalByUser.get(p.id) ?? 0,
+    exact: exactTotalByUser.get(p.id) ?? 0,
+    byLeague: Object.fromEntries(
+      (leagues ?? []).map((l) => [
+        l.id,
+        {
+          points: pointsByUserByLeague.get(p.id)?.get(l.id) ?? 0,
+          good: goodByUserByLeague.get(p.id)?.get(l.id) ?? 0,
+          exact: exactByUserByLeague.get(p.id)?.get(l.id) ?? 0,
+        },
+      ])
+    ),
+  }));
 
   const privateProfiles = (profiles ?? []).filter((p) => PRIVATE_RANKING_USERNAMES.includes(p.username));
   const showPrivateRanking = privateProfiles.some((p) => p.id === user?.id);
@@ -126,93 +151,10 @@ export default async function LeaderboardPage() {
         son buteur/passeur pronostiqué s&apos;est vérifié. Bons = bon résultat trouvé (score exact inclus).
       </p>
 
-      <div className="mb-2 flex items-center gap-3 px-4 text-right text-[11px] font-bold uppercase tracking-wide text-mute">
-        <span className="flex-1 text-left">Joueur</span>
-        <span className="w-9">Bons</span>
-        <span className="w-9">Exacts</span>
-        <span className="w-14">Points</span>
-        <span className="w-3" aria-hidden />
-      </div>
-      <ul className={`mb-8 ${listCard}`}>
-        {ranked.map((p, i) => (
-          <li key={p.id}>
-            <Link
-              href={`/leaderboard/${p.id}`}
-              transitionTypes={["nav-forward"]}
-              // Toute la liste est visible sans scroll (petit groupe d'amis) : sans ça, le profil de
-              // chaque joueur précharge en arrière-plan dès l'affichage de cette page.
-              prefetch={false}
-              className="flex items-center gap-3 p-4 transition-colors hover:bg-cream"
-            >
-              <span className="flex min-w-0 flex-1 items-center gap-3">
-                <span className="w-5 shrink-0 text-mute">{i + 1}</span>
-                <span className="relative h-12 w-12 shrink-0">
-                  <span className="relative block h-12 w-12 overflow-hidden rounded-full border-2 border-line bg-cream">
-                    {p.avatar_url ? (
-                      <Image src={p.avatar_url} alt="" fill sizes="48px" className="object-cover" />
-                    ) : (
-                      <span className="flex h-full w-full items-center justify-center text-lg font-bold text-mute">
-                        {p.username.slice(0, 1).toUpperCase()}
-                      </span>
-                    )}
-                  </span>
-                  <FavoriteTeamBadge logoUrl={p.favorite_team_id ? (teamLogoById.get(p.favorite_team_id) ?? null) : null} size={18} />
-                </span>
-                <span className="truncate font-bold">{p.username}</span>
-              </span>
-              <span className="w-9 shrink-0 text-right font-bold">{goodPredictionsByUser.get(p.id) ?? 0}</span>
-              <span className="w-9 shrink-0 text-right font-bold">{exactScoresByUser.get(p.id) ?? 0}</span>
-              <span className="w-14 shrink-0 text-right font-bold">{p.total}</span>
-              <span aria-hidden className="w-3 shrink-0 text-right text-mute">
-                ›
-              </span>
-            </Link>
-          </li>
-        ))}
-        {ranked.length === 0 && <li className="p-4 text-mute">Personne n&apos;a encore de points.</li>}
-      </ul>
-
-      <h2 className="mb-3 text-lg font-bold">Détail par championnat</h2>
-      {/* table-fixed + colonnes en % (via colgroup) plutôt que overflow-x-auto : avec les noms
-          complets des championnats en en-tête, la table dépassait la largeur de l'écran sur
-          mobile et obligeait à scroller horizontalement — les drapeaux (déjà utilisés ailleurs,
-          voir /leagues) tiennent sur une seule colonne étroite, toute la page reste visible sans
-          scroll latéral. */}
-      <div className="overflow-hidden rounded-2xl border border-line bg-paper">
-        <table className="w-full table-fixed text-xs sm:text-sm">
-          <colgroup>
-            <col style={{ width: "30%" }} />
-            {(leagues ?? []).map((l) => (
-              <col key={l.id} style={{ width: `${(leagues?.length ?? 0) > 0 ? 54 / (leagues?.length ?? 1) : 0}%` }} />
-            ))}
-            <col style={{ width: "16%" }} />
-          </colgroup>
-          <thead>
-            <tr className="border-b border-line bg-cream">
-              <th className="p-1.5 text-left sm:p-3">Joueur</th>
-              {(leagues ?? []).map((l) => (
-                <th key={l.id} className="p-1.5 text-right sm:p-3" title={l.name}>
-                  {LEAGUE_FLAG[l.football_data_code] ?? l.name.slice(0, 3)}
-                </th>
-              ))}
-              <th className="p-1.5 text-right sm:p-3">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ranked.map((p) => (
-              <tr key={p.id} className="border-b border-line last:border-0">
-                <td className="truncate p-1.5 font-bold sm:p-3">{p.username}</td>
-                {(leagues ?? []).map((l) => (
-                  <td key={l.id} className="p-1.5 text-right text-mute sm:p-3">
-                    {byUserByLeague.get(p.id)?.get(l.id) ?? 0}
-                  </td>
-                ))}
-                <td className="p-1.5 text-right font-bold sm:p-3">{p.total}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <LeaderboardFilter
+        rows={rows}
+        leagues={(leagues ?? []).map((l) => ({ id: l.id, name: l.name, flag: LEAGUE_FLAG[l.football_data_code] ?? "🏆" }))}
+      />
     </main>
   );
 }

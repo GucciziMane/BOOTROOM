@@ -92,6 +92,16 @@ textarea {
   outline-offset: 3px;
 }
 
+/* Barre de filtres horizontale (ex: puces de championnat sur le classement) : le scroll doit
+   rester possible au doigt/à la molette, seule la barre de défilement elle-même est masquée —
+   visuellement plus proche d'une barre d'onglets native que d'une zone de texte qui scrolle. */
+.no-scrollbar {
+  scrollbar-width: none; /* Firefox */
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/Edge */
+}
+
 @media (prefers-reduced-motion: no-preference) {
   button,
   a {
