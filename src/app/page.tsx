@@ -11,6 +11,7 @@ import { ThemeModeToggle } from "@/app/profile/ThemeModeToggle";
 import { FavoriteTeamOnboarding } from "./FavoriteTeamOnboarding";
 import { ClubHomeDashboard } from "./ClubHomeDashboard";
 import { LiveMatchesBanner } from "./LiveMatchesBanner";
+import { NavCardCarousel } from "./NavCardCarousel";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -112,36 +113,39 @@ export default async function DashboardPage() {
           </div>
         </div>
       ) : (
-      <div className="flex flex-1 items-center justify-center">
-        <div className="grid w-full gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-6">
-          <NavCard
-            href="/calendar"
-            title="Pronostics 🎯"
-            description="Calendrier des matchs : score et buteur, championnat par championnat."
-          />
-          <NavCard
-            href="/calendar/classements"
-            title={"Classements & buteurs 🏆"}
-            description="Le classement réel de chaque championnat, mis à jour après chaque match, plus les buteurs et passeurs."
-          />
-          <NavCard
-            href="/leaderboard"
-            title="Classement général 🏅"
-            description="Le total des points de chacun entre potes, et le détail par championnat."
-          />
-          <NavCard
-            href="/chat"
-            title="3ème mi‑temps 🍻"
-            description="La discussion entre tous les membres."
-            badgeCount={unreadChatCount ?? 0}
-          />
-          <NavCard
-            href="/quiz"
-            title="Quiz du jour 🧠"
-            description="10 questions sur le foot, un nouveau quiz chaque jour à minuit. Classement quotidien entre potes."
+        <div className="flex flex-1 items-center justify-center overflow-hidden">
+          <NavCardCarousel
+            cards={[
+              {
+                href: "/calendar",
+                title: "Pronostics 🎯",
+                description: "Calendrier des matchs : score et buteur, championnat par championnat.",
+              },
+              {
+                href: "/calendar/classements",
+                title: "Classements & buteurs 🏆",
+                description:
+                  "Le classement réel de chaque championnat, mis à jour après chaque match, plus les buteurs et passeurs.",
+              },
+              {
+                href: "/leaderboard",
+                title: "Classement général 🏅",
+                description: "Le total des points de chacun entre potes, et le détail par championnat.",
+              },
+              {
+                href: "/chat",
+                title: "3ème mi‑temps 🍻",
+                description: "La discussion entre tous les membres.",
+                badgeCount: unreadChatCount ?? 0,
+              },
+              {
+                href: "/quiz",
+                title: "Quiz du jour 🧠",
+                description: "10 questions sur le foot, un nouveau quiz chaque jour à minuit. Classement quotidien entre potes.",
+              },
+            ]}
           />
         </div>
-      </div>
       )}
 
       {!profile?.favorite_team_id && <FavoriteTeamOnboarding leagues={leagues} />}
@@ -176,36 +180,6 @@ function QuickLink({
       )}
       <span className="text-xl">{emoji}</span>
       <span className="text-[11px] font-bold leading-tight">{label}</span>
-    </Link>
-  );
-}
-
-function NavCard({
-  href,
-  title,
-  description,
-  badgeCount,
-}: {
-  href: string;
-  title: string;
-  description: string;
-  badgeCount?: number;
-}) {
-  return (
-    <Link
-      href={href}
-      // Même raisonnement que QuickLink ci-dessus : ces cartes sont le tout premier écran vu après
-      // connexion, pas l'endroit où précharger 5 pages dynamiques coûteuses en arrière-plan.
-      prefetch={false}
-      className="relative flex min-h-[160px] flex-col items-center justify-center rounded-2xl border-2 border-line bg-paper p-6 text-center shadow-sm transition-colors hover:border-ink hover:bg-cream lg:min-h-[200px] lg:p-8"
-    >
-      {!!badgeCount && (
-        <span className="absolute right-4 top-4 flex h-6 min-w-6 items-center justify-center rounded-full bg-accent px-1.5 text-xs font-bold text-paper">
-          {badgeCount}
-        </span>
-      )}
-      <span className="text-3xl font-bold lg:text-2xl">{title}</span>
-      <span className="mt-3 text-base text-mute">{description}</span>
     </Link>
   );
 }
