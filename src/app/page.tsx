@@ -54,7 +54,15 @@ export default async function DashboardPage() {
   ]);
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-1 flex-col p-6">
+    <main
+      // h-full ne suffit pas ici : body n'a que min-h-full (pas h-full, volontaire pour que les
+      // pages normales restent scrollables si leur contenu dépasse un écran), donc un pourcentage
+      // hérité à travers cette chaîne ne se résout jamais à une hauteur ferme — main grossissait
+      // simplement à la taille de son contenu au lieu d'être plafonné à l'écran. Ancré directement
+      // sur le viewport réel (moins les paddings connus posés par <body>, cf. layout.tsx) plutôt
+      // que de dépendre de cette chaîne de hauteurs.
+      className="mx-auto flex h-[calc(100dvh-env(safe-area-inset-top)-8rem)] min-h-0 w-full max-w-7xl flex-1 flex-col p-6 lg:h-[calc(100dvh-env(safe-area-inset-top))]"
+    >
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Boot Room</h1>
         <div className="flex items-center gap-4">
@@ -113,7 +121,7 @@ export default async function DashboardPage() {
           </div>
         </div>
       ) : (
-        <div className="flex flex-1 items-center justify-center overflow-hidden">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
           <NavCardCarousel
             cards={[
               {

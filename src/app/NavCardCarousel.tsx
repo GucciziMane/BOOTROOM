@@ -130,7 +130,7 @@ export function NavCardCarousel({ cards }: { cards: NavCarouselCard[] }) {
           }}
           href={c.href}
           prefetch={false}
-          className="relative flex min-h-[220px] shrink-0 snap-center flex-col items-center justify-center rounded-2xl border-2 border-line bg-paper p-6 text-center shadow-sm transition-colors hover:border-ink hover:bg-cream"
+          className="relative flex min-h-[340px] shrink-0 snap-center flex-col items-center justify-center rounded-2xl border-2 border-line bg-paper p-6 text-center shadow-sm transition-colors hover:border-ink hover:bg-cream"
           style={{ flex: `0 0 ${CARD_WIDTH_PCT}%`, willChange: "transform, opacity" }}
         >
           {!!c.badgeCount && (
