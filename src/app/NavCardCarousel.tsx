@@ -5,6 +5,7 @@ import Link from "next/link";
 
 export interface NavCarouselCard {
   href: string;
+  emoji: string;
   title: string;
   description: string;
   badgeCount?: number;
@@ -138,7 +139,8 @@ export function NavCardCarousel({ cards }: { cards: NavCarouselCard[] }) {
               {c.badgeCount}
             </span>
           )}
-          <span className="text-3xl font-bold">{c.title}</span>
+          <span className="text-6xl">{c.emoji}</span>
+          <span className="mt-4 text-3xl font-bold">{c.title}</span>
           <span className="mt-3 text-base text-paper/75">{c.description}</span>
         </Link>
       ))}

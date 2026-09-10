@@ -166,29 +166,34 @@ export default async function DashboardPage() {
               cards={[
                 {
                   href: "/calendar",
-                  title: "Pronostics 🎯",
+                  emoji: "🎯",
+                  title: "Pronostics",
                   description: "Calendrier des matchs : score et buteur, championnat par championnat.",
                 },
                 {
                   href: "/calendar/classements",
-                  title: "Classements & buteurs 🏆",
+                  emoji: "🏆",
+                  title: "Classements & buteurs",
                   description:
                     "Le classement réel de chaque championnat, mis à jour après chaque match, plus les buteurs et passeurs.",
                 },
                 {
                   href: "/leaderboard",
-                  title: "Classement général 🏅",
+                  emoji: "🏅",
+                  title: "Classement général",
                   description: "Le total des points de chacun entre potes, et le détail par championnat.",
                 },
                 {
                   href: "/chat",
-                  title: "3ème mi‑temps 🍻",
+                  emoji: "🍻",
+                  title: "3ème mi‑temps",
                   description: "La discussion entre tous les membres.",
                   badgeCount: unreadChatCount ?? 0,
                 },
                 {
                   href: "/quiz",
-                  title: "Quiz du jour 🧠",
+                  emoji: "🧠",
+                  title: "Quiz du jour",
                   description: "10 questions sur le foot, un nouveau quiz chaque jour à minuit. Classement quotidien entre potes.",
                 },
               ]}
