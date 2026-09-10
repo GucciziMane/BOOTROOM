@@ -15,10 +15,13 @@ import {
   leagueCardTeamPlaceholderClass,
   LeagueCardBackground,
 } from "@/lib/league-card-theme";
+import { groupPlayersByPosition } from "@/lib/group-players-by-position";
+import type { Position } from "@/types/database";
 
 interface PlayerOption {
   id: number;
   name: string;
+  position: Position;
 }
 
 interface Props {
@@ -134,6 +137,7 @@ export function MatchPredictionCard({
   const scorerPoints = scorer ? (scoring.scorerTierPoints[scoring.playerTier[scorer.id]] ?? 0) : 0;
   const assister = assistId ? [...homePlayers, ...awayPlayers].find((p) => p.id === Number(assistId)) : undefined;
   const assistPoints = assister ? (scoring.assistTierPoints[scoring.playerAssistTier[assister.id]] ?? 0) : 0;
+  const playerGroups = groupPlayersByPosition(homePlayers, homeTeamName, awayPlayers, awayTeamName);
   const multiplierByTier = new Map(
     Object.entries(resultOdds.multiplierByTier).map(([tier, mult]) => [Number(tier) as OddsTier, mult])
   );
@@ -294,20 +298,15 @@ export function MatchPredictionCard({
         className={`relative mt-3 text-sm ${input}`}
       >
         <option value="">Buteur (optionnel)</option>
-        <optgroup label={homeTeamName}>
-          {homePlayers.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </optgroup>
-        <optgroup label={awayTeamName}>
-          {awayPlayers.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </optgroup>
+        {playerGroups.map((group) => (
+          <optgroup key={group.label} label={group.label}>
+            {group.options.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </optgroup>
+        ))}
       </select>
 
       <select
@@ -317,20 +316,15 @@ export function MatchPredictionCard({
         className={`relative mt-2 text-sm ${input}`}
       >
         <option value="">Passeur décisif (optionnel)</option>
-        <optgroup label={homeTeamName}>
-          {homePlayers.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </optgroup>
-        <optgroup label={awayTeamName}>
-          {awayPlayers.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </optgroup>
+        {playerGroups.map((group) => (
+          <optgroup key={group.label} label={group.label}>
+            {group.options.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </optgroup>
+        ))}
       </select>
 
       {/* Une ligne par nature de points plutôt qu'une seule phrase à rallonge : buteur/passeur

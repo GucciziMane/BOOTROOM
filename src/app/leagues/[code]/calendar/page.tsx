@@ -8,6 +8,7 @@ import { computeTeamForm } from "@/lib/scoring/team-form";
 import { KNOCKOUT_STAGE_LABEL } from "@/lib/knockout-stage-label";
 import { BackLink } from "@/app/BackLink";
 import { MatchPredictionCard } from "./MatchPredictionCard";
+import type { Position } from "@/types/database";
 import { GoalBell } from "./GoalBell";
 
 export default async function CalendarPage({ params }: PageProps<"/leagues/[code]/calendar">) {
@@ -111,7 +112,7 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
       .in("match_id", allMatches.length > 0 ? allMatches.map((m) => m.id) : [-1]),
     supabase
       .from("players")
-      .select("id, name, team_id")
+      .select("id, name, team_id, position")
       .in("team_id", teamIds.length > 0 ? teamIds : [-1])
       .is("left_at", null)
       .order("name"),
@@ -139,10 +140,10 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
   for (const m of allMatches) {
     if (doubledMatchIds.has(m.id) && m.matchday != null) doubledMatchIdByMatchday.set(m.matchday, m.id);
   }
-  const playersByTeamId = new Map<number, Array<{ id: number; name: string }>>();
+  const playersByTeamId = new Map<number, Array<{ id: number; name: string; position: Position }>>();
   for (const p of players ?? []) {
     if (!playersByTeamId.has(p.team_id)) playersByTeamId.set(p.team_id, []);
-    playersByTeamId.get(p.team_id)!.push({ id: p.id, name: p.name });
+    playersByTeamId.get(p.team_id)!.push({ id: p.id, name: p.name, position: p.position });
   }
   const lockHours = Number(setting?.value ?? 1);
 

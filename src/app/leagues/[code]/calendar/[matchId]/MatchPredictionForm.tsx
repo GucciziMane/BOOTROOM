@@ -4,10 +4,13 @@ import { useActionState, useState } from "react";
 import { saveMatchPrediction, type SaveMatchPredictionState } from "./actions";
 import { buttonPrimary, card, input } from "@/lib/ui";
 import { applyResultOdds, predictedWinnerTeamId, type OddsTier, type ResultTierMultiplier } from "@/lib/scoring/points";
+import { groupPlayersByPosition } from "@/lib/group-players-by-position";
+import type { Position } from "@/types/database";
 
 interface PlayerOption {
   id: number;
   name: string;
+  position: Position;
 }
 
 interface ScoringInfo {
@@ -72,6 +75,7 @@ export function MatchPredictionForm({
   const scorerPoints = scorer ? scoring.scorerTierPoints[scoring.playerTier[scorer.id]] ?? 0 : 0;
   const assister = assistId ? [...homePlayers, ...awayPlayers].find((p) => p.id === Number(assistId)) : undefined;
   const assistPoints = assister ? scoring.assistTierPoints[scoring.playerAssistTier[assister.id]] ?? 0 : 0;
+  const playerGroups = groupPlayersByPosition(homePlayers, homeTeamName, awayPlayers, awayTeamName);
 
   const multiplierByTier = new Map(
     Object.entries(resultOdds.multiplierByTier).map(([tier, mult]) => [Number(tier) as OddsTier, mult])
@@ -136,20 +140,15 @@ export function MatchPredictionForm({
           className={input}
         >
           <option value="">—</option>
-          <optgroup label={homeTeamName}>
-            {homePlayers.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </optgroup>
-          <optgroup label={awayTeamName}>
-            {awayPlayers.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </optgroup>
+          {playerGroups.map((group) => (
+            <optgroup key={group.label} label={group.label}>
+              {group.options.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </optgroup>
+          ))}
         </select>
       </div>
 
@@ -162,20 +161,15 @@ export function MatchPredictionForm({
           className={input}
         >
           <option value="">—</option>
-          <optgroup label={homeTeamName}>
-            {homePlayers.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </optgroup>
-          <optgroup label={awayTeamName}>
-            {awayPlayers.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </optgroup>
+          {playerGroups.map((group) => (
+            <optgroup key={group.label} label={group.label}>
+              {group.options.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </optgroup>
+          ))}
         </select>
       </div>
 

@@ -52,7 +52,7 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
     supabase.from("teams").select("id, name").in("id", [match.home_team_id, match.away_team_id]),
     supabase
       .from("players")
-      .select("id, name, team_id")
+      .select("id, name, team_id, position")
       .in("team_id", [match.home_team_id, match.away_team_id])
       .order("name"),
     supabase

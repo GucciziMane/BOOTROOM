@@ -7,6 +7,7 @@ import { computeTeamForm } from "@/lib/scoring/team-form";
 import { MatchPredictionCard } from "@/app/leagues/[code]/calendar/MatchPredictionCard";
 import { BackLink } from "@/app/BackLink";
 import { CalendarTabs } from "./CalendarTabs";
+import type { Position } from "@/types/database";
 
 export default async function CalendarPage() {
   const supabase = await createClient();
@@ -128,7 +129,7 @@ export default async function CalendarPage() {
       .in("match_id", matchdaySiblings.length > 0 ? matchdaySiblings.map((s) => s.matchId) : [-1]),
     supabase
       .from("players")
-      .select("id, name, team_id")
+      .select("id, name, team_id, position")
       .in("team_id", teamIds.length > 0 ? teamIds : [-1])
       .is("left_at", null)
       .order("name"),
@@ -178,10 +179,10 @@ export default async function CalendarPage() {
       doubledMatchIdByGroupKey.set(`${leagueId}:${sibling.matchday}`, p.match_id);
     }
   }
-  const playersByTeamId = new Map<number, Array<{ id: number; name: string }>>();
+  const playersByTeamId = new Map<number, Array<{ id: number; name: string; position: Position }>>();
   for (const p of players ?? []) {
     if (!playersByTeamId.has(p.team_id)) playersByTeamId.set(p.team_id, []);
-    playersByTeamId.get(p.team_id)!.push({ id: p.id, name: p.name });
+    playersByTeamId.get(p.team_id)!.push({ id: p.id, name: p.name, position: p.position });
   }
   const lockHours = Number(setting?.value ?? 1);
 
