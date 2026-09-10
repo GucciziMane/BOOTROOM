@@ -65,27 +65,8 @@ export default async function DashboardPage() {
         clubHomeData ? "" : "overflow-hidden"
       }`}
     >
-      {!clubHomeData && (
-        // Pas de thème de club actif : photo de stade en fond plutôt que la page neutre, pour que
-        // l'écran d'accueil ait tout de suite un vrai visuel "produit sport" au lieu d'un fond uni.
-        // fixed (pas absolute) : couvre tout le viewport, jusque sous la barre de statut et sous
-        // la BottomNav — sinon confiné à la boîte de main, donc sous les paddings safe-area du
-        // body (fond clair visible en haut/bas). Même convention que le filigrane de blason
-        // (ThemeApplier.tsx) : bloc positionné z-0, le contenu réel passe dans un wrapper
-        // relative z-10 pour peindre par-dessus.
-        <div className="fixed inset-0 z-0" aria-hidden="true">
-          <Image
-            src="/images/dashboard-hero.jpg"
-            alt=""
-            fill
-            sizes="100vw"
-            priority
-            className="object-cover"
-          />
-          <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/45 to-black/78" />
-        </div>
-      )}
-
+      {/* Photo de stade en fond (mode "trophée") : posée globalement dans layout.tsx (StadiumBackdrop)
+          pour être visible sur toutes les pages, pas seulement ici. */}
       <div className={`relative z-10 flex min-h-0 flex-1 flex-col ${clubHomeData ? "" : "text-paper"}`}>
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold">Boot Room</h1>

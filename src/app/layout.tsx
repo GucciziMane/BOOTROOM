@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { Instrument_Sans } from "next/font/google";
 import { createClient } from "@/lib/supabase/server";
 import { BottomNav } from "./BottomNav";
-import { ThemeApplier, ClubCrestWatermark } from "./ThemeApplier";
+import { ThemeApplier, ClubCrestWatermark, StadiumBackdrop } from "./ThemeApplier";
 import "./globals.css";
 
 const comicNeue = Instrument_Sans({
@@ -32,6 +32,9 @@ export const viewport: Viewport = {
 };
 
 interface ClubTheme {
+  // Un utilisateur connecté mais sans thème de club actif est en mode "trophée" (générique) —
+  // distinct de "pas connecté du tout" (page de login, etc.), qui ne doit ni l'un ni l'autre.
+  loggedIn: boolean;
   enabled: boolean;
   primaryColor: string | null;
   secondaryColor: string | null;
@@ -39,7 +42,13 @@ interface ClubTheme {
 }
 
 async function getClubTheme(): Promise<ClubTheme> {
-  const empty: ClubTheme = { enabled: false, primaryColor: null, secondaryColor: null, crestUrl: null };
+  const empty = (loggedIn: boolean): ClubTheme => ({
+    loggedIn,
+    enabled: false,
+    primaryColor: null,
+    secondaryColor: null,
+    crestUrl: null,
+  });
 
   const supabase = await createClient();
   // getSession() (pas getUser()) : le proxy (src/proxy.ts) a déjà revalidé la session auprès de
@@ -50,7 +59,7 @@ async function getClubTheme(): Promise<ClubTheme> {
     data: { session },
   } = await supabase.auth.getSession();
   const user = session?.user ?? null;
-  if (!user) return empty;
+  if (!user) return empty(false);
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -58,7 +67,7 @@ async function getClubTheme(): Promise<ClubTheme> {
     .eq("id", user.id)
     .maybeSingle();
 
-  if (!profile?.use_club_theme || !profile.favorite_team_id) return empty;
+  if (!profile?.use_club_theme || !profile.favorite_team_id) return empty(true);
 
   const { data: team } = await supabase
     .from("teams")
@@ -66,9 +75,10 @@ async function getClubTheme(): Promise<ClubTheme> {
     .eq("id", profile.favorite_team_id)
     .maybeSingle();
 
-  if (!team?.primary_color) return empty;
+  if (!team?.primary_color) return empty(true);
 
   return {
+    loggedIn: true,
     enabled: true,
     primaryColor: team.primary_color,
     secondaryColor: team.secondary_color,
@@ -85,6 +95,7 @@ async function ClubThemeLayer() {
   const clubTheme = await getClubTheme();
   return (
     <>
+      <StadiumBackdrop show={clubTheme.loggedIn && !clubTheme.enabled} />
       <ClubCrestWatermark enabled={clubTheme.enabled} crestUrl={clubTheme.crestUrl} />
       <ThemeApplier
         enabled={clubTheme.enabled}

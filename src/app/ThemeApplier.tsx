@@ -80,6 +80,24 @@ export function ThemeApplier({
 }
 
 /**
+ * Photo de stade plein écran pour le mode "trophée" (pas de thème de club actif) — sert de fond à
+ * toute l'appli dans ce mode, sous un voile sombre pour la lisibilité. fixed + z-0, posé au niveau
+ * du layout racine (donc visible sur toutes les pages, pas remonté à chaque navigation puisque ce
+ * layout reste monté) ; le contenu de chaque page passe par-dessus via le wrapper `relative z-10`
+ * déjà posé plus bas dans RootLayout.
+ */
+export function StadiumBackdrop({ show }: { show: boolean }) {
+  if (!show) return null;
+
+  return (
+    <div className="fixed inset-0 z-0" aria-hidden="true">
+      <Image src="/images/dashboard-hero.jpg" alt="" fill sizes="100vw" priority className="object-cover" />
+      <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-black/45 to-black/78" />
+    </div>
+  );
+}
+
+/**
  * Blason facultatif en filigrane. Il reste volontairement très discret pour
  * ne jamais réduire le contraste ni perturber la lecture.
  */
