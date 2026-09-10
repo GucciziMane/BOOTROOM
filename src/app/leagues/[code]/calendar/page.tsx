@@ -66,6 +66,7 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
 
   const [
     { data: fullPredictions },
+    { data: doubledPredictions },
     { data: players },
     { data: setting },
     { data: pointConfigRows },
@@ -83,6 +84,16 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
       )
       .eq("user_id", user!.id)
       .in("match_id", upcomingMatchIds.length > 0 ? upcomingMatchIds : [-1]),
+    // x2 actif éventuel, sur N'IMPORTE QUEL match de la saison (pas seulement scheduled/live
+    // comme fullPredictions ci-dessus) : un x2 posé sur un match qui vient de terminer doit
+    // continuer à bloquer le bouton sur les autres matchs de la même journée, sinon l'UI l'offre
+    // à tort alors que le serveur le refusera (le match qui le porte est verrouillé, indéplaçable).
+    supabase
+      .from("match_predictions")
+      .select("match_id")
+      .eq("user_id", user!.id)
+      .eq("is_doubled", true)
+      .in("match_id", allMatches.length > 0 ? allMatches.map((m) => m.id) : [-1]),
     supabase
       .from("players")
       .select("id, name, team_id")
@@ -108,10 +119,10 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
   // x2 : un seul actif par journée (un seul championnat ici, cette page ne traite que celui-ci) —
   // retrouve, pour chaque journée, quel match porte le x2 actuellement, pour désactiver le bouton
   // sur tous les autres matchs de cette même journée plutôt que de laisser deux actifs en même temps.
+  const doubledMatchIds = new Set((doubledPredictions ?? []).map((p) => p.match_id));
   const doubledMatchIdByMatchday = new Map<number, number>();
   for (const m of allMatches) {
-    const pred = predictionByMatchId.get(m.id);
-    if (pred?.is_doubled && m.matchday != null) doubledMatchIdByMatchday.set(m.matchday, m.id);
+    if (doubledMatchIds.has(m.id) && m.matchday != null) doubledMatchIdByMatchday.set(m.matchday, m.id);
   }
   const playersByTeamId = new Map<number, Array<{ id: number; name: string }>>();
   for (const p of players ?? []) {

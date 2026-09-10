@@ -79,8 +79,28 @@ export default async function CalendarPage() {
   const upcoming = matchesPerSeason.flat().sort((a, b) => a.kickoff_at.localeCompare(b.kickoff_at));
   const upcomingMatchIds = upcoming.map((m) => m.id);
 
+  // x2 déjà actif sur la journée courante d'un championnat, y compris posé sur un match de cette
+  // même journée qui vient de terminer (donc absent de `upcoming`, filtré scheduled/live plus haut
+  // dans matchesPerSeason) : sans ce lot à part, le bouton x2 restait affiché à tort sur les autres
+  // matchs de la journée une fois ce match-là verrouillé, jusqu'au refus côté serveur.
+  const currentMatchdayBySeasonId = new Map<number, number>();
+  for (const m of upcoming) {
+    if (m.matchday != null && !currentMatchdayBySeasonId.has(m.season_id)) {
+      currentMatchdayBySeasonId.set(m.season_id, m.matchday);
+    }
+  }
+  const matchdaySiblingsPerSeason = await Promise.all(
+    [...currentMatchdayBySeasonId.entries()].map(async ([seasonId, matchday]) => {
+      const { data } = await supabase.from("matches").select("id").eq("season_id", seasonId).eq("matchday", matchday);
+      return (data ?? []).map((m) => ({ matchId: m.id, seasonId, matchday }));
+    })
+  );
+  const matchdaySiblings = matchdaySiblingsPerSeason.flat();
+  const matchdaySiblingBySiblingId = new Map(matchdaySiblings.map((s) => [s.matchId, s]));
+
   const [
     { data: fullPredictions },
+    { data: doubledPredictions },
     { data: players },
     { data: setting },
     { data: pointConfigRows },
@@ -98,6 +118,12 @@ export default async function CalendarPage() {
       )
       .eq("user_id", user!.id)
       .in("match_id", upcomingMatchIds.length > 0 ? upcomingMatchIds : [-1]),
+    supabase
+      .from("match_predictions")
+      .select("match_id")
+      .eq("user_id", user!.id)
+      .eq("is_doubled", true)
+      .in("match_id", matchdaySiblings.length > 0 ? matchdaySiblings.map((s) => s.matchId) : [-1]),
     supabase
       .from("players")
       .select("id, name, team_id")
@@ -121,13 +147,16 @@ export default async function CalendarPage() {
   const predictionByMatchId = new Map((fullPredictions ?? []).map((p) => [p.match_id, p]));
   const goalSubscribedMatchIds = new Set((goalSubscriptions ?? []).map((s) => s.match_id));
   // x2 : un seul actif par (championnat, journée) — plusieurs championnats se mélangent sur cette
-  // page, donc la clé doit inclure le championnat, pas seulement le numéro de journée.
+  // page, donc la clé doit inclure le championnat, pas seulement le numéro de journée. Construit à
+  // partir de matchdaySiblings (toute la journée, tous statuts confondus), pas seulement `upcoming`
+  // (scheduled/live) : un x2 posé sur un match de cette journée qui vient de terminer doit
+  // continuer à apparaître ici, sinon le bouton reste affiché à tort sur les autres matchs.
   const doubledMatchIdByGroupKey = new Map<string, number>();
-  for (const m of upcoming) {
-    const pred = predictionByMatchId.get(m.id);
-    const leagueId = leagueIdBySeasonId.get(m.season_id);
-    if (pred?.is_doubled && m.matchday != null && leagueId != null) {
-      doubledMatchIdByGroupKey.set(`${leagueId}:${m.matchday}`, m.id);
+  for (const p of doubledPredictions ?? []) {
+    const sibling = matchdaySiblingBySiblingId.get(p.match_id);
+    const leagueId = sibling ? leagueIdBySeasonId.get(sibling.seasonId) : undefined;
+    if (sibling && leagueId != null) {
+      doubledMatchIdByGroupKey.set(`${leagueId}:${sibling.matchday}`, p.match_id);
     }
   }
   const playersByTeamId = new Map<number, Array<{ id: number; name: string }>>();
