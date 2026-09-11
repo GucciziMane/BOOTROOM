@@ -185,7 +185,7 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
 
   if (finalScore != null) {
     return (
-      <div className={card}>
+      <div className={`min-h-[75dvh] ${card}`}>
         <h2 className="text-2xl font-bold">Quiz terminé ! 🎉</h2>
         <p className="mt-2 text-lg">
           Ton score du jour : <strong className="text-good">{finalScore} pts</strong>
@@ -319,14 +319,14 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
             toujours quelque chose derrière au lieu d'un vide le temps que la suivante arrive. */}
         <div
           aria-hidden
-          className="absolute inset-x-3 top-0 bottom-0 rounded-[26px] shadow-lg"
+          className="absolute inset-x-3 top-0 bottom-0 min-h-[75dvh] rounded-[26px] shadow-lg"
           style={{ background: "linear-gradient(135deg, #131a30, #0b1020)" }}
         />
 
         <div
           key={position}
           onClick={skipHold}
-          className={`animate-card-in relative overflow-hidden rounded-[28px] border border-paper/15 p-6 text-paper shadow-xl ${flyClass} ${
+          className={`animate-card-in relative flex min-h-[75dvh] flex-col overflow-hidden rounded-[28px] border border-paper/15 p-8 text-paper shadow-xl ${flyClass} ${
             resultPhase === "hold" ? "cursor-pointer" : ""
           }`}
           style={{
@@ -364,77 +364,87 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
           {/* position:relative pour que ce bloc peigne au-dessus de la couche de résultat
               ci-dessus : un élément absolute peint après le flux normal quel que soit son ordre
               dans le DOM, il faut donc que le contenu soit lui aussi "positionné" pour rester
-              visible par-dessus. */}
-          <div className="relative">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wide text-paper/70">Score</p>
-                <p className="text-4xl font-black leading-none">{score}</p>
+              visible par-dessus. flex-1 + justify-center : la carte occupe presque tout l'écran,
+              le contenu (assez court par rapport à cette hauteur) se répartit avec de l'air plutôt
+              que de rester collé en haut avec un grand vide en dessous. */}
+          <div className="relative flex flex-1 flex-col justify-center gap-6">
+            <div>
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-paper/70">Score</p>
+                  <p className="text-5xl font-black leading-none">{score}</p>
+                </div>
+                {streak >= 2 && (
+                  <span className="rounded-full bg-paper/15 px-3 py-1 text-sm font-bold">🔥 Série de {streak}</span>
+                )}
               </div>
-              {streak >= 2 && (
-                <span className="rounded-full bg-paper/15 px-3 py-1 text-xs font-bold">🔥 Série de {streak}</span>
+
+              <p className="mt-5 text-xs font-bold uppercase tracking-wide text-paper/70">
+                Question {position + 1}/{totalQuestions} · {CATEGORY_LABEL[q.category] ?? q.category} ·{" "}
+                {DIFFICULTY_LABEL[q.difficulty]}
+              </p>
+
+              {q.teamLogoUrl && (
+                <div className="mx-auto mt-5 flex h-20 w-20 items-center justify-center rounded-full bg-paper p-2.5 shadow">
+                  <Image src={q.teamLogoUrl} alt="" width={64} height={64} className="h-full w-full object-contain" />
+                </div>
+              )}
+
+              <p className="mt-5 text-2xl font-bold leading-snug">{q.question}</p>
+            </div>
+
+            <div>
+              <div className="grid grid-cols-2 gap-3">
+                {q.choices.map((choice, i) => {
+                  const isSelected = selected === i;
+                  const isCorrectChoice = !!feedback && i === feedback.correctIndex;
+                  const isWrongSelected = !!feedback && isSelected && !feedback.isCorrect;
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      disabled={selected !== null}
+                      onClick={() => handleAnswer(i)}
+                      // text-[#10182a] (pas text-ink) : ce bouton reste TOUJOURS clair (bg-paper),
+                      // qu'importe le thème de l'appli — text-ink bascule en blanc en mode
+                      // "trophée" ([data-stadium], globals.css), ce qui rendait ce texte invisible
+                      // (blanc sur blanc) une fois ce mode devenu la norme dans toute l'appli.
+                      className={`rounded-2xl px-4 py-5 text-center text-base font-bold transition-colors ${
+                        isCorrectChoice
+                          ? "bg-good text-paper"
+                          : isWrongSelected
+                            ? "bg-bad text-paper"
+                            : isSelected
+                              ? `bg-paper text-[#10182a] ring-2 ring-reward ${submitting ? "animate-pulse" : ""}`
+                              : "bg-paper/95 text-[#10182a] hover:bg-paper"
+                      }`}
+                    >
+                      {choice}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-6 h-1.5 w-full overflow-hidden rounded-full bg-paper/25">
+                <div
+                  className="h-full w-full origin-left rounded-full bg-paper transition-transform duration-300"
+                  style={{ transform: `scaleX(${progressPct / 100})` }}
+                />
+              </div>
+
+              {error && <p className="mt-4 text-sm font-bold text-paper">{error}</p>}
+
+              {feedback && (
+                <div className="mt-4 rounded-2xl bg-paper/10 p-4">
+                  <p className="font-bold">
+                    {feedback.isCorrect
+                      ? `Bonne réponse ! +${feedback.points} pt${feedback.points > 1 ? "s" : ""}`
+                      : "Mauvaise réponse."}
+                  </p>
+                  {feedback.explanation && <p className="mt-1 text-sm text-paper/80">{feedback.explanation}</p>}
+                </div>
               )}
             </div>
-
-            <p className="mt-4 text-xs font-bold uppercase tracking-wide text-paper/70">
-              Question {position + 1}/{totalQuestions} · {CATEGORY_LABEL[q.category] ?? q.category} ·{" "}
-              {DIFFICULTY_LABEL[q.difficulty]}
-            </p>
-
-            {q.teamLogoUrl && (
-              <div className="mx-auto mt-4 flex h-16 w-16 items-center justify-center rounded-full bg-paper p-2 shadow">
-                <Image src={q.teamLogoUrl} alt="" width={48} height={48} className="h-full w-full object-contain" />
-              </div>
-            )}
-
-            <p className="mt-4 text-xl font-bold leading-snug">{q.question}</p>
-
-            <div className="mt-5 grid grid-cols-2 gap-3">
-              {q.choices.map((choice, i) => {
-                const isSelected = selected === i;
-                const isCorrectChoice = !!feedback && i === feedback.correctIndex;
-                const isWrongSelected = !!feedback && isSelected && !feedback.isCorrect;
-                return (
-                  <button
-                    key={i}
-                    type="button"
-                    disabled={selected !== null}
-                    onClick={() => handleAnswer(i)}
-                    className={`rounded-2xl px-3 py-3 text-center text-sm font-bold transition-colors ${
-                      isCorrectChoice
-                        ? "bg-good text-paper"
-                        : isWrongSelected
-                          ? "bg-bad text-paper"
-                          : isSelected
-                            ? `bg-paper text-ink ring-2 ring-reward ${submitting ? "animate-pulse" : ""}`
-                            : "bg-paper/95 text-ink hover:bg-paper"
-                    }`}
-                  >
-                    {choice}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="mt-5 h-1.5 w-full overflow-hidden rounded-full bg-paper/25">
-              <div
-                className="h-full w-full origin-left rounded-full bg-paper transition-transform duration-300"
-                style={{ transform: `scaleX(${progressPct / 100})` }}
-              />
-            </div>
-
-            {error && <p className="mt-4 text-sm font-bold text-paper">{error}</p>}
-
-            {feedback && (
-              <div className="mt-4 rounded-2xl bg-paper/10 p-3">
-                <p className="font-bold">
-                  {feedback.isCorrect
-                    ? `Bonne réponse ! +${feedback.points} pt${feedback.points > 1 ? "s" : ""}`
-                    : "Mauvaise réponse."}
-                </p>
-                {feedback.explanation && <p className="mt-1 text-sm text-paper/80">{feedback.explanation}</p>}
-              </div>
-            )}
           </div>
         </div>
       </div>
