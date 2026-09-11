@@ -40,15 +40,16 @@ export default async function CalendarLeaguesPage() {
               className="flex items-center gap-3 p-4 transition-colors hover:bg-cream"
             >
               {league.logo_url && (
-                // Halo diffus (dégradé radial, pas de bord net) derrière chaque blason : certains
-                // logos officiels ont des couleurs sombres jusqu'au cœur du dessin, pas seulement
-                // sur les bords — un simple drop-shadow (qui ne suit que le contour du PNG) ne les
-                // rend pas plus lisibles. Un fond qui s'estompe progressivement donne assez de
-                // contraste sans se voir comme une pastille plaquée.
-                <span className="relative flex h-11 w-11 shrink-0 items-center justify-center">
-                  <span className="absolute inset-0 rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.8)_0%,rgba(255,255,255,0.32)_55%,rgba(255,255,255,0)_78%)]" />
-                  <Image src={league.logo_url} alt="" width={32} height={32} className="relative h-8 w-8 object-contain" />
-                </span>
+                // Contour net (pas de halo rond ni de pastille) qui épouse la silhouette exacte
+                // du blason — un drop-shadow à faible flou, doublé pour l'intensité, dessine un
+                // liseré fin plutôt qu'une lueur diffuse.
+                <Image
+                  src={league.logo_url}
+                  alt=""
+                  width={32}
+                  height={32}
+                  className="h-8 w-8 shrink-0 object-contain [filter:drop-shadow(0_0_1px_rgba(255,255,255,0.95))_drop-shadow(0_0_1px_rgba(255,255,255,0.95))_drop-shadow(0_0_2.5px_rgba(255,255,255,0.7))]"
+                />
               )}
               <div className="flex items-center gap-2 font-bold">
                 <span>{LEAGUE_FLAG[league.football_data_code] ?? league.country}</span>
