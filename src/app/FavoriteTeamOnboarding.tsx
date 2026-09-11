@@ -37,7 +37,7 @@ export function FavoriteTeamOnboarding({ leagues }: { leagues: LeagueGroup[] }) 
   if (dismissed) return null;
 
   return (
-    <div className="fixed inset-0 z-30 flex items-end justify-center bg-ink/40 p-4 sm:items-center">
+    <div className="fixed inset-0 z-30 flex items-end justify-center bg-surface-inverse/40 p-4 sm:items-center">
       <div className={`w-full max-w-sm ${card}`}>
         <h2 className="text-xl font-bold">Choisis ton club favori ⚽</h2>
         <p className="mb-4 mt-1 text-sm text-mute">

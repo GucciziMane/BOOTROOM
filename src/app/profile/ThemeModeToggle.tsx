@@ -70,7 +70,7 @@ export function ThemeModeToggle({
           title="Thème de base"
           aria-pressed={!useClubTheme}
           className={`flex h-7 w-7 items-center justify-center rounded-full text-xs transition-all disabled:opacity-60 ${
-            !useClubTheme ? "bg-ink text-paper ring-2 ring-paper" : "opacity-50 hover:opacity-80"
+            !useClubTheme ? "bg-surface-inverse text-paper ring-2 ring-paper" : "opacity-50 hover:opacity-80"
           }`}
         >
           🏆

@@ -24,7 +24,7 @@ export function BottomNav() {
       // reste peinte avec le reste du document sur certains WebKit mobiles — un scroll rapide la
       // fait alors "traîner"/se figer un instant avant de rattraper la bonne position, au lieu de
       // rester pleinement collée au bas de l'écran comme une barre native.
-      className="fixed inset-x-0 bottom-0 z-20 transform-gpu border-t-2 border-paper/25 bg-ink/55 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-20 transform-gpu border-t-2 border-paper/25 bg-surface-inverse/55 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden"
     >
       {/* Sans viewTransitionName + les 3 règles CSS "bottom-nav" ci-dessous (globals.css), le
           crossfade racine (::view-transition-old/new(root), 180ms) inclut cette nav fixe dans son

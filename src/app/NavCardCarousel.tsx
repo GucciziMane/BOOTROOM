@@ -131,7 +131,7 @@ export function NavCardCarousel({ cards }: { cards: NavCarouselCard[] }) {
           }}
           href={c.href}
           prefetch={false}
-          className="relative flex min-h-[340px] shrink-0 snap-center flex-col items-center justify-center rounded-2xl border-2 border-paper/25 bg-ink/55 p-6 text-center text-paper shadow-lg backdrop-blur-md transition-colors hover:border-paper/50 hover:bg-ink/65"
+          className="relative flex min-h-[340px] shrink-0 snap-center flex-col items-center justify-center rounded-2xl border-2 border-paper/25 bg-surface-inverse/55 p-6 text-center text-paper shadow-lg backdrop-blur-md transition-colors hover:border-paper/50 hover:bg-surface-inverse/65"
           style={{ flex: `0 0 ${CARD_WIDTH_PCT}%`, willChange: "transform, opacity" }}
         >
           {!!c.badgeCount && (

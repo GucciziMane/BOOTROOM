@@ -82,7 +82,7 @@ export default async function DashboardPage() {
             <Link href="/profile" className="relative flex h-16 w-16 shrink-0 items-center gap-2">
               <span
                 className={`relative h-16 w-16 overflow-hidden rounded-full border-2 ${
-                  clubHomeData ? "border-line bg-cream" : "border-paper/30 bg-ink/30"
+                  clubHomeData ? "border-line bg-cream" : "border-paper/30 bg-surface-inverse/30"
                 }`}
               >
                 {profile?.avatar_url ? (

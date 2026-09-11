@@ -698,7 +698,7 @@ export function ChatRoom({
                           className="h-auto max-h-72 w-full max-w-[240px] object-cover"
                         />
                         {m.isEphemeral && isOwn && (
-                          <span className="absolute left-1.5 top-1.5 rounded-full bg-ink/70 px-2 py-0.5 text-[10px] font-bold text-paper">
+                          <span className="absolute left-1.5 top-1.5 rounded-full bg-surface-inverse/70 px-2 py-0.5 text-[10px] font-bold text-paper">
                             Vue unique
                           </span>
                         )}
@@ -785,7 +785,7 @@ export function ChatRoom({
                   {/* eslint-disable-next-line @next/next/no-img-element -- object URL local, non compatible avec le loader next/image */}
                   <img src={p.imageUrl} alt="" className="h-auto max-h-72 w-full max-w-[240px] object-cover" />
                   {p.isEphemeral && (
-                    <span className="absolute left-1.5 top-1.5 rounded-full bg-ink/70 px-2 py-0.5 text-[10px] font-bold text-paper">
+                    <span className="absolute left-1.5 top-1.5 rounded-full bg-surface-inverse/70 px-2 py-0.5 text-[10px] font-bold text-paper">
                       Vue unique
                     </span>
                   )}
@@ -810,7 +810,7 @@ export function ChatRoom({
             {/* eslint-disable-next-line @next/next/no-img-element -- object URL local, non compatible avec le loader next/image */}
             <img src={imagePreviewUrl} alt="" className="h-20 w-20 rounded-xl object-cover shadow-sm" />
             {isEphemeralPick && (
-              <span className="absolute bottom-1 left-1 rounded-full bg-ink/70 px-1.5 py-0.5 text-[9px] font-bold text-paper">
+              <span className="absolute bottom-1 left-1 rounded-full bg-surface-inverse/70 px-1.5 py-0.5 text-[9px] font-bold text-paper">
                 1x
               </span>
             )}
@@ -818,7 +818,7 @@ export function ChatRoom({
               type="button"
               onClick={clearImage}
               aria-label="Retirer l'image"
-              className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-ink text-paper shadow-sm"
+              className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-surface-inverse text-paper shadow-sm"
             >
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
                 <path d="M6 6l12 12M18 6L6 18" />
