@@ -156,6 +156,34 @@ textarea {
   animation: pop-in 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+/* Reflet qui balaie les lignes or/argent/bronze du classement (LeaderboardFilter.tsx) : purement
+   décoratif (contrairement aux animations de la carte quiz ci-dessus), donc désactivé si
+   "réduire les animations" est demandé — la ligne garde son dégradé métallique fixe, déjà lisible
+   sans le balayage. */
+@media (prefers-reduced-motion: no-preference) {
+  .animate-medal-shine {
+    background-size:
+      55% 100%,
+      100% 100%;
+    animation: medal-shine 2.8s ease-in-out infinite;
+  }
+}
+
+@keyframes medal-shine {
+  0%,
+  15% {
+    background-position:
+      -60% 0,
+      0 0;
+  }
+  55%,
+  100% {
+    background-position:
+      160% 0,
+      0 0;
+  }
+}
+
 @keyframes card-in {
   from {
     opacity: 0;

@@ -32,17 +32,19 @@ interface LeagueOption {
 // Ligne entière teintée (pas juste un contour d'avatar) pour les 3 premiers du classement affiché
 // — recalculé à chaque tri (filtre "Tous" ou un championnat précis), donc toujours le top 3 du
 // classement réellement visible à l'écran. Deux couches de fond superposées (cf. `gradient` ci-
-// dessous, une string CSS `background` avec virgule) : un reflet diagonal blanc semi-transparent
-// PAR-DESSUS un dégradé métallique à plusieurs paliers (clair/sombre alternés, pas juste 2 teintes)
-// — c'est cette alternance qui lit comme "brillant/poli" plutôt qu'un aplat de couleur. Couleurs
-// choisies pour lire sans ambiguïté comme or/argent/bronze (pas cuivre : plus brun, moins orangé).
+// dessous, une string CSS `background` avec virgule) : un reflet net (bande blanche à bords adoucis,
+// pas un simple fondu depuis le bord) qui BALAIE la ligne en boucle (voir `.animate-medal-shine`,
+// globals.css — désactivé si "réduire les animations") PAR-DESSUS un dégradé métallique à plusieurs
+// paliers (clair/sombre alternés, pas juste 2 teintes) — c'est cette alternance + le passage du
+// reflet qui lit comme "brillant/poli" plutôt qu'un aplat de couleur statique. Couleurs choisies
+// pour lire sans ambiguïté comme or/argent/bronze (pas cuivre : plus brun, moins orangé).
 // Texte en encre sombre fixe (pas les tokens ink/mute réactifs au thème) car ce fond clair reste le
 // même quel que soit le thème, comme pour les boutons de réponse du quiz (cf. QuizRunner.tsx) — le
 // même piège blanc-sur-blanc s'appliquerait sinon.
 const MEDAL_ROW: Record<number, { gradient: string; border: string; text: string; textSoft: string; emoji: string; glow: string }> = {
   0: {
     gradient:
-      "linear-gradient(115deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0) 22%), " +
+      "linear-gradient(115deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.95) 45%, rgba(255,255,255,0) 62%), " +
       "linear-gradient(120deg, #fff6c8 0%, #ffd23f 16%, #e8a600 32%, #fff0a0 46%, #c9880a 62%, #a56a05 78%, #ffe066 90%, #8a6205 100%)",
     border: "#ffe27a",
     text: "#3a2705",
@@ -52,7 +54,7 @@ const MEDAL_ROW: Record<number, { gradient: string; border: string; text: string
   },
   1: {
     gradient:
-      "linear-gradient(115deg, rgba(255,255,255,0.75) 0%, rgba(255,255,255,0) 22%), " +
+      "linear-gradient(115deg, rgba(255,255,255,0) 0%, rgba(255,255,255,1) 45%, rgba(255,255,255,0) 62%), " +
       "linear-gradient(120deg, #ffffff 0%, #e4e9ee 16%, #c3ccd4 32%, #ffffff 46%, #a8b1ba 62%, #838d97 78%, #eef1f4 90%, #626b74 100%)",
     border: "#f5f7f9",
     text: "#20262c",
@@ -62,7 +64,7 @@ const MEDAL_ROW: Record<number, { gradient: string; border: string; text: string
   },
   2: {
     gradient:
-      "linear-gradient(115deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0) 22%), " +
+      "linear-gradient(115deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.85) 45%, rgba(255,255,255,0) 62%), " +
       "linear-gradient(120deg, #eecba3 0%, #cd7f32 16%, #9c5a22 32%, #ecc190 46%, #7a4a20 62%, #5c3717 78%, #d69a5c 90%, #4a2b12 100%)",
     border: "#e6b57e",
     text: "#301c09",
@@ -122,10 +124,17 @@ export function LeaderboardFilter({ rows, leagues }: { rows: LeaderboardRow[]; l
                 // de chaque joueur précharge en arrière-plan dès l'affichage de cette page.
                 prefetch={false}
                 className={`relative flex items-center gap-3 p-4 transition-[filter,background-color] ${
-                  medal ? "hover:brightness-110" : "hover:bg-cream"
+                  medal ? "animate-medal-shine hover:brightness-110" : "hover:bg-cream"
                 }`}
                 style={
-                  medal ? { background: medal.gradient, boxShadow: medal.glow ? `inset ${medal.glow}` : undefined } : undefined
+                  medal
+                    ? {
+                        background: medal.gradient,
+                        backgroundRepeat: "no-repeat",
+                        backgroundPosition: "-60% 0, 0 0",
+                        boxShadow: `inset ${medal.glow}`,
+                      }
+                    : undefined
                 }
               >
                 <span className="flex min-w-0 flex-1 items-center gap-3">
