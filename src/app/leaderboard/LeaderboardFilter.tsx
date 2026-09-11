@@ -29,6 +29,15 @@ interface LeagueOption {
   flag: string;
 }
 
+// Contour (pas de halo/pastille, cf. le même choix déjà fait pour les logos de championnat) autour
+// de l'avatar des 3 premiers du classement affiché — recalculé à chaque tri (filtre "Tous" ou un
+// championnat précis), donc toujours le top 3 du classement réellement visible à l'écran.
+const MEDAL_COLOR: Record<number, string> = {
+  0: "#d99a18", // or
+  1: "#b6bec9", // argent
+  2: "#c67c3e", // bronze
+};
+
 /** "Tous" (agrégat multi-championnats) ou un championnat précis — bascule entre les deux
  * uniquement en mémoire (les données de chaque championnat sont déjà toutes chargées côté
  * serveur), pas de rechargement de page au clic. */
@@ -69,6 +78,7 @@ export function LeaderboardFilter({ rows, leagues }: { rows: LeaderboardRow[]; l
       <ul className={`mb-8 ${listCard}`}>
         {sorted.map((p, i) => {
           const stat = selected === "all" ? { points: p.total, good: p.good, exact: p.exact } : p.byLeague[selected];
+          const medalColor = MEDAL_COLOR[i];
           return (
             <li key={p.id}>
               <Link
@@ -80,9 +90,19 @@ export function LeaderboardFilter({ rows, leagues }: { rows: LeaderboardRow[]; l
                 className="flex items-center gap-3 p-4 transition-colors hover:bg-cream"
               >
                 <span className="flex min-w-0 flex-1 items-center gap-3">
-                  <span className="w-5 shrink-0 text-mute">{i + 1}</span>
+                  <span
+                    className={`w-5 shrink-0 ${medalColor ? "font-bold" : "text-mute"}`}
+                    style={medalColor ? { color: medalColor } : undefined}
+                  >
+                    {i + 1}
+                  </span>
                   <span className="relative h-12 w-12 shrink-0">
-                    <span className="relative block h-12 w-12 overflow-hidden rounded-full border-2 border-line bg-surface">
+                    <span
+                      className={`relative block h-12 w-12 overflow-hidden rounded-full bg-surface ${
+                        medalColor ? "border-[3px]" : "border-2 border-line"
+                      }`}
+                      style={medalColor ? { borderColor: medalColor } : undefined}
+                    >
                       {p.avatarUrl ? (
                         <Image src={p.avatarUrl} alt="" fill sizes="48px" className="object-cover" />
                       ) : (

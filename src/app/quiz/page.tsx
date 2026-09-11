@@ -34,22 +34,27 @@ export default async function QuizPage() {
   const publicQuiz = quiz.map(stripAnswer);
 
   return (
-    <main className="mx-auto w-full max-w-2xl flex-1 p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Quiz du jour 🧠</h1>
+    // Hauteur ancrée sur le viewport réel (moins la barre du bas et la safe-area, cf. page.tsx du
+    // dashboard) + overflow-hidden : sans ça, la page défilait de haut en bas dès que son contenu
+    // dépassait un écran, ce que l'utilisateur ne veut pas ici — l'écran doit rester fixe.
+    <main className="mx-auto flex h-[calc(100dvh-env(safe-area-inset-top)-8rem)] w-full max-w-2xl flex-1 flex-col overflow-hidden px-6 pb-3 pt-4 lg:h-[calc(100dvh-env(safe-area-inset-top))]">
+      <div className="mb-3 flex shrink-0 items-center justify-between">
+        <h1 className="text-2xl font-bold">Quiz du jour 🧠</h1>
         <BackLink href="/" />
       </div>
 
-      <QuizRunner
-        questions={publicQuiz}
-        initialAnswers={(existingAnswers ?? []).map((a) => ({
-          position: a.position,
-          isCorrect: a.is_correct,
-          points: a.points,
-        }))}
-        initialFinalScore={existingResult?.score ?? null}
-        showPrivateRanking={showPrivateRanking}
-      />
+      <div className="min-h-0 flex-1">
+        <QuizRunner
+          questions={publicQuiz}
+          initialAnswers={(existingAnswers ?? []).map((a) => ({
+            position: a.position,
+            isCorrect: a.is_correct,
+            points: a.points,
+          }))}
+          initialFinalScore={existingResult?.score ?? null}
+          showPrivateRanking={showPrivateRanking}
+        />
+      </div>
     </main>
   );
 }

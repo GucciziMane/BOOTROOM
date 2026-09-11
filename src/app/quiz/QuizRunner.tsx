@@ -185,7 +185,10 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
 
   if (finalScore != null) {
     return (
-      <div className={`min-h-[75dvh] ${card}`}>
+      // h-full + overflow-y-auto (pas min-h-[Ndvh]) : la carte remplit exactement l'espace laissé
+      // par la page (elle-même à hauteur fixe, cf. quiz/page.tsx) et défile EN INTERNE si son
+      // contenu (classements) dépasse, plutôt que de faire défiler toute la page.
+      <div className={`flex h-full flex-col overflow-y-auto ${card}`}>
         <h2 className="text-2xl font-bold">Quiz terminé ! 🎉</h2>
         <p className="mt-2 text-lg">
           Ton score du jour : <strong className="text-good">{finalScore} pts</strong>
@@ -304,7 +307,7 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
   const nextLogoUrl = questions[position + 1]?.teamLogoUrl;
 
   return (
-    <div className="mx-auto w-full max-w-md">
+    <div className="mx-auto flex h-full w-full max-w-md flex-col">
       {/* Précharge le blason de la question suivante pendant qu'on répond à celle-ci (mêmes
           width/height que l'<Image> visible plus bas, pour que Next.js réutilise le même cache) :
           sinon il ne commence à charger qu'à l'affichage de la carte, avec un blanc visible le
@@ -313,20 +316,23 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
         <Image src={nextLogoUrl} alt="" width={48} height={48} priority className="hidden" />
       )}
 
-      <div className="relative pt-3">
+      {/* min-h-0 + flex-1 (pas min-h-[Ndvh]) : la carte occupe l'espace restant dans la page (elle-
+          même à hauteur fixe, cf. quiz/page.tsx) au lieu d'une fraction fixe du viewport — plus
+          petite et sans jamais dépasser l'écran, quel que soit le contenu affiché en dessous. */}
+      <div className="relative min-h-0 flex-1 pt-3">
         {/* La carte suivante occupe déjà tout l'espace derrière l'actuelle (même taille, juste
             décalée de quelques px vers le haut) : quand la carte du dessus s'envole, il y a
             toujours quelque chose derrière au lieu d'un vide le temps que la suivante arrive. */}
         <div
           aria-hidden
-          className="absolute inset-x-3 top-0 bottom-0 min-h-[75dvh] rounded-[26px] shadow-lg"
+          className="absolute inset-x-3 top-0 bottom-0 rounded-[26px] shadow-lg"
           style={{ background: "linear-gradient(135deg, #131a30, #0b1020)" }}
         />
 
         <div
           key={position}
           onClick={skipHold}
-          className={`animate-card-in relative flex min-h-[75dvh] flex-col overflow-hidden rounded-[28px] border border-paper/15 p-8 text-paper shadow-xl ${flyClass} ${
+          className={`animate-card-in relative flex h-full flex-col overflow-hidden rounded-[28px] border border-paper/15 p-6 text-paper shadow-xl ${flyClass} ${
             resultPhase === "hold" ? "cursor-pointer" : ""
           }`}
           style={{
@@ -372,25 +378,25 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
               <div className="flex items-start justify-between">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wide text-paper/70">Score</p>
-                  <p className="text-5xl font-black leading-none">{score}</p>
+                  <p className="text-4xl font-black leading-none">{score}</p>
                 </div>
                 {streak >= 2 && (
                   <span className="rounded-full bg-paper/15 px-3 py-1 text-sm font-bold">🔥 Série de {streak}</span>
                 )}
               </div>
 
-              <p className="mt-5 text-xs font-bold uppercase tracking-wide text-paper/70">
+              <p className="mt-4 text-xs font-bold uppercase tracking-wide text-paper/70">
                 Question {position + 1}/{totalQuestions} · {CATEGORY_LABEL[q.category] ?? q.category} ·{" "}
                 {DIFFICULTY_LABEL[q.difficulty]}
               </p>
 
               {q.teamLogoUrl && (
-                <div className="mx-auto mt-5 flex h-20 w-20 items-center justify-center rounded-full bg-paper p-2.5 shadow">
-                  <Image src={q.teamLogoUrl} alt="" width={64} height={64} className="h-full w-full object-contain" />
+                <div className="mx-auto mt-4 flex h-16 w-16 items-center justify-center rounded-full bg-paper p-2 shadow">
+                  <Image src={q.teamLogoUrl} alt="" width={48} height={48} className="h-full w-full object-contain" />
                 </div>
               )}
 
-              <p className="mt-5 text-2xl font-bold leading-snug">{q.question}</p>
+              <p className="mt-4 text-xl font-bold leading-snug">{q.question}</p>
             </div>
 
             <div>
@@ -409,7 +415,7 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
                       // qu'importe le thème de l'appli — text-ink bascule en blanc en mode
                       // "trophée" ([data-stadium], globals.css), ce qui rendait ce texte invisible
                       // (blanc sur blanc) une fois ce mode devenu la norme dans toute l'appli.
-                      className={`rounded-2xl px-4 py-5 text-center text-base font-bold transition-colors ${
+                      className={`rounded-2xl px-4 py-4 text-center text-sm font-bold transition-colors ${
                         isCorrectChoice
                           ? "bg-good text-paper"
                           : isWrongSelected
@@ -449,7 +455,7 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
         </div>
       </div>
 
-      <div className="mt-5 flex justify-center gap-2">
+      <div className="mt-3 flex shrink-0 justify-center gap-2">
         {history.map((state, i) => (
           <span
             key={i}
