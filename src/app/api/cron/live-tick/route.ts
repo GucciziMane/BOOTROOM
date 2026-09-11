@@ -178,6 +178,11 @@ export async function GET(request: NextRequest) {
       const homePlayers = (await supabase.from("players").select("id, name").eq("team_id", match.home_team_id).is("left_at", null)).data ?? [];
       const awayPlayers = (await supabase.from("players").select("id, name").eq("team_id", match.away_team_id).is("left_at", null)).data ?? [];
 
+      // Set mutable (pas juste existingSubKeys, figé avant la boucle) : ESPN renvoie parfois la
+      // même entrée plusieurs fois dans une seule réponse (observé aussi côté buts, voir plus bas)
+      // — sans mettre à jour ce set au fil de la boucle, chaque doublon du batch passait le test
+      // indépendamment des autres et finissait inséré plusieurs fois en base.
+      const seenSubKeysThisTick = new Set(existingSubKeys);
       const newSubRows = substitutions.flatMap((s) => {
         const teamId = teamNamesMatch(s.teamName, home.name) ? match.home_team_id : match.away_team_id;
         const candidates = teamId === match.home_team_id ? homePlayers : awayPlayers;
@@ -185,19 +190,26 @@ export async function GET(request: NextRequest) {
         const playerIn = matchPlayerByName(s.playerInName, candidates);
         if (!playerOut && !playerIn) return [];
         const key = `${playerOut?.id ?? null}:${playerIn?.id ?? null}`;
-        if (existingSubKeys.has(key)) return [];
+        if (seenSubKeysThisTick.has(key)) return [];
+        seenSubKeysThisTick.add(key);
         return [{ match_id: match.id, team_id: teamId, player_out_id: playerOut?.id ?? null, player_in_id: playerIn?.id ?? null, minute: s.minute }];
       });
       if (newSubRows.length > 0) {
         await supabase.from("match_substitutions").insert(newSubRows);
       }
 
+      // Idem que seenSubKeysThisTick ci-dessus : ESPN a été observé à renvoyer le même but plusieurs
+      // fois dans une seule réponse (cause du bug "but affiché 3 fois" — existingKeys seul, figé
+      // avant la boucle, ne protégeait que contre un but déjà en base, jamais contre un doublon à
+      // l'intérieur du même batch fraîchement reçu).
+      const seenGoalKeysThisTick = new Set(existingKeys);
       const newGoalRows = goals.flatMap((g) => {
         const teamId = teamNamesMatch(g.teamName, home.name) ? match.home_team_id : match.away_team_id;
         const candidates = teamId === match.home_team_id ? homePlayers : awayPlayers;
         const scorer = matchPlayerByName(g.scorerName, candidates);
         const key = goalKey(scorer?.id ?? null, g.scorerName, g.minute);
-        if (existingKeys.has(key)) return [];
+        if (seenGoalKeysThisTick.has(key)) return [];
+        seenGoalKeysThisTick.add(key);
         // Un but contre son camp (le buteur appartient à l'équipe qui ENCAISSE, pas celle créditée
         // du but — `candidates` cherche dans le mauvais effectif) ou un transfert tout juste arrivé
         // qu'football-data.org n'a pas encore synchronisé finissaient tous les deux par échouer
