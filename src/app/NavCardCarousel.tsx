@@ -141,7 +141,14 @@ export function NavCardCarousel({ cards }: { cards: NavCarouselCard[] }) {
           )}
           <span className="text-6xl">{c.emoji}</span>
           <span className="mt-4 text-3xl font-bold">{c.title}</span>
-          <span className="mt-3 text-base text-paper/75">{c.description}</span>
+          {/* min-h-24 (mesuré : la description la plus longue tient sur 4 lignes à ~256px de
+              large, largeur de contenu réaliste d'une carte mobile) : sans ça, le bloc
+              emoji+titre+description entier se centre verticalement SELON SA PROPRE hauteur —
+              une description plus courte fait remonter l'emoji/titre par rapport aux autres
+              cartes (jusqu'à 12px d'écart mesuré), visible au swipe comme un "saut" vertical.
+              Une hauteur de description fixe rend le bloc entier identique d'une carte à
+              l'autre, donc le centrage aligne emoji/titre au même endroit partout. */}
+          <span className="mt-3 flex min-h-24 items-center text-base text-paper/75">{c.description}</span>
         </Link>
       ))}
     </div>
