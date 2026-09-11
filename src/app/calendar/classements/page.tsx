@@ -66,13 +66,10 @@ export default async function CalendarStandingsPage() {
               >
                 <div className="flex items-center gap-3">
                   {league.logo_url && (
-                    <Image
-                      src={league.logo_url}
-                      alt=""
-                      width={32}
-                      height={32}
-                      className="h-8 w-8 shrink-0 object-contain [filter:drop-shadow(0_0_3px_rgba(255,255,255,0.9))_drop-shadow(0_0_10px_rgba(255,255,255,0.55))]"
-                    />
+                    <span className="relative flex h-11 w-11 shrink-0 items-center justify-center">
+                      <span className="absolute inset-0 rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.8)_0%,rgba(255,255,255,0.32)_55%,rgba(255,255,255,0)_78%)]" />
+                      <Image src={league.logo_url} alt="" width={32} height={32} className="relative h-8 w-8 object-contain" />
+                    </span>
                   )}
                   <div className="flex items-center gap-2 font-bold">
                     <span>{LEAGUE_FLAG[league.football_data_code] ?? league.country}</span>
