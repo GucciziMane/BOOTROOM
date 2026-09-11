@@ -14,7 +14,9 @@ import { LEAGUE_BACKGROUND } from "@/lib/league-background";
 // Poll plutôt que Supabase Realtime : pour une fraction de la complexité (pas de résolution de
 // noms de joueurs à partir d'un payload realtime partiel, pas d'auth de canal à hydrater). Se
 // relance même quand la liste est vide, pour détecter un match qui démarre sans que l'utilisateur
-// ait besoin de recharger la page.
+// ait besoin de recharger la page. Complété par un refetch immédiat sur `visibilitychange`/`focus`
+// (voir plus bas) — indispensable sur mobile, où l'intervalle seul reste suspendu tant que l'onglet
+// est en arrière-plan.
 //
 // Le back (cron live-tick) s'auto-replanifie toutes les 15s pendant qu'un match est réellement en
 // cours (voir route.ts) : un polling client plus lent que ça laisserait une donnée fraîche
@@ -34,7 +36,7 @@ export function LiveMatchesBanner({
   const inFlight = useRef(false);
 
   useEffect(() => {
-    const interval = setInterval(async () => {
+    async function poll() {
       if (inFlight.current) return;
       inFlight.current = true;
       try {
@@ -48,8 +50,27 @@ export function LiveMatchesBanner({
       } finally {
         inFlight.current = false;
       }
-    }, POLL_MS);
-    return () => clearInterval(interval);
+    }
+
+    const interval = setInterval(poll, POLL_MS);
+
+    // setInterval seul ne suffit pas sur mobile : un onglet en arrière-plan (écran verrouillé,
+    // appli changée) voit ses timers suspendus par l'OS/le navigateur — à la réouverture, le
+    // premier tick peut mettre jusqu'à POLL_MS à arriver, avec un score/temps de jeu resté figé
+    // entre-temps (symptôme observé : "ça ne se met à jour qu'après un refresh manuel"). Un
+    // rafraîchissement immédiat dès que l'onglet redevient visible/repasse au premier plan évite
+    // cette attente, sans jamais avoir besoin d'un vrai rechargement de page.
+    function handleVisible() {
+      if (document.visibilityState === "visible") poll();
+    }
+    document.addEventListener("visibilitychange", handleVisible);
+    window.addEventListener("focus", poll);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisible);
+      window.removeEventListener("focus", poll);
+    };
   }, []);
 
   if (matches.length === 0) return null;
