@@ -31,32 +31,44 @@ interface LeagueOption {
 
 // Ligne entière teintée (pas juste un contour d'avatar) pour les 3 premiers du classement affiché
 // — recalculé à chaque tri (filtre "Tous" ou un championnat précis), donc toujours le top 3 du
-// classement réellement visible à l'écran. Dégradé métallique (pas un aplat) pour un rendu "médaille"
-// plutôt qu'une simple pastille de couleur ; texte en encre sombre fixe (pas les tokens ink/mute
-// réactifs au thème) car ce fond clair reste le même quel que soit le thème, comme pour les boutons
-// de réponse du quiz (cf. QuizRunner.tsx) — le même piège blanc-sur-blanc s'appliquerait sinon.
-const MEDAL_ROW: Record<number, { gradient: string; border: string; text: string; textSoft: string; emoji: string; glow?: string }> = {
+// classement réellement visible à l'écran. Deux couches de fond superposées (cf. `gradient` ci-
+// dessous, une string CSS `background` avec virgule) : un reflet diagonal blanc semi-transparent
+// PAR-DESSUS un dégradé métallique à plusieurs paliers (clair/sombre alternés, pas juste 2 teintes)
+// — c'est cette alternance qui lit comme "brillant/poli" plutôt qu'un aplat de couleur. Couleurs
+// choisies pour lire sans ambiguïté comme or/argent/bronze (pas cuivre : plus brun, moins orangé).
+// Texte en encre sombre fixe (pas les tokens ink/mute réactifs au thème) car ce fond clair reste le
+// même quel que soit le thème, comme pour les boutons de réponse du quiz (cf. QuizRunner.tsx) — le
+// même piège blanc-sur-blanc s'appliquerait sinon.
+const MEDAL_ROW: Record<number, { gradient: string; border: string; text: string; textSoft: string; emoji: string; glow: string }> = {
   0: {
-    gradient: "linear-gradient(120deg, #fff6dd 0%, #f4cd5e 22%, #d9a01f 55%, #a06f0c 85%, #7a530a 100%)",
-    border: "#f7db85",
+    gradient:
+      "linear-gradient(115deg, rgba(255,255,255,0.65) 0%, rgba(255,255,255,0) 22%), " +
+      "linear-gradient(120deg, #fff6c8 0%, #ffd23f 16%, #e8a600 32%, #fff0a0 46%, #c9880a 62%, #a56a05 78%, #ffe066 90%, #8a6205 100%)",
+    border: "#ffe27a",
     text: "#3a2705",
     textSoft: "#5c4110",
     emoji: "🥇",
-    glow: "0 0 24px rgba(217, 160, 31, 0.45)",
+    glow: "0 0 28px rgba(255, 196, 20, 0.55)",
   },
   1: {
-    gradient: "linear-gradient(120deg, #fbfcfd 0%, #e2e7ec 22%, #b9c2cc 55%, #8992a0 85%, #6b7480 100%)",
-    border: "#eef1f4",
+    gradient:
+      "linear-gradient(115deg, rgba(255,255,255,0.75) 0%, rgba(255,255,255,0) 22%), " +
+      "linear-gradient(120deg, #ffffff 0%, #e4e9ee 16%, #c3ccd4 32%, #ffffff 46%, #a8b1ba 62%, #838d97 78%, #eef1f4 90%, #626b74 100%)",
+    border: "#f5f7f9",
     text: "#20262c",
     textSoft: "#454e58",
     emoji: "🥈",
+    glow: "0 0 24px rgba(200, 210, 220, 0.55)",
   },
   2: {
-    gradient: "linear-gradient(120deg, #f6d7b8 0%, #dea162 22%, #b9743a 55%, #8a5225 85%, #6b3f1c 100%)",
-    border: "#eabd8b",
-    text: "#341c09",
-    textSoft: "#5a3416",
+    gradient:
+      "linear-gradient(115deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0) 22%), " +
+      "linear-gradient(120deg, #eecba3 0%, #cd7f32 16%, #9c5a22 32%, #ecc190 46%, #7a4a20 62%, #5c3717 78%, #d69a5c 90%, #4a2b12 100%)",
+    border: "#e6b57e",
+    text: "#301c09",
+    textSoft: "#54331a",
     emoji: "🥉",
+    glow: "0 0 24px rgba(205, 127, 50, 0.5)",
   },
 };
 
