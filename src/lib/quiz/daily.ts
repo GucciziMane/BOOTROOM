@@ -115,7 +115,29 @@ interface QuestionRow {
   explanation: string | null;
 }
 
-async function pickStaticQuestions(supabase: ServiceClient, quizDate: string): Promise<Map<number, DailyQuestionFull>> {
+function questionRowToDaily(row: QuestionRow, position: number): DailyQuestionFull {
+  return {
+    position,
+    category: row.category as QuizCategory,
+    difficulty: row.difficulty as QuizDifficulty,
+    question: row.question,
+    choices: row.choices as unknown as string[],
+    correctIndex: row.correct_index,
+    explanation: row.explanation,
+  };
+}
+
+interface StaticPick {
+  byPosition: Map<number, DailyQuestionFull>;
+  /** Questions de la banque statique NON utilisées pour les 3 créneaux "static" ci-dessus, mêmes
+   * seaux/rotation (donc toujours réelles, jamais inventées) — sert de filet de secours dans
+   * getDailyQuiz si un créneau dynamique échoue complètement à produire une question ce jour-là.
+   * Suffisamment fourni (continue la même rotation par difficulté) pour ne jamais s'épuiser en
+   * pratique vu la taille de la banque. */
+  reserve: DailyQuestionFull[];
+}
+
+async function pickStaticQuestions(supabase: ServiceClient, quizDate: string): Promise<StaticPick> {
   // .order("id") pour la même raison que pour les données dynamiques : garantir un ordre stable
   // d'un appel à l'autre avant le mélange déterministe.
   const { data: rows } = await supabase
@@ -140,7 +162,8 @@ async function pickStaticQuestions(supabase: ServiceClient, quizDate: string): P
 
   const day = dayIndex(quizDate);
   const cursorWithinDay: Record<QuizDifficulty, number> = { easy: 0, medium: 0, hard: 0 };
-  const result = new Map<number, DailyQuestionFull>();
+  const byPosition = new Map<number, DailyQuestionFull>();
+  const usedRowIds = new Set<number>();
 
   SLOT_PLAN.forEach((slot, position) => {
     if (slot.kind !== "static") return;
@@ -149,18 +172,21 @@ async function pickStaticQuestions(supabase: ServiceClient, quizDate: string): P
     const globalIndex = day * slotsPerDay[slot.difficulty] + cursorWithinDay[slot.difficulty];
     cursorWithinDay[slot.difficulty]++;
     const row = bucket[mod(globalIndex, bucket.length)];
-    result.set(position, {
-      position,
-      category: row.category as QuizCategory,
-      difficulty: row.difficulty as QuizDifficulty,
-      question: row.question,
-      choices: row.choices as unknown as string[],
-      correctIndex: row.correct_index,
-      explanation: row.explanation,
-    });
+    usedRowIds.add(row.id);
+    byPosition.set(position, questionRowToDaily(row, position));
   });
 
-  return result;
+  // Réserve : toute la banque (les 3 difficultés confondues) SAUF les questions déjà retenues
+  // ci-dessus — exclusion explicite par id plutôt qu'une arithmétique de curseur qui pourrait
+  // boucler et retomber sur une question déjà utilisée ce jour-là si un seau est petit. Mélange
+  // déterministe mais dépendant du jour, pour tourner d'un jour à l'autre plutôt que de retomber
+  // toujours sur les mêmes questions de secours.
+  const remaining = [...byDifficulty.easy, ...byDifficulty.medium, ...byDifficulty.hard].filter(
+    (r) => !usedRowIds.has(r.id)
+  );
+  const reserve = seededShuffle(remaining, `quiz-bank-reserve-${quizDate}`).map((row) => questionRowToDaily(row, -1));
+
+  return { byPosition, reserve };
 }
 
 interface TeamLite {
@@ -795,15 +821,26 @@ export async function getDailyQuiz(supabase: ServiceClient, quizDate: string): P
   // Indépendantes l'une de l'autre : lancées en parallèle plutôt qu'en série pour ne pas doubler
   // la latence à chaque soumission de réponse (ce chemin est appelé sur chaque tap, pas qu'au
   // premier chargement de la page).
-  const [staticByPosition, dynamicByPosition] = await Promise.all([
+  const [{ byPosition: staticByPosition, reserve }, dynamicByPosition] = await Promise.all([
     pickStaticQuestions(supabase, quizDate),
     getOrGenerateDynamicQuestions(supabase, quizDate, dynamicPositions),
   ]);
 
-  const questions: DailyQuestionFull[] = [];
+  // Tableau de taille fixe indexé par position (jamais un push-si-présent) : un créneau qui
+  // échoue à produire une question ne doit plus décaler tous les créneaux suivants vers des
+  // index plus bas (bug vu en prod : quiz coincé à 3 questions, et la question affichée à une
+  // position ne correspondait plus à celle validée côté serveur). Toute position encore vide
+  // après dynamique+statique pioche dans la réserve de la banque statique — jamais inventée,
+  // jamais un doublon d'une question déjà utilisée ce jour-là (voir pickStaticQuestions).
+  const questions: (DailyQuestionFull | undefined)[] = new Array(SLOT_PLAN.length);
   for (let position = 0; position < SLOT_PLAN.length; position++) {
-    const q = dynamicByPosition.get(position) ?? staticByPosition.get(position);
-    if (q) questions.push(q);
+    questions[position] = dynamicByPosition.get(position) ?? staticByPosition.get(position);
   }
-  return questions;
+  let reserveIndex = 0;
+  for (let position = 0; position < SLOT_PLAN.length; position++) {
+    if (questions[position]) continue;
+    const fallback = reserve[reserveIndex++];
+    if (fallback) questions[position] = { ...fallback, position };
+  }
+  return questions.filter((q): q is DailyQuestionFull => q !== undefined);
 }
