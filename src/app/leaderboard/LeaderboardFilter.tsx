@@ -29,13 +29,35 @@ interface LeagueOption {
   flag: string;
 }
 
-// Contour (pas de halo/pastille, cf. le même choix déjà fait pour les logos de championnat) autour
-// de l'avatar des 3 premiers du classement affiché — recalculé à chaque tri (filtre "Tous" ou un
-// championnat précis), donc toujours le top 3 du classement réellement visible à l'écran.
-const MEDAL_COLOR: Record<number, string> = {
-  0: "#d99a18", // or
-  1: "#b6bec9", // argent
-  2: "#c67c3e", // bronze
+// Ligne entière teintée (pas juste un contour d'avatar) pour les 3 premiers du classement affiché
+// — recalculé à chaque tri (filtre "Tous" ou un championnat précis), donc toujours le top 3 du
+// classement réellement visible à l'écran. Dégradé métallique (pas un aplat) pour un rendu "médaille"
+// plutôt qu'une simple pastille de couleur ; texte en encre sombre fixe (pas les tokens ink/mute
+// réactifs au thème) car ce fond clair reste le même quel que soit le thème, comme pour les boutons
+// de réponse du quiz (cf. QuizRunner.tsx) — le même piège blanc-sur-blanc s'appliquerait sinon.
+const MEDAL_ROW: Record<number, { gradient: string; border: string; text: string; textSoft: string; emoji: string; glow?: string }> = {
+  0: {
+    gradient: "linear-gradient(120deg, #fff6dd 0%, #f4cd5e 22%, #d9a01f 55%, #a06f0c 85%, #7a530a 100%)",
+    border: "#f7db85",
+    text: "#3a2705",
+    textSoft: "#5c4110",
+    emoji: "🥇",
+    glow: "0 0 24px rgba(217, 160, 31, 0.45)",
+  },
+  1: {
+    gradient: "linear-gradient(120deg, #fbfcfd 0%, #e2e7ec 22%, #b9c2cc 55%, #8992a0 85%, #6b7480 100%)",
+    border: "#eef1f4",
+    text: "#20262c",
+    textSoft: "#454e58",
+    emoji: "🥈",
+  },
+  2: {
+    gradient: "linear-gradient(120deg, #f6d7b8 0%, #dea162 22%, #b9743a 55%, #8a5225 85%, #6b3f1c 100%)",
+    border: "#eabd8b",
+    text: "#341c09",
+    textSoft: "#5a3416",
+    emoji: "🥉",
+  },
 };
 
 /** "Tous" (agrégat multi-championnats) ou un championnat précis — bascule entre les deux
@@ -78,7 +100,7 @@ export function LeaderboardFilter({ rows, leagues }: { rows: LeaderboardRow[]; l
       <ul className={`mb-8 ${listCard}`}>
         {sorted.map((p, i) => {
           const stat = selected === "all" ? { points: p.total, good: p.good, exact: p.exact } : p.byLeague[selected];
-          const medalColor = MEDAL_COLOR[i];
+          const medal = MEDAL_ROW[i];
           return (
             <li key={p.id}>
               <Link
@@ -87,21 +109,27 @@ export function LeaderboardFilter({ rows, leagues }: { rows: LeaderboardRow[]; l
                 // Toute la liste est visible sans scroll (petit groupe d'amis) : sans ça, le profil
                 // de chaque joueur précharge en arrière-plan dès l'affichage de cette page.
                 prefetch={false}
-                className="flex items-center gap-3 p-4 transition-colors hover:bg-cream"
+                className={`relative flex items-center gap-3 p-4 transition-[filter,background-color] ${
+                  medal ? "hover:brightness-110" : "hover:bg-cream"
+                }`}
+                style={
+                  medal ? { background: medal.gradient, boxShadow: medal.glow ? `inset ${medal.glow}` : undefined } : undefined
+                }
               >
                 <span className="flex min-w-0 flex-1 items-center gap-3">
                   <span
-                    className={`w-5 shrink-0 ${medalColor ? "font-bold" : "text-mute"}`}
-                    style={medalColor ? { color: medalColor } : undefined}
+                    className={`w-6 shrink-0 text-center ${medal ? "text-2xl leading-none" : "text-mute"}`}
+                    aria-hidden={!!medal}
                   >
-                    {i + 1}
+                    {medal ? medal.emoji : i + 1}
                   </span>
+                  {medal && <span className="sr-only">{i + 1}e place —</span>}
                   <span className="relative h-12 w-12 shrink-0">
                     <span
                       className={`relative block h-12 w-12 overflow-hidden rounded-full bg-surface ${
-                        medalColor ? "border-[3px]" : "border-2 border-line"
+                        medal ? "border-[3px]" : "border-2 border-line"
                       }`}
-                      style={medalColor ? { borderColor: medalColor } : undefined}
+                      style={medal ? { borderColor: medal.border } : undefined}
                     >
                       {p.avatarUrl ? (
                         <Image src={p.avatarUrl} alt="" fill sizes="48px" className="object-cover" />
@@ -113,12 +141,24 @@ export function LeaderboardFilter({ rows, leagues }: { rows: LeaderboardRow[]; l
                     </span>
                     <FavoriteTeamBadge logoUrl={p.favoriteTeamLogoUrl} size={18} />
                   </span>
-                  <span className="truncate font-bold">{p.username}</span>
+                  <span className="truncate font-bold" style={medal ? { color: medal.text } : undefined}>
+                    {p.username}
+                  </span>
                 </span>
-                <span className="w-9 shrink-0 text-right font-bold">{stat.good}</span>
-                <span className="w-9 shrink-0 text-right font-bold">{stat.exact}</span>
-                <span className="w-14 shrink-0 text-right font-bold">{stat.points}</span>
-                <span aria-hidden className="w-3 shrink-0 text-right text-mute">
+                <span className="w-9 shrink-0 text-right font-bold" style={medal ? { color: medal.text } : undefined}>
+                  {stat.good}
+                </span>
+                <span className="w-9 shrink-0 text-right font-bold" style={medal ? { color: medal.text } : undefined}>
+                  {stat.exact}
+                </span>
+                <span className="w-14 shrink-0 text-right font-bold" style={medal ? { color: medal.text } : undefined}>
+                  {stat.points}
+                </span>
+                <span
+                  aria-hidden
+                  className={`w-3 shrink-0 text-right ${medal ? "" : "text-mute"}`}
+                  style={medal ? { color: medal.textSoft } : undefined}
+                >
                   ›
                 </span>
               </Link>
