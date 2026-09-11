@@ -320,20 +320,29 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
         <div
           aria-hidden
           className="absolute inset-x-3 top-0 bottom-0 rounded-[26px] shadow-lg"
-          style={{ background: "linear-gradient(135deg, var(--color-accent), var(--color-accent-hover))" }}
+          style={{ background: "linear-gradient(135deg, #131a30, #0b1020)" }}
         />
 
         <div
           key={position}
           onClick={skipHold}
-          className={`animate-card-in relative overflow-hidden rounded-[28px] p-6 text-paper shadow-xl ${flyClass} ${
+          className={`animate-card-in relative overflow-hidden rounded-[28px] border border-paper/15 p-6 text-paper shadow-xl ${flyClass} ${
             resultPhase === "hold" ? "cursor-pointer" : ""
           }`}
           style={{
-            background: "linear-gradient(135deg, var(--color-accent), var(--color-accent-hover))",
+            background: "linear-gradient(135deg, #131a30, #0b1020)",
             willChange: "transform, opacity",
           }}
         >
+          {/* Lueur de projecteur en coin — même identité que le fond de stade (StadiumBackdrop)
+              et l'icône de l'app, plutôt que le dégradé indigo/violet générique d'avant qui ne
+              se raccordait plus du tout au reste de l'appli une fois le thème stade posé partout. */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full"
+            style={{ background: "radial-gradient(circle, rgba(217,154,24,0.4), transparent 70%)" }}
+          />
+
           <div
             aria-hidden
             className="pointer-events-none absolute inset-0 transition-opacity duration-300"
@@ -397,8 +406,8 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
                         : isWrongSelected
                           ? "bg-bad text-paper"
                           : isSelected
-                            ? `bg-paper text-accent ring-2 ring-paper ${submitting ? "animate-pulse" : ""}`
-                            : "bg-paper/95 text-accent hover:bg-paper"
+                            ? `bg-paper text-ink ring-2 ring-reward ${submitting ? "animate-pulse" : ""}`
+                            : "bg-paper/95 text-ink hover:bg-paper"
                     }`}
                   >
                     {choice}
