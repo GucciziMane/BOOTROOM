@@ -32,7 +32,7 @@ export default async function LeaderboardPage() {
     supabase.from("matches").select("id, home_score, away_score, kickoff_at").eq("status", "finished"),
     // Trophées mi-saison (toutes années confondues) : permanents, indépendants de la remise à
     // zéro et du classement actuel — voir MEDAL_ROW/le badge dans LeaderboardFilter.
-    supabase.from("midseason_bonuses").select("id, user_id, rank, season_year, amount, used_at, expires_at, target_user_id"),
+    supabase.from("midseason_bonuses").select("id, user_id, rank, season_year, amount, kind, used_at, expires_at, target_user_id"),
   ]);
   const user = session?.user ?? null;
 
@@ -118,11 +118,13 @@ export default async function LeaderboardPage() {
     .map((p) => ({ ...p, total: privateTotalByUser.get(p.id) ?? 0 }))
     .sort((a, b) => b.total - a.total);
 
-  // Trophée mi-saison : permanent, indépendant de l'usage du bonus — un seul par joueur en
+  // Trophée mi-saison : uniquement pour le top 3 (kind "malus") — pas pour le bottom 3, qui n'a
+  // rien à afficher fièrement. Permanent, indépendant de l'usage du bonus — un seul par joueur en
   // pratique (unique (user_id, season_year) en base), mais on garde le plus récent si jamais
   // plusieurs années s'accumulent au fil des saisons.
   const trophies = new Map<string, { rank: number; seasonYear: number }>();
   for (const b of bonuses ?? []) {
+    if (b.kind !== "malus") continue;
     const existing = trophies.get(b.user_id);
     if (!existing || b.season_year > existing.seasonYear) trophies.set(b.user_id, { rank: b.rank, seasonYear: b.season_year });
   }
@@ -144,6 +146,7 @@ export default async function LeaderboardPage() {
         <MidseasonBonusCard
           bonusId={myBonus.id}
           amount={myBonus.amount}
+          kind={myBonus.kind}
           expiresAt={myBonus.expires_at}
           players={(profiles ?? []).filter((p) => p.id !== user?.id).map((p) => ({ id: p.id, username: p.username }))}
         />

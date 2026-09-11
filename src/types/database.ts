@@ -17,7 +17,8 @@ export type PointsSourceType =
   | "season_final_team"
   | "season_final_winner"
   | "midseason_malus"
-  | "quiz_season_bonus";
+  | "quiz_season_bonus"
+  | "midseason_bonus_gift";
 
 export interface Database {
   public: {
@@ -341,6 +342,7 @@ export interface Database {
           season_year: number;
           rank: number;
           amount: number;
+          kind: "malus" | "bonus";
           granted_at: string;
           expires_at: string;
           used_at: string | null;
@@ -351,6 +353,7 @@ export interface Database {
           season_year: number;
           rank: number;
           amount: number;
+          kind: "malus" | "bonus";
           expires_at: string;
         };
         Update: Partial<Database["public"]["Tables"]["midseason_bonuses"]["Row"]>;

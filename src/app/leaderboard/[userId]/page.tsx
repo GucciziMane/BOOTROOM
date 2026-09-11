@@ -21,11 +21,13 @@ export default async function PlayerPredictionsPage({ params }: PageProps<"/lead
   const isSelf = user?.id === profile.id;
   const [rows, { data: trophy }] = await Promise.all([
     getPredictionHistory(supabase, profile.id),
-    // Trophée mi-saison (voir migration 0049) : permanent, le plus récent si plusieurs années.
+    // Trophée mi-saison (voir migrations 0049/0051) : uniquement le top 3 (kind "malus"), pas le
+    // bottom 3 — permanent, le plus récent si plusieurs années.
     supabase
       .from("midseason_bonuses")
       .select("rank, season_year")
       .eq("user_id", profile.id)
+      .eq("kind", "malus")
       .order("season_year", { ascending: false })
       .limit(1)
       .maybeSingle(),
