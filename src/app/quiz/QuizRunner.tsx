@@ -316,140 +316,147 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
         <Image src={nextLogoUrl} alt="" width={48} height={48} priority className="hidden" />
       )}
 
-      {/* min-h-0 + flex-1 (pas min-h-[Ndvh]) : la carte occupe l'espace restant dans la page (elle-
-          même à hauteur fixe, cf. quiz/page.tsx) au lieu d'une fraction fixe du viewport — plus
-          petite et sans jamais dépasser l'écran, quel que soit le contenu affiché en dessous. */}
-      <div className="relative min-h-0 flex-1 pt-3">
-        {/* La carte suivante occupe déjà tout l'espace derrière l'actuelle (même taille, juste
-            décalée de quelques px vers le haut) : quand la carte du dessus s'envole, il y a
-            toujours quelque chose derrière au lieu d'un vide le temps que la suivante arrive. */}
-        <div
-          aria-hidden
-          className="absolute inset-x-3 top-0 bottom-0 rounded-[26px] shadow-lg"
-          style={{ background: "linear-gradient(135deg, #131a30, #0b1020)" }}
-        />
-
-        <div
-          key={position}
-          onClick={skipHold}
-          className={`animate-card-in relative flex h-full flex-col overflow-hidden rounded-[28px] border border-paper/15 p-6 text-paper shadow-xl ${flyClass} ${
-            resultPhase === "hold" ? "cursor-pointer" : ""
-          }`}
-          style={{
-            background: "linear-gradient(135deg, #131a30, #0b1020)",
-            willChange: "transform, opacity",
-          }}
-        >
-          {/* Lueur de projecteur en coin — même identité que le fond de stade (StadiumBackdrop)
-              et l'icône de l'app, plutôt que le dégradé indigo/violet générique d'avant qui ne
-              se raccordait plus du tout au reste de l'appli une fois le thème stade posé partout. */}
+      {/* justify-center sur ce conteneur qui, lui, occupe l'espace restant (min-h-0 + flex-1) :
+          la carte en dessous n'a plus de hauteur imposée (elle s'ajuste à son contenu), donc sans
+          ça elle s'étirait quand même pour remplir tout cet espace, avec beaucoup de vide en haut
+          et en bas de son propre contenu — visible et signalé comme "à découper" par l'utilisateur. */}
+      <div className="flex min-h-0 flex-1 flex-col justify-center pt-3">
+        {/* position:relative pas étiré (auto, pas h-full) : sa hauteur est celle de son seul
+            enfant en flux normal, la vraie carte — la carte "derrière" (absolute inset-x-3
+            top-0 bottom-0) épouse donc automatiquement cette même hauteur, sans avoir besoin de
+            la connaître à l'avance. */}
+        <div className="relative">
+          {/* La carte suivante occupe déjà tout l'espace derrière l'actuelle (même taille, juste
+              décalée de quelques px vers le haut) : quand la carte du dessus s'envole, il y a
+              toujours quelque chose derrière au lieu d'un vide le temps que la suivante arrive. */}
           <div
             aria-hidden
-            className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full"
-            style={{ background: "radial-gradient(circle, rgba(217,154,24,0.4), transparent 70%)" }}
+            className="absolute inset-x-3 top-0 bottom-0 rounded-[26px] shadow-lg"
+            style={{ background: "linear-gradient(135deg, #131a30, #0b1020)" }}
           />
 
           <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0 transition-opacity duration-300"
-            style={{ background: resultBackground, opacity: resultPhase !== "idle" ? 1 : 0 }}
-          />
-
-          {feedback && (
+            key={position}
+            onClick={skipHold}
+            className={`animate-card-in relative flex flex-col overflow-hidden rounded-[28px] border border-paper/15 p-6 text-paper shadow-xl ${flyClass} ${
+              resultPhase === "hold" ? "cursor-pointer" : ""
+            }`}
+            style={{
+              background: "linear-gradient(135deg, #131a30, #0b1020)",
+              willChange: "transform, opacity",
+            }}
+          >
+            {/* Lueur de projecteur en coin — même identité que le fond de stade (StadiumBackdrop)
+                et l'icône de l'app, plutôt que le dégradé indigo/violet générique d'avant qui ne
+                se raccordait plus du tout au reste de l'appli une fois le thème stade posé partout. */}
             <div
-              className={`absolute right-5 top-5 flex h-14 w-14 items-center justify-center rounded-full bg-paper text-2xl font-black shadow-lg ${
-                resultPhase !== "idle" ? "animate-pop-in" : ""
-              }`}
-              style={{ color: feedback.isCorrect ? "var(--color-good)" : "var(--color-bad)" }}
               aria-hidden
-            >
-              {feedback.isCorrect ? "✓" : "✕"}
-            </div>
-          )}
+              className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full"
+              style={{ background: "radial-gradient(circle, rgba(217,154,24,0.4), transparent 70%)" }}
+            />
 
-          {/* position:relative pour que ce bloc peigne au-dessus de la couche de résultat
-              ci-dessus : un élément absolute peint après le flux normal quel que soit son ordre
-              dans le DOM, il faut donc que le contenu soit lui aussi "positionné" pour rester
-              visible par-dessus. flex-1 + justify-center : la carte occupe presque tout l'écran,
-              le contenu (assez court par rapport à cette hauteur) se répartit avec de l'air plutôt
-              que de rester collé en haut avec un grand vide en dessous. */}
-          <div className="relative flex flex-1 flex-col justify-center gap-6">
-            <div>
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-paper/70">Score</p>
-                  <p className="text-4xl font-black leading-none">{score}</p>
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 transition-opacity duration-300"
+              style={{ background: resultBackground, opacity: resultPhase !== "idle" ? 1 : 0 }}
+            />
+
+            {feedback && (
+              <div
+                className={`absolute right-5 top-5 flex h-14 w-14 items-center justify-center rounded-full bg-paper text-2xl font-black shadow-lg ${
+                  resultPhase !== "idle" ? "animate-pop-in" : ""
+                }`}
+                style={{ color: feedback.isCorrect ? "var(--color-good)" : "var(--color-bad)" }}
+                aria-hidden
+              >
+                {feedback.isCorrect ? "✓" : "✕"}
+              </div>
+            )}
+
+            {/* position:relative pour que ce bloc peigne au-dessus de la couche de résultat
+                ci-dessus : un élément absolute peint après le flux normal quel que soit son ordre
+                dans le DOM, il faut donc que le contenu soit lui aussi "positionné" pour rester
+                visible par-dessus. Plus de flex-1/justify-center ici : la carte n'a plus de hauteur
+                imposée, le contenu détermine sa propre taille au lieu de se répartir dans un grand
+                espace vide. */}
+            <div className="relative flex flex-col gap-6">
+              <div>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-paper/70">Score</p>
+                    <p className="text-4xl font-black leading-none">{score}</p>
+                  </div>
+                  {streak >= 2 && (
+                    <span className="rounded-full bg-paper/15 px-3 py-1 text-sm font-bold">🔥 Série de {streak}</span>
+                  )}
                 </div>
-                {streak >= 2 && (
-                  <span className="rounded-full bg-paper/15 px-3 py-1 text-sm font-bold">🔥 Série de {streak}</span>
+
+                <p className="mt-4 text-xs font-bold uppercase tracking-wide text-paper/70">
+                  Question {position + 1}/{totalQuestions} · {CATEGORY_LABEL[q.category] ?? q.category} ·{" "}
+                  {DIFFICULTY_LABEL[q.difficulty]}
+                </p>
+
+                {q.teamLogoUrl && (
+                  <div className="mx-auto mt-4 flex h-16 w-16 items-center justify-center rounded-full bg-paper p-2 shadow">
+                    <Image src={q.teamLogoUrl} alt="" width={48} height={48} className="h-full w-full object-contain" />
+                  </div>
+                )}
+
+                <p className="mt-4 text-xl font-bold leading-snug">{q.question}</p>
+              </div>
+
+              <div>
+                <div className="grid grid-cols-2 gap-3">
+                  {q.choices.map((choice, i) => {
+                    const isSelected = selected === i;
+                    const isCorrectChoice = !!feedback && i === feedback.correctIndex;
+                    const isWrongSelected = !!feedback && isSelected && !feedback.isCorrect;
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        disabled={selected !== null}
+                        onClick={() => handleAnswer(i)}
+                        // text-[#10182a] (pas text-ink) : ce bouton reste TOUJOURS clair (bg-paper),
+                        // qu'importe le thème de l'appli — text-ink bascule en blanc en mode
+                        // "trophée" ([data-stadium], globals.css), ce qui rendait ce texte invisible
+                        // (blanc sur blanc) une fois ce mode devenu la norme dans toute l'appli.
+                        className={`rounded-2xl px-4 py-4 text-center text-sm font-bold transition-colors ${
+                          isCorrectChoice
+                            ? "bg-good text-paper"
+                            : isWrongSelected
+                              ? "bg-bad text-paper"
+                              : isSelected
+                                ? `bg-paper text-[#10182a] ring-2 ring-reward ${submitting ? "animate-pulse" : ""}`
+                                : "bg-paper/95 text-[#10182a] hover:bg-paper"
+                        }`}
+                      >
+                        {choice}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-6 h-1.5 w-full overflow-hidden rounded-full bg-paper/25">
+                  <div
+                    className="h-full w-full origin-left rounded-full bg-paper transition-transform duration-300"
+                    style={{ transform: `scaleX(${progressPct / 100})` }}
+                  />
+                </div>
+
+                {error && <p className="mt-4 text-sm font-bold text-paper">{error}</p>}
+
+                {feedback && (
+                  <div className="mt-4 rounded-2xl bg-paper/10 p-4">
+                    <p className="font-bold">
+                      {feedback.isCorrect
+                        ? `Bonne réponse ! +${feedback.points} pt${feedback.points > 1 ? "s" : ""}`
+                        : "Mauvaise réponse."}
+                    </p>
+                    {feedback.explanation && <p className="mt-1 text-sm text-paper/80">{feedback.explanation}</p>}
+                  </div>
                 )}
               </div>
-
-              <p className="mt-4 text-xs font-bold uppercase tracking-wide text-paper/70">
-                Question {position + 1}/{totalQuestions} · {CATEGORY_LABEL[q.category] ?? q.category} ·{" "}
-                {DIFFICULTY_LABEL[q.difficulty]}
-              </p>
-
-              {q.teamLogoUrl && (
-                <div className="mx-auto mt-4 flex h-16 w-16 items-center justify-center rounded-full bg-paper p-2 shadow">
-                  <Image src={q.teamLogoUrl} alt="" width={48} height={48} className="h-full w-full object-contain" />
-                </div>
-              )}
-
-              <p className="mt-4 text-xl font-bold leading-snug">{q.question}</p>
-            </div>
-
-            <div>
-              <div className="grid grid-cols-2 gap-3">
-                {q.choices.map((choice, i) => {
-                  const isSelected = selected === i;
-                  const isCorrectChoice = !!feedback && i === feedback.correctIndex;
-                  const isWrongSelected = !!feedback && isSelected && !feedback.isCorrect;
-                  return (
-                    <button
-                      key={i}
-                      type="button"
-                      disabled={selected !== null}
-                      onClick={() => handleAnswer(i)}
-                      // text-[#10182a] (pas text-ink) : ce bouton reste TOUJOURS clair (bg-paper),
-                      // qu'importe le thème de l'appli — text-ink bascule en blanc en mode
-                      // "trophée" ([data-stadium], globals.css), ce qui rendait ce texte invisible
-                      // (blanc sur blanc) une fois ce mode devenu la norme dans toute l'appli.
-                      className={`rounded-2xl px-4 py-4 text-center text-sm font-bold transition-colors ${
-                        isCorrectChoice
-                          ? "bg-good text-paper"
-                          : isWrongSelected
-                            ? "bg-bad text-paper"
-                            : isSelected
-                              ? `bg-paper text-[#10182a] ring-2 ring-reward ${submitting ? "animate-pulse" : ""}`
-                              : "bg-paper/95 text-[#10182a] hover:bg-paper"
-                      }`}
-                    >
-                      {choice}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="mt-6 h-1.5 w-full overflow-hidden rounded-full bg-paper/25">
-                <div
-                  className="h-full w-full origin-left rounded-full bg-paper transition-transform duration-300"
-                  style={{ transform: `scaleX(${progressPct / 100})` }}
-                />
-              </div>
-
-              {error && <p className="mt-4 text-sm font-bold text-paper">{error}</p>}
-
-              {feedback && (
-                <div className="mt-4 rounded-2xl bg-paper/10 p-4">
-                  <p className="font-bold">
-                    {feedback.isCorrect
-                      ? `Bonne réponse ! +${feedback.points} pt${feedback.points > 1 ? "s" : ""}`
-                      : "Mauvaise réponse."}
-                  </p>
-                  {feedback.explanation && <p className="mt-1 text-sm text-paper/80">{feedback.explanation}</p>}
-                </div>
-              )}
             </div>
           </div>
         </div>
