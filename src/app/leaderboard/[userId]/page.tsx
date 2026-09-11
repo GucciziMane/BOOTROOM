@@ -19,13 +19,30 @@ export default async function PlayerPredictionsPage({ params }: PageProps<"/lead
   if (!profile) notFound();
 
   const isSelf = user?.id === profile.id;
-  const rows = await getPredictionHistory(supabase, profile.id);
+  const [rows, { data: trophy }] = await Promise.all([
+    getPredictionHistory(supabase, profile.id),
+    // Trophée mi-saison (voir migration 0049) : permanent, le plus récent si plusieurs années.
+    supabase
+      .from("midseason_bonuses")
+      .select("rank, season_year")
+      .eq("user_id", profile.id)
+      .order("season_year", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
   const totalPointsSum = rows.reduce((sum, r) => sum + (r.totalPoints ?? 0), 0);
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 p-6">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-3xl font-bold">{isSelf ? "Mes pronostics" : `Pronostics de ${profile.username}`}</h1>
+        <h1 className="flex items-center gap-2 text-3xl font-bold">
+          {isSelf ? "Mes pronostics" : `Pronostics de ${profile.username}`}
+          {trophy && (
+            <span className="text-2xl" title={`Top ${trophy.rank} mi-saison ${trophy.season_year}`}>
+              🏆
+            </span>
+          )}
+        </h1>
         <BackLink href="/leaderboard">Retour au classement</BackLink>
       </div>
 

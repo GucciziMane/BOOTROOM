@@ -77,7 +77,17 @@ const MEDAL_ROW: Record<number, { gradient: string; border: string; text: string
 /** "Tous" (agrégat multi-championnats) ou un championnat précis — bascule entre les deux
  * uniquement en mémoire (les données de chaque championnat sont déjà toutes chargées côté
  * serveur), pas de rechargement de page au clic. */
-export function LeaderboardFilter({ rows, leagues }: { rows: LeaderboardRow[]; leagues: LeagueOption[] }) {
+export function LeaderboardFilter({
+  rows,
+  leagues,
+  trophies,
+}: {
+  rows: LeaderboardRow[];
+  leagues: LeagueOption[];
+  /** Trophée mi-saison (voir migration 0049) : permanent, indépendant du classement actuel — donc
+   * séparé du style or/argent/bronze ci-dessus (les deux peuvent coexister sur une même ligne). */
+  trophies: Map<string, { rank: number; seasonYear: number }>;
+}) {
   const [selected, setSelected] = useState<number | "all">("all");
 
   const sorted = useMemo(() => {
@@ -115,6 +125,7 @@ export function LeaderboardFilter({ rows, leagues }: { rows: LeaderboardRow[]; l
         {sorted.map((p, i) => {
           const stat = selected === "all" ? { points: p.total, good: p.good, exact: p.exact } : p.byLeague[selected];
           const medal = MEDAL_ROW[i];
+          const trophy = trophies.get(p.id);
           return (
             <li key={p.id}>
               <Link
@@ -165,6 +176,11 @@ export function LeaderboardFilter({ rows, leagues }: { rows: LeaderboardRow[]; l
                   <span className="truncate font-bold" style={medal ? { color: medal.text } : undefined}>
                     {p.username}
                   </span>
+                  {trophy && (
+                    <span className="shrink-0 text-base" title={`Top ${trophy.rank} mi-saison ${trophy.seasonYear}`}>
+                      🏆
+                    </span>
+                  )}
                 </span>
                 <span className="w-9 shrink-0 text-right font-bold" style={medal ? { color: medal.text } : undefined}>
                   {stat.good}

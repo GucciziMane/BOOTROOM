@@ -15,7 +15,8 @@ export type PointsSourceType =
   | "season_surprise"
   | "season_flop"
   | "season_final_team"
-  | "season_final_winner";
+  | "season_final_winner"
+  | "midseason_malus";
 
 export interface Database {
   public: {
@@ -330,6 +331,28 @@ export interface Database {
           points: number;
         };
         Update: Partial<Database["public"]["Tables"]["points_ledger"]["Row"]>;
+        Relationships: [];
+      };
+      midseason_bonuses: {
+        Row: {
+          id: number;
+          user_id: string;
+          season_year: number;
+          rank: number;
+          amount: number;
+          granted_at: string;
+          expires_at: string;
+          used_at: string | null;
+          target_user_id: string | null;
+        };
+        Insert: Partial<Database["public"]["Tables"]["midseason_bonuses"]["Row"]> & {
+          user_id: string;
+          season_year: number;
+          rank: number;
+          amount: number;
+          expires_at: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["midseason_bonuses"]["Row"]>;
         Relationships: [];
       };
       chat_messages: {

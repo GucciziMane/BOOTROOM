@@ -1,9 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
 import { listCard } from "@/lib/ui";
 import { BackLink } from "@/app/BackLink";
-import { LEADERBOARD_RESET_KEY, PRIVATE_RANKING_USERNAMES } from "@/lib/leaderboard-reset";
+import { PRIVATE_RANKING_USERNAMES } from "@/lib/leaderboard-reset";
 import { LEAGUE_FLAG } from "@/lib/country-flags";
+import { fetchLeaderboardTotals } from "@/lib/leaderboard-totals";
 import { LeaderboardFilter, type LeaderboardRow } from "./LeaderboardFilter";
+import { MidseasonBonusCard } from "./MidseasonBonusCard";
 
 export default async function LeaderboardPage() {
   const supabase = await createClient();
@@ -15,22 +17,22 @@ export default async function LeaderboardPage() {
     },
     { data: profiles },
     { data: leagues },
-    { data: ledgerAll },
-    { data: resetSetting },
     { data: predictions },
     { data: finishedMatches },
+    { data: bonuses },
   ] = await Promise.all([
     supabase.auth.getSession(),
     supabase.from("profiles").select("id, username, avatar_url, favorite_team_id").order("username"),
     supabase.from("leagues").select("id, name, football_data_code").eq("active", true).order("name"),
-    supabase.from("points_ledger").select("user_id, league_id, points, created_at"),
-    supabase.from("app_settings").select("value").eq("key", LEADERBOARD_RESET_KEY).maybeSingle(),
     // Nombre de bons pronos (résultat trouvé) / scores exacts : pas de colonne dédiée dans
     // points_ledger (correctResultPoints et exactScoreBonus sont fondus dans une seule ligne
     // "match_score" depuis la refonte du barème, voir computeMatchResultPoints/computeExactScoreBonus)
     // — reconstruit ici en comparant chaque pronostic au score réel du match.
     supabase.from("match_predictions").select("user_id, match_id, league_id, predicted_home_score, predicted_away_score"),
     supabase.from("matches").select("id, home_score, away_score, kickoff_at").eq("status", "finished"),
+    // Trophées mi-saison (toutes années confondues) : permanents, indépendants de la remise à
+    // zéro et du classement actuel — voir MEDAL_ROW/le badge dans LeaderboardFilter.
+    supabase.from("midseason_bonuses").select("id, user_id, rank, season_year, amount, used_at, expires_at, target_user_id"),
   ]);
   const user = session?.user ?? null;
 
@@ -41,16 +43,10 @@ export default async function LeaderboardPage() {
     .in("id", favoriteTeamIds.length > 0 ? favoriteTeamIds : [-1]);
   const teamLogoById = new Map((favoriteTeams ?? []).map((t) => [t.id, t.logo_url]));
   const activeLeagueIds = new Set((leagues ?? []).map((l) => l.id));
-  // Ledger complet (avant/après remise à zéro), scopé aux ligues actives comme avant.
-  const ledgerAllTime = (ledgerAll ?? []).filter((row) => !row.league_id || activeLeagueIds.has(row.league_id));
-  const resetAt = resetSetting?.value ?? null;
-  const ledger = resetAt ? ledgerAllTime.filter((row) => row.created_at >= resetAt) : ledgerAllTime;
+  const { ledger, ledgerAllTime, totalByUser, resetAt } = await fetchLeaderboardTotals(supabase, activeLeagueIds);
 
-  const totalByUser = new Map<string, number>();
   const pointsByUserByLeague = new Map<string, Map<number, number>>();
-
   for (const row of ledger) {
-    totalByUser.set(row.user_id, (totalByUser.get(row.user_id) ?? 0) + row.points);
     if (!pointsByUserByLeague.has(row.user_id)) pointsByUserByLeague.set(row.user_id, new Map());
     const perLeague = pointsByUserByLeague.get(row.user_id)!;
     if (row.league_id) perLeague.set(row.league_id, (perLeague.get(row.league_id) ?? 0) + row.points);
@@ -122,12 +118,36 @@ export default async function LeaderboardPage() {
     .map((p) => ({ ...p, total: privateTotalByUser.get(p.id) ?? 0 }))
     .sort((a, b) => b.total - a.total);
 
+  // Trophée mi-saison : permanent, indépendant de l'usage du bonus — un seul par joueur en
+  // pratique (unique (user_id, season_year) en base), mais on garde le plus récent si jamais
+  // plusieurs années s'accumulent au fil des saisons.
+  const trophies = new Map<string, { rank: number; seasonYear: number }>();
+  for (const b of bonuses ?? []) {
+    const existing = trophies.get(b.user_id);
+    if (!existing || b.season_year > existing.seasonYear) trophies.set(b.user_id, { rank: b.rank, seasonYear: b.season_year });
+  }
+
+  // Bonus actif de l'utilisateur connecté (non utilisé, pas encore expiré) : seul cas où on lui
+  // montre le sélecteur de cible sur cette page.
+  const now = new Date().toISOString();
+  const myBonus =
+    (bonuses ?? []).find((b) => b.user_id === user?.id && !b.used_at && b.expires_at > now) ?? null;
+
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 p-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-3xl font-bold">Classement général</h1>
         <BackLink href="/" />
       </div>
+
+      {myBonus && (
+        <MidseasonBonusCard
+          bonusId={myBonus.id}
+          amount={myBonus.amount}
+          expiresAt={myBonus.expires_at}
+          players={(profiles ?? []).filter((p) => p.id !== user?.id).map((p) => ({ id: p.id, username: p.username }))}
+        />
+      )}
 
       {showPrivateRanking && (
         <section className="mb-8">
@@ -154,6 +174,7 @@ export default async function LeaderboardPage() {
       <LeaderboardFilter
         rows={rows}
         leagues={(leagues ?? []).map((l) => ({ id: l.id, name: l.name, flag: LEAGUE_FLAG[l.football_data_code] ?? "🏆" }))}
+        trophies={trophies}
       />
     </main>
   );
