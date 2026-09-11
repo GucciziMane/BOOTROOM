@@ -53,7 +53,9 @@ export default async function LeaguesPage() {
               >
                 <div className="flex items-center gap-3">
                   {league.logo_url && (
-                    <Image src={league.logo_url} alt="" width={32} height={32} className="h-8 w-8 object-contain" />
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-paper shadow-[0_0_14px_rgba(255,255,255,0.5)]">
+                      <Image src={league.logo_url} alt="" width={32} height={32} className="h-8 w-8 object-contain" />
+                    </span>
                   )}
                   <div className="flex items-center gap-2 font-bold">
                     <span>{LEAGUE_FLAG[league.football_data_code] ?? league.country}</span>
