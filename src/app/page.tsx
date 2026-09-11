@@ -154,14 +154,14 @@ export default async function DashboardPage() {
                 {
                   href: "/calendar/classements",
                   emoji: "🏆",
-                  title: "Classements & buteurs",
+                  title: "Classement",
                   description:
                     "Le classement réel de chaque championnat, mis à jour après chaque match, plus les buteurs et passeurs.",
                 },
                 {
                   href: "/leaderboard",
                   emoji: "🏅",
-                  title: "Classement général",
+                  title: "Podium",
                   description: "Le total des points de chacun entre potes, et le détail par championnat.",
                 },
                 {
