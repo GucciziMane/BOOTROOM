@@ -5,9 +5,11 @@ import { sendPushToUserIds } from "@/lib/push/server";
 import { parisDateString } from "@/lib/quiz/daily";
 
 // Tourne toutes les heures (voir .github/workflows/quiz-reminders.yml) et ne fait quelque chose
-// qu'à midi et 18h heure de Paris : évite d'avoir à recalculer/mettre à jour un horaire UTC fixe
-// à chaque changement d'heure été/hiver.
-const REMINDER_HOURS = [12, 18];
+// qu'à ces heures-là (Paris) : évite d'avoir à recalculer/mettre à jour un horaire UTC fixe à
+// chaque changement d'heure été/hiver. Un rappel toutes les 5h en pratique (8-13-18-23), sans
+// gêner personne en pleine nuit — un vrai "toutes les 5h" (0-5-10-15-20) réveillerait à 5h du
+// matin pour peu de bénéfice, la plupart des gens n'étant de toute façon pas sur leur téléphone.
+const REMINDER_HOURS = [8, 13, 18, 23];
 
 export async function GET(request: NextRequest) {
   const unauthorized = requireCronSecret(request);

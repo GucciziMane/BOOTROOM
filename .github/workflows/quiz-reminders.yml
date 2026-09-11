@@ -1,4 +1,4 @@
-name: Quiz reminders
+name: Reminders
 on:
   schedule:
     - cron: "0 * * * *"
@@ -8,6 +8,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: Rappeler le quiz du jour (midi/18h Paris, si pas encore fait)
+      - name: Rappeler le quiz du jour (8-13-18-23h Paris, si pas encore fait)
         run: |
           curl -sf --max-time 60 -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" https://bootroom.online/api/cron/quiz-reminders
+      - name: Rappeler les pronostics (18h Paris, si un match approche et pas encore pronostiqué)
+        run: |
+          curl -sf --max-time 60 -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" https://bootroom.online/api/cron/prediction-push-reminders
