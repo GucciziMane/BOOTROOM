@@ -6,7 +6,6 @@ import { getFavoriteTeamLeagueGroups } from "@/lib/favorite-teams";
 import { getClubHomeData } from "@/lib/club-home";
 import { getLiveMatches } from "@/lib/live-matches";
 import { FavoriteTeamBadge } from "@/app/profile/FavoriteTeamBadge";
-import { ThemeModeToggle } from "@/app/profile/ThemeModeToggle";
 import { FavoriteTeamOnboarding } from "./FavoriteTeamOnboarding";
 import { ClubHomeDashboard } from "./ClubHomeDashboard";
 import { LiveMatchesBanner } from "./LiveMatchesBanner";
@@ -26,7 +25,7 @@ export default async function DashboardPage() {
   const [{ data: profile }, leagues] = await Promise.all([
     supabase
       .from("profiles")
-      .select("username, avatar_url, is_admin, chat_last_read_at, favorite_team_id, use_club_theme")
+      .select("username, avatar_url, is_admin, chat_last_read_at, favorite_team_id")
       .eq("id", user!.id)
       .single(),
     getFavoriteTeamLeagueGroups(supabase),
@@ -46,9 +45,9 @@ export default async function DashboardPage() {
       // jamais comme non lus.
       .or(`user_id.neq.${user!.id},user_id.is.null`)
       .gt("created_at", profile?.chat_last_read_at ?? "1970-01-01"),
-    profile?.use_club_theme && profile.favorite_team_id
-      ? getClubHomeData(supabase, profile.favorite_team_id)
-      : Promise.resolve(null),
+    // Un seul mode désormais : plus de choix club/trophée (cf. ThemeModeToggle, retiré de cette
+    // page) — dès qu'un club favori est défini, sa vue s'affiche.
+    profile?.favorite_team_id ? getClubHomeData(supabase, profile.favorite_team_id) : Promise.resolve(null),
     getLiveMatches(supabase),
   ]);
 
@@ -140,16 +139,7 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <p className="text-lg text-paper/85">Salut {profile?.username ?? user?.email}.</p>
-          <div className="flex items-center gap-2">
-            <ThemeModeToggle
-              initialUseClubTheme={profile?.use_club_theme ?? false}
-              favoriteTeamLogoUrl={favoriteTeamLogoUrl ?? null}
-              hasFavoriteTeam={!!profile?.favorite_team_id}
-            />
-          </div>
-        </div>
+        <p className="mt-3 text-lg text-paper/85">Salut {profile?.username ?? user?.email}.</p>
 
         <div className="mt-4">
           <LiveMatchesBanner initialMatches={liveMatches} variant="dark" />

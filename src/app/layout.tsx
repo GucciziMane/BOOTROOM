@@ -61,13 +61,11 @@ async function getClubTheme(): Promise<ClubTheme> {
   const user = session?.user ?? null;
   if (!user) return empty(false);
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("use_club_theme, favorite_team_id")
-    .eq("id", user.id)
-    .maybeSingle();
+  const { data: profile } = await supabase.from("profiles").select("favorite_team_id").eq("id", user.id).maybeSingle();
 
-  if (!profile?.use_club_theme || !profile.favorite_team_id) return empty(true);
+  // Plus de choix club/trophée (cf. page.tsx, ThemeModeToggle retiré) : la teinte du club s'active
+  // dès qu'un favori est défini, indépendamment de l'ancienne préférence `use_club_theme`.
+  if (!profile?.favorite_team_id) return empty(true);
 
   const { data: team } = await supabase
     .from("teams")

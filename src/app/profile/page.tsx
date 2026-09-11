@@ -4,7 +4,6 @@ import { card } from "@/lib/ui";
 import { BackLink } from "@/app/BackLink";
 import { AvatarForm } from "./AvatarForm";
 import { ProfileFavoriteTeam } from "./ProfileFavoriteTeam";
-import { ThemeModeToggle } from "./ThemeModeToggle";
 
 export default async function ProfilePage() {
   const supabase = await createClient();
@@ -17,7 +16,7 @@ export default async function ProfilePage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("username, avatar_url, favorite_team_id, use_club_theme")
+    .select("username, avatar_url, favorite_team_id")
     .eq("id", user!.id)
     .single();
 
@@ -46,14 +45,6 @@ export default async function ProfilePage() {
           Affiché en petit sur ton avatar. {favoriteTeam ? `Actuellement : ${favoriteTeam.name}.` : "Aucun club choisi."}
         </p>
         <ProfileFavoriteTeam leagues={leagues} initialTeamId={profile?.favorite_team_id ?? null} />
-      </div>
-
-      <div className={`mt-4 ${card}`}>
-        <ThemeModeToggle
-          initialUseClubTheme={profile?.use_club_theme ?? false}
-          favoriteTeamLogoUrl={favoriteTeam?.logoUrl ?? null}
-          hasFavoriteTeam={!!favoriteTeam}
-        />
       </div>
     </main>
   );
