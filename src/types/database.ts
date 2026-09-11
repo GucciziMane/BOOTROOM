@@ -193,6 +193,19 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["match_substitutions"]["Row"]>;
         Relationships: [];
       };
+      match_cards: {
+        Row: {
+          id: number;
+          match_id: number;
+          team_id: number;
+          player_id: number | null;
+          card_type: "yellow" | "red";
+          minute: number | null;
+        };
+        Insert: Partial<Database["public"]["Tables"]["match_cards"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["match_cards"]["Row"]>;
+        Relationships: [];
+      };
       player_scoring_tier: {
         Row: {
           id: number;

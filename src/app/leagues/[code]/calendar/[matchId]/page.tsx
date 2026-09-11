@@ -11,6 +11,7 @@ import {
   type ResultTierMultiplier,
 } from "@/lib/scoring/points";
 import { BackLink } from "@/app/BackLink";
+import { getMostRecentFinishedMatchIdByTeam } from "@/lib/recent-red-cards";
 import { MatchPredictionForm } from "./MatchPredictionForm";
 
 export default async function MatchPage({ params }: PageProps<"/leagues/[code]/calendar/[matchId]">) {
@@ -48,12 +49,14 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
     { data: assistTierPointsRows },
     { data: playerAssistTierRows },
     { data: resultMultiplierRows },
+    { data: recentFinishedMatches },
   ] = await Promise.all([
     supabase.from("teams").select("id, name").in("id", [match.home_team_id, match.away_team_id]),
     supabase
       .from("players")
       .select("id, name, team_id, position")
       .in("team_id", [match.home_team_id, match.away_team_id])
+      .is("left_at", null)
       .order("name"),
     supabase
       .from("app_settings")
@@ -75,11 +78,40 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
     supabase.from("match_assist_tier_points").select("tier, points"),
     supabase.from("player_assist_tier").select("player_id, tier").eq("season_id", match.season_id),
     supabase.from("match_result_tier_multipliers").select("tier, favorite_multiplier_pct, underdog_multiplier_pct, draw_multiplier_pct"),
+    // Carton rouge récent : le dernier match terminé de chacune des deux équipes AVANT celui-ci
+    // (pas juste "le plus récent, point" — cette page peut afficher un match plus lointain que la
+    // prochaine journée) — voir recent-red-cards.ts.
+    supabase
+      .from("matches")
+      .select("id, home_team_id, away_team_id, kickoff_at")
+      .or(`home_team_id.in.(${match.home_team_id},${match.away_team_id}),away_team_id.in.(${match.home_team_id},${match.away_team_id})`)
+      .eq("status", "finished")
+      .lt("kickoff_at", match.kickoff_at)
+      .order("kickoff_at", { ascending: false })
+      .limit(10),
   ]);
   const homeTeam = teams?.find((t) => t.id === match.home_team_id);
   const awayTeam = teams?.find((t) => t.id === match.away_team_id);
   const homePlayers = (players ?? []).filter((p) => p.team_id === match.home_team_id);
   const awayPlayers = (players ?? []).filter((p) => p.team_id === match.away_team_id);
+
+  const lastMatchIdByTeam = getMostRecentFinishedMatchIdByTeam(
+    (recentFinishedMatches ?? []).map((m) => ({
+      id: m.id,
+      homeTeamId: m.home_team_id,
+      awayTeamId: m.away_team_id,
+      kickoffAt: m.kickoff_at,
+    })),
+    [match.home_team_id, match.away_team_id]
+  );
+  const { data: recentRedCards } = await supabase
+    .from("match_cards")
+    .select("player_id")
+    .eq("card_type", "red")
+    .in("match_id", lastMatchIdByTeam.size > 0 ? [...new Set(lastMatchIdByTeam.values())] : [-1]);
+  const recentlyRedCardedPlayerIds = (recentRedCards ?? [])
+    .map((c) => c.player_id)
+    .filter((id): id is number => id != null);
   const lockHours = Number(setting?.value ?? 1);
   const lockAt = new Date(new Date(match.kickoff_at).getTime() - lockHours * 3600_000);
   const locked = lockAt <= new Date();
@@ -167,6 +199,7 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
           awayTeamName={awayTeam?.name ?? "?"}
           homePlayers={homePlayers}
           awayPlayers={awayPlayers}
+          redCardedPlayerIds={recentlyRedCardedPlayerIds}
           scoring={scoring}
           resultOdds={resultOdds}
           initial={{

@@ -493,7 +493,8 @@ async function syncGoalEvents(
       scorer_name: string;
       assist_name: string | null;
     }>,
-    subRows: Array<{ match_id: number; team_id: number; player_out_id: number | null; player_in_id: number | null; minute: number | null }> = []
+    subRows: Array<{ match_id: number; team_id: number; player_out_id: number | null; player_in_id: number | null; minute: number | null }> = [],
+    cardRows: Array<{ match_id: number; team_id: number; player_id: number | null; card_type: "yellow" | "red"; minute: number | null }> = []
   ) => {
     await supabase.from("match_goals").delete().eq("match_id", matchId);
     if (goalRows.length > 0) {
@@ -502,6 +503,10 @@ async function syncGoalEvents(
     await supabase.from("match_substitutions").delete().eq("match_id", matchId);
     if (subRows.length > 0) {
       await supabase.from("match_substitutions").insert(subRows);
+    }
+    await supabase.from("match_cards").delete().eq("match_id", matchId);
+    if (cardRows.length > 0) {
+      await supabase.from("match_cards").insert(cardRows);
     }
     await supabase.from("matches").update({ events_synced_at: new Date().toISOString() }).eq("id", matchId);
   };
@@ -540,7 +545,7 @@ async function syncGoalEvents(
         );
 
         if (espnMatch) {
-          const { goals, substitutions } = await getEspnMatchEvents(espnSlug, espnMatch.id);
+          const { goals, substitutions, cards } = await getEspnMatchEvents(espnSlug, espnMatch.id);
           const goalRows = goals.map((g) => {
             const teamId = teamNamesMatch(g.teamName, homeName) ? match.home_team_id : match.away_team_id;
             const scorer = matchPlayerByName(g.scorerName, playersByTeamId.get(teamId) ?? []);
@@ -571,7 +576,20 @@ async function syncGoalEvents(
               },
             ];
           });
-          await saveMatchEvents(match.id, goalRows, subRows);
+          const cardRows = cards.flatMap((c) => {
+            const teamId = teamNamesMatch(c.teamName, homeName) ? match.home_team_id : match.away_team_id;
+            const player = matchPlayerByName(c.playerName, playersByTeamId.get(teamId) ?? []);
+            return [
+              {
+                match_id: match.id,
+                team_id: teamId,
+                player_id: player?.id ?? null,
+                card_type: c.cardType,
+                minute: c.minute,
+              },
+            ];
+          });
+          await saveMatchEvents(match.id, goalRows, subRows, cardRows);
           matched++;
           matchedViaEspn++;
           matchedThisOne = true;
@@ -665,7 +683,24 @@ async function syncGoalEvents(
           ];
         });
 
-      await saveMatchEvents(match.id, goalRows, subRows);
+      const cardRows = events
+        .filter((e): e is typeof e & { type: "Yellow Card" | "Red Card" } => e.type === "Yellow Card" || e.type === "Red Card")
+        .flatMap((e) => {
+          if (!e.player) return [];
+          const teamId = teamNamesMatch(e.team.name, homeName) ? match.home_team_id : match.away_team_id;
+          const player = matchPlayerByName(e.player, playersByTeamId.get(teamId) ?? []);
+          return [
+            {
+              match_id: match.id,
+              team_id: teamId,
+              player_id: player?.id ?? null,
+              card_type: (e.type === "Yellow Card" ? "yellow" : "red") as "yellow" | "red",
+              minute: parseInt(e.time, 10),
+            },
+          ];
+        });
+
+      await saveMatchEvents(match.id, goalRows, subRows, cardRows);
       matched++;
     } catch {
       unmatched++;

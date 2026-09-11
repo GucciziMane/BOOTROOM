@@ -126,6 +126,17 @@ export interface EspnSubstitution {
   minute: number | null;
 }
 
+/** Carton jaune/rouge — "type.type" vérifié sur un vrai match ("yellow-card"/"red-card", jamais
+ * documenté par ESPN) en interrogeant l'API en direct sur un match récent qui en contenait
+ * plusieurs des deux : même forme exacte que les buts/remplacements (team.displayName,
+ * participants[0].athlete.displayName, clock.displayValue). */
+export interface EspnCard {
+  teamName: string;
+  playerName: string;
+  cardType: "yellow" | "red";
+  minute: number | null;
+}
+
 interface EspnSummaryResponse {
   keyEvents?: Array<{
     type: { type: string };
@@ -136,12 +147,12 @@ interface EspnSummaryResponse {
   }>;
 }
 
-/** Buts + remplacements d'un match précis, via son id d'événement ESPN — une seule requête pour
- * les deux plutôt que d'interroger deux fois le même endpoint. */
+/** Buts + remplacements + cartons d'un match précis, via son id d'événement ESPN — une seule
+ * requête pour les trois plutôt que d'interroger deux ou trois fois le même endpoint. */
 export async function getEspnMatchEvents(
   leagueSlug: string,
   eventId: string
-): Promise<{ goals: EspnGoal[]; substitutions: EspnSubstitution[] }> {
+): Promise<{ goals: EspnGoal[]; substitutions: EspnSubstitution[]; cards: EspnCard[] }> {
   const data = await espnFetch<EspnSummaryResponse>(`/${leagueSlug}/summary?event=${eventId}`);
   const events = data.keyEvents ?? [];
 
@@ -181,5 +192,20 @@ export async function getEspnMatchEvents(
     ];
   });
 
-  return { goals, substitutions };
+  const cards = events.flatMap((e) => {
+    const cardType: "yellow" | "red" | null =
+      e.type?.type === "yellow-card" ? "yellow" : e.type?.type === "red-card" ? "red" : null;
+    if (!cardType || !e.team || !e.participants || e.participants.length === 0) return [];
+    const minuteMatch = e.clock?.displayValue?.match(/\d+/);
+    return [
+      {
+        teamName: e.team.displayName,
+        playerName: e.participants[0].athlete.displayName,
+        cardType,
+        minute: minuteMatch ? Number(minuteMatch[0]) : null,
+      },
+    ];
+  });
+
+  return { goals, substitutions, cards };
 }

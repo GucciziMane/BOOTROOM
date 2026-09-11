@@ -29,7 +29,12 @@ export function groupPlayersByPosition(
   homePlayers: Array<{ id: number; name: string; position: Position }>,
   homeTeamName: string,
   awayPlayers: Array<{ id: number; name: string; position: Position }>,
-  awayTeamName: string
+  awayTeamName: string,
+  /** Joueurs expulsés lors du dernier match joué par leur équipe (voir recent-red-cards.ts) —
+   * signalés dans le libellé, pas exclus : un carton rouge n'entraîne pas toujours une suspension
+   * pour LE prochain match précis (compétition différente, appel...), donc on affiche le fait
+   * plutôt que d'affirmer une indisponibilité qu'on ne peut pas garantir. */
+  recentlyRedCardedPlayerIds: ReadonlySet<number> = new Set()
 ): PositionGroup[] {
   const buildGroup = (players: Array<{ id: number; name: string; position: Position }>, teamName: string): PositionGroup => ({
     label: teamName,
@@ -38,7 +43,10 @@ export function groupPlayersByPosition(
         const positionDiff = POSITION_ORDER.indexOf(a.position) - POSITION_ORDER.indexOf(b.position);
         return positionDiff !== 0 ? positionDiff : a.name.localeCompare(b.name);
       })
-      .map((p) => ({ id: p.id, label: `${POSITION_TAG[p.position]} · ${p.name}` })),
+      .map((p) => ({
+        id: p.id,
+        label: `${POSITION_TAG[p.position]} · ${p.name}${recentlyRedCardedPlayerIds.has(p.id) ? " — 🟥 dernier match" : ""}`,
+      })),
   });
 
   return [buildGroup(homePlayers, homeTeamName), buildGroup(awayPlayers, awayTeamName)].filter(

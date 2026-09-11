@@ -40,6 +40,9 @@ interface Props {
   awayForm: FormResult[];
   homePlayers: PlayerOption[];
   awayPlayers: PlayerOption[];
+  /** Ids des joueurs expulsés lors du dernier match joué par leur équipe (voir
+   * recent-red-cards.ts) — signalés dans le sélecteur buteur/passeur, pas exclus. */
+  redCardedPlayerIds?: number[];
   scoring: {
     matchExactScoreBonus: number;
     matchCorrectResultNoScore: number;
@@ -97,6 +100,7 @@ export function MatchPredictionCard({
   awayForm,
   homePlayers,
   awayPlayers,
+  redCardedPlayerIds,
   scoring,
   resultOdds,
   locked,
@@ -137,7 +141,13 @@ export function MatchPredictionCard({
   const scorerPoints = scorer ? (scoring.scorerTierPoints[scoring.playerTier[scorer.id]] ?? 0) : 0;
   const assister = assistId ? [...homePlayers, ...awayPlayers].find((p) => p.id === Number(assistId)) : undefined;
   const assistPoints = assister ? (scoring.assistTierPoints[scoring.playerAssistTier[assister.id]] ?? 0) : 0;
-  const playerGroups = groupPlayersByPosition(homePlayers, homeTeamName, awayPlayers, awayTeamName);
+  const playerGroups = groupPlayersByPosition(
+    homePlayers,
+    homeTeamName,
+    awayPlayers,
+    awayTeamName,
+    new Set(redCardedPlayerIds)
+  );
   const multiplierByTier = new Map(
     Object.entries(resultOdds.multiplierByTier).map(([tier, mult]) => [Number(tier) as OddsTier, mult])
   );
