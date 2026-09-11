@@ -12,10 +12,14 @@ const TABS = [
 
 // Pages publiques (avant connexion) : pas de nav vers des sections qui vont rediriger vers /login.
 const HIDDEN_PREFIXES = ["/login", "/signup", "/auth"];
+// Dashboard (/) : masquée à la demande de l'utilisateur — le carrousel de navigation en bas de
+// page fait déjà double emploi avec cette barre. Code conservé (pas supprimé), simple exclusion
+// de route pour pouvoir la remontrer facilement si besoin.
+const HIDDEN_EXACT = ["/"];
 
 export function BottomNav() {
   const pathname = usePathname();
-  if (HIDDEN_PREFIXES.some((p) => pathname.startsWith(p))) return null;
+  if (HIDDEN_PREFIXES.some((p) => pathname.startsWith(p)) || HIDDEN_EXACT.includes(pathname)) return null;
 
   return (
     <nav

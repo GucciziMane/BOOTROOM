@@ -13,6 +13,8 @@ const POSITION_LABEL: Record<string, string> = {
 
 const ORDINAL = (n: number) => (n === 1 ? "1ère" : `${n}e`);
 
+const SHOW_SQUAD = false;
+
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
   return ((parts[0]?.[0] ?? "") + (parts[parts.length - 1]?.[0] ?? "")).toUpperCase();
@@ -155,8 +157,9 @@ export function ClubHomeDashboard({ data }: { data: ClubHomeData }) {
         </div>
       )}
 
-      {/* Effectif */}
-      {data.squad.length > 0 && (
+      {/* Effectif — masqué à la demande de l'utilisateur (alourdissait la page). Code conservé
+          (pas supprimé), juste désactivé via ce garde pour pouvoir le remontrer facilement. */}
+      {SHOW_SQUAD && data.squad.length > 0 && (
         <div className="mt-6">
           <div className="mb-2 text-sm font-bold">L&rsquo;effectif</div>
           <div className="-mx-6 flex gap-3 overflow-x-auto px-6 pb-1">
