@@ -7,16 +7,12 @@ import { teamNamesMatch, matchPlayerByName, goalKey } from "@/lib/sync/name-matc
 import { sendPushBroadcastWithOverrides, sendPushToUserIdsWithOverrides } from "@/lib/push/server";
 import { SYSTEM_SENDER_NAME } from "@/lib/system-sender";
 import { loadPointConfig, processFinishedMatches, type ServiceClient } from "@/app/api/cron/process-scoring/route";
+import { LIVE_TICK_LOOKAHEAD_MS } from "@/lib/live-tick-window";
 
 // Durée max raisonnable d'un match + arrêts de jeu : au-delà, un match "scheduled"/"live" en base
 // sort de la fenêtre de suivi minute par minute et retombe sur le filet de sécurité (sync-fixtures
 // + process-scoring, toutes les 30 min) plutôt que d'être interrogé indéfiniment.
 const LIVE_WINDOW_MS = 150 * 60 * 1000;
-// Anticipe un coup d'envoi à venir : sans ça, ce tick ne remarque un match qu'une fois son
-// kickoff_at déjà passé — la chaîne démarre maintenant quelques minutes AVANT le coup d'envoi réel
-// (réveillée par sync-fixtures, voir plus bas), déjà "chaude" au moment où le match démarre pour
-// de vrai plutôt que de le découvrir avec du retard.
-const LOOKAHEAD_MS = 5 * 60 * 1000;
 
 const APP_URL = "https://bootroom.online";
 
@@ -28,8 +24,10 @@ const APP_URL = "https://bootroom.online";
 // message QStash à retardement, court (20s) tant qu'un match est réellement en direct, plus large
 // (60s) sinon (avant coup d'envoi, ou ESPN pas encore à jour) — et s'arrête d'elle-même dès qu'il
 // n'y a plus rien à suivre. Le réveil initial (avant tout coup d'envoi) est délégué à sync-fixtures
-// (toutes les 30 min, anticipation de 35 min — supérieure à son propre intervalle, aucun coup
-// d'envoi ne peut donc jamais passer entre deux réveils sans qu'une chaîne ne soit déjà en cours).
+// (toutes les 30 min) : LIVE_TICK_LOOKAHEAD_MS (partagée, voir live-tick-window.ts) garantit que ce
+// réveil anticipé tombe bien DANS la fenêtre que ce tick traite lui-même, sans quoi (incident du
+// 11/09/2026) le réveil ne trouvait rien à faire, ne se re-planifiait pas, et la chaîne mourait
+// aussitôt née jusqu'au passage sync-fixtures suivant, 25-30 min plus tard.
 const LIVE_TICK_DELAY_SECONDS = 20;
 const WARMUP_TICK_DELAY_SECONDS = 60;
 
@@ -54,7 +52,7 @@ export async function GET(request: NextRequest) {
   const supabase = createServiceRoleClient();
   const now = new Date();
   const windowStart = new Date(now.getTime() - LIVE_WINDOW_MS).toISOString();
-  const windowEnd = new Date(now.getTime() + LOOKAHEAD_MS).toISOString();
+  const windowEnd = new Date(now.getTime() + LIVE_TICK_LOOKAHEAD_MS).toISOString();
 
   const { data: inWindowMatches } = await supabase
     .from("matches")

@@ -8,6 +8,7 @@ import { getEspnScoreboard, getEspnMatchEvents, ESPN_LEAGUE_SLUG } from "@/lib/e
 import { teamNamesMatch, matchPlayerByName } from "@/lib/sync/name-match";
 import { computeStandings } from "@/lib/scoring/standings";
 import { computeMatchOdds } from "@/lib/scoring/match-odds";
+import { LIVE_TICK_LOOKAHEAD_MS } from "@/lib/live-tick-window";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const MAX_EVENT_CALLS_PER_RUN = 40; // reste sous le quota de 100 req/jour de Highlightly (1 call/date+championnat + 1 call/match)
@@ -20,12 +21,13 @@ const APP_URL = "https://bootroom.online";
 // live-tick n'a plus de schedule QStash récurrent (voir incident du 10/09/2026 — un tick fixe
 // toutes les minutes, 24h/24, épuisait à lui seul le quota gratuit QStash de 1000 messages/jour en
 // plein milieu d'une soirée de Ligue des Champions, arrêtant net TOUS les crons, pas seulement
-// celui-ci). Ce cron (toutes les 30 min) sert désormais de réveil : 35 min d'anticipation, strictement
-// supérieur à son propre intervalle de 30 min, garantit qu'aucun coup d'envoi ne peut jamais passer
-// entre deux passages sans qu'une chaîne live-tick ne soit déjà réveillée pour le couvrir — voir
-// scheduleNextTick côté live-tick pour la suite de la chaîne (auto-réveil tant qu'un match suivi
-// n'est pas terminé, silence total sinon).
-const LIVE_TICK_WAKEUP_LOOKAHEAD_MS = 35 * 60 * 1000;
+// celui-ci). Ce cron (toutes les 30 min) sert désormais de réveil : LIVE_TICK_LOOKAHEAD_MS (35 min,
+// partagée avec live-tick — voir live-tick-window.ts) garantit qu'aucun coup d'envoi ne peut jamais
+// passer entre deux passages sans qu'une chaîne live-tick ne soit déjà réveillée ET reconnue dans
+// SA PROPRE fenêtre pour la prendre en charge — les deux valeurs vivaient avant dans deux fichiers
+// séparés (35 min ici, 5 min côté live-tick) et avaient dérivé l'une de l'autre (incident du
+// 11/09/2026) : un réveil anticipé qui ne tombe pas dans la fenêtre de live-tick ne fait rien et ne
+// relance pas la chaîne, qui meurt alors jusqu'au passage suivant, 25-30 min plus tard.
 const LIVE_TICK_WAKEUP_TRAILING_MS = 150 * 60 * 1000; // même fenêtre que LIVE_WINDOW_MS côté live-tick
 
 async function wakeLiveTickIfNeeded(supabase: ReturnType<typeof createServiceRoleClient>): Promise<void> {
@@ -39,7 +41,7 @@ async function wakeLiveTickIfNeeded(supabase: ReturnType<typeof createServiceRol
     .select("id", { count: "exact", head: true })
     .in("status", ["scheduled", "live"])
     .gt("kickoff_at", new Date(now - LIVE_TICK_WAKEUP_TRAILING_MS).toISOString())
-    .lte("kickoff_at", new Date(now + LIVE_TICK_WAKEUP_LOOKAHEAD_MS).toISOString());
+    .lte("kickoff_at", new Date(now + LIVE_TICK_LOOKAHEAD_MS).toISOString());
   if (!count || count === 0) return;
 
   try {
