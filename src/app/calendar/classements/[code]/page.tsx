@@ -163,10 +163,10 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
         </p>
       )}
 
-      <section className="mb-10 overflow-hidden rounded-2xl border border-line bg-paper">
+      <section className="mb-10 overflow-hidden rounded-2xl border border-line bg-surface">
         <table className="w-full table-fixed text-xs sm:text-sm">
           <thead>
-            <tr className="border-b border-line bg-cream">
+            <tr className="border-b border-line bg-surface-raised">
               <th className="w-[8%] p-1.5 text-left sm:p-3">#</th>
               <th className="w-[42%] p-1.5 text-left sm:p-3">Équipe</th>
               <th className="w-[10%] p-1.5 text-right sm:p-3">J</th>
@@ -273,7 +273,7 @@ function RankedPlayerList({
   const predictedOutsideTop = predictedRank >= TOP_N ? entries[predictedRank] : null;
 
   return (
-    <section className="rounded-2xl border border-line bg-paper p-4">
+    <section className="rounded-2xl border border-line bg-surface p-4">
       <h2 className="mb-3 text-lg font-bold">{title}</h2>
       {visible.length === 0 ? (
         <p className="text-sm text-mute">Personne pour l&apos;instant.</p>

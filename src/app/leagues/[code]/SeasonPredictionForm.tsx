@@ -84,7 +84,7 @@ function TeamCombobox({
       </button>
 
       {open && (
-        <ul className="absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-xl border-2 border-line bg-paper shadow-lg">
+        <ul className="absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-xl border-2 border-line bg-surface shadow-lg">
           <li>
             <button
               type="button"
@@ -154,7 +154,7 @@ function PlayerPicker({
         value={playerId}
         onChange={(e) => setPlayerId(e.target.value ? Number(e.target.value) : "")}
         disabled={!teamId}
-        className={`${input} disabled:bg-cream disabled:text-mute`}
+        className={`${input} disabled:bg-surface-raised disabled:text-mute`}
       >
         <option value="">{teamId ? "Joueur..." : "Choisis d'abord l'équipe"}</option>
         {teamPlayers.map((p) => (
@@ -241,7 +241,7 @@ function FinalPredictionSection({
           value={winnerValue}
           onChange={(e) => setWinner(e.target.value ? Number(e.target.value) : "")}
           disabled={finalistIds.length < 2}
-          className={`${input} disabled:bg-cream disabled:text-mute`}
+          className={`${input} disabled:bg-surface-raised disabled:text-mute`}
         >
           <option value="">{finalistIds.length < 2 ? "Choisis d'abord les 2 finalistes" : "Vainqueur..."}</option>
           {finalistIds.map((id) => (

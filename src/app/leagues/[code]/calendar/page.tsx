@@ -341,7 +341,7 @@ function ScoreRow({
         <span className="truncate text-sm font-semibold">{home.name}</span>
         {home.logoUrl && <Image src={home.logoUrl} alt="" width={28} height={28} className="h-7 w-7 shrink-0 object-contain" />}
       </div>
-      <span className="shrink-0 rounded-full bg-cream px-3 py-1.5 text-sm font-extrabold tabular-nums">
+      <span className="shrink-0 rounded-full bg-surface-raised px-3 py-1.5 text-sm font-extrabold tabular-nums">
         {homeScore ?? "–"} : {awayScore ?? "–"}
       </span>
       <div className="flex min-w-0 flex-1 items-center gap-2.5">

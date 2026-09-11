@@ -173,7 +173,7 @@ export function MatchPredictionForm({
         </select>
       </div>
 
-      <div className="rounded-xl border border-line bg-cream p-4 text-sm">
+      <div className="rounded-xl border border-line bg-surface-raised p-4 text-sm">
         <p className="mb-2 font-bold">Points en jeu</p>
         {resultOdds.favoriteTeamId && resultOdds.tier && (
           <p className="mb-2 text-mute">

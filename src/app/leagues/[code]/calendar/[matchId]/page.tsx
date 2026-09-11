@@ -260,7 +260,7 @@ function LockedMatchSummary({
         </div>
       </dl>
 
-      <div className="mt-6 rounded-xl border border-line bg-cream p-4 text-sm">
+      <div className="mt-6 rounded-xl border border-line bg-surface-raised p-4 text-sm">
         <p className="mb-2 font-bold">Points en jeu</p>
         <ul className="space-y-1 text-mute">
           <li>
