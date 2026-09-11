@@ -159,7 +159,13 @@ export function NavCardCarousel({ cards }: { cards: NavCarouselCard[] }) {
           >
             {c.emoji}
           </span>
-          <span className="mt-4 text-3xl font-bold">{c.title}</span>
+          {/* min-h-[72px] (= 2 lignes à text-3xl) : "3ème mi‑temps" passe sur 2 lignes sur une
+              carte mobile étroite alors que "Podium" (un seul mot) tient sur 1 — sans hauteur
+              fixe ici, ce titre plus haut poussait TOUT le bloc emoji+titre+description vers le
+              haut par rapport aux cartes à titre court, exactement le même problème que la
+              description ci-dessous, juste pas repéré avant faute d'avoir testé à une largeur de
+              carte assez étroite pour que "3ème mi‑temps" bascule sur 2 lignes. */}
+          <span className="mt-4 flex min-h-[72px] items-center text-3xl font-bold">{c.title}</span>
           {/* min-h-24 (mesuré : la description la plus longue tient sur 4 lignes à ~256px de
               large, largeur de contenu réaliste d'une carte mobile) : sans ça, le bloc
               emoji+titre+description entier se centre verticalement SELON SA PROPRE hauteur —
