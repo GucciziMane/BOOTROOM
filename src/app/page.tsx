@@ -98,8 +98,15 @@ export default async function DashboardPage() {
       // simplement à la taille de son contenu au lieu d'être plafonné à l'écran. Ancré directement
       // sur le viewport réel (moins les paddings connus posés par <body>, cf. layout.tsx) plutôt
       // que de dépendre de cette chaîne de hauteurs.
-      className={`relative mx-auto flex h-[calc(100dvh-env(safe-area-inset-top)-8rem)] min-h-0 w-full max-w-7xl flex-1 flex-col p-6 lg:h-[calc(100dvh-env(safe-area-inset-top))] ${
-        clubHomeData ? "" : "overflow-hidden"
+      // En mode club, le contenu (bandeau + carrousel) dépasse volontairement un écran — une
+      // hauteur FIXE (h-[calc(...)]) combinée à min-h-0 plus bas dans l'arbre masquait alors la
+      // fin du carrousel sans qu'aucun scroll ne puisse jamais l'atteindre (overflow:visible sur
+      // un enfant flex avec min-h-0 ne fait pas grandir le scrollHeight du document). min-h (pas
+      // h) laisse ce mode grandir avec son contenu tout en remplissant l'écran quand il est court.
+      className={`relative mx-auto flex w-full max-w-7xl flex-1 flex-col p-6 ${
+        clubHomeData
+          ? "min-h-[calc(100dvh-env(safe-area-inset-top)-8rem)] lg:min-h-[calc(100dvh-env(safe-area-inset-top))]"
+          : "h-[calc(100dvh-env(safe-area-inset-top)-8rem)] min-h-0 overflow-hidden lg:h-[calc(100dvh-env(safe-area-inset-top))]"
       }`}
     >
       {/* Photo de stade en fond : posée globalement dans layout.tsx (StadiumBackdrop), visible sur
