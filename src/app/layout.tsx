@@ -93,7 +93,11 @@ async function getClubTheme(): Promise<ClubTheme> {
 // Isolé ici, le reste de la page peut s'afficher immédiatement pendant que ça résout.
 async function ClubThemeLayer() {
   const clubTheme = await getClubTheme();
-  const stadiumMode = clubTheme.loggedIn && !clubTheme.enabled;
+  // Sombre pour tout utilisateur connecté, club actif ou non : `enabled` (teinte couleur + bandeau
+  // + filigrane, cf. ThemeApplier.tsx) et le fond photo/tokens sombres sont deux mécanismes
+  // indépendants — les combiner ici permet au thème club de se superposer au fond stade plutôt que
+  // de l'exclure, pour garder à la fois l'ambiance sombre et les infos du club favori.
+  const stadiumMode = clubTheme.loggedIn;
   return (
     <>
       <StadiumBackdrop show={stadiumMode} />

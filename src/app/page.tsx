@@ -5,7 +5,6 @@ import { signOut } from "@/app/login/actions";
 import { getFavoriteTeamLeagueGroups } from "@/lib/favorite-teams";
 import { getClubHomeData } from "@/lib/club-home";
 import { getLiveMatches } from "@/lib/live-matches";
-import { linkMuted } from "@/lib/ui";
 import { FavoriteTeamBadge } from "@/app/profile/FavoriteTeamBadge";
 import { ThemeModeToggle } from "@/app/profile/ThemeModeToggle";
 import { FavoriteTeamOnboarding } from "./FavoriteTeamOnboarding";
@@ -53,6 +52,44 @@ export default async function DashboardPage() {
     getLiveMatches(supabase),
   ]);
 
+  // Même carrousel de navigation dans les deux modes (club favori ou non) : seul le contenu au-
+  // dessus change (bandeau club + infos), le fond sombre et l'accès au reste de l'appli restent
+  // identiques — cf. layout.tsx, `stadiumMode` n'est plus exclusif du thème club.
+  const navCards = [
+    {
+      href: "/calendar",
+      emoji: "🎯",
+      title: "Pronostics",
+      description: "Calendrier des matchs : score et buteur, championnat par championnat.",
+    },
+    {
+      href: "/calendar/classements",
+      emoji: "🏆",
+      title: "Classement",
+      description:
+        "Le classement réel de chaque championnat, mis à jour après chaque match, plus les buteurs et passeurs.",
+    },
+    {
+      href: "/leaderboard",
+      emoji: "🏅",
+      title: "Podium",
+      description: "Le total des points de chacun entre potes, et le détail par championnat.",
+    },
+    {
+      href: "/chat",
+      emoji: "🍻",
+      title: "3ème mi‑temps",
+      description: "La discussion entre tous les membres.",
+      badgeCount: unreadChatCount ?? 0,
+    },
+    {
+      href: "/quiz",
+      emoji: "🧠",
+      title: "Quiz du jour",
+      description: "10 questions sur le foot, un nouveau quiz chaque jour à minuit. Classement quotidien entre potes.",
+    },
+  ];
+
   return (
     <main
       // h-full ne suffit pas ici : body n'a que min-h-full (pas h-full, volontaire pour que les
@@ -65,34 +102,23 @@ export default async function DashboardPage() {
         clubHomeData ? "" : "overflow-hidden"
       }`}
     >
-      {/* Photo de stade en fond (mode "trophée") : posée globalement dans layout.tsx (StadiumBackdrop)
-          pour être visible sur toutes les pages, pas seulement ici. */}
-      <div className={`relative z-10 flex min-h-0 flex-1 flex-col ${clubHomeData ? "" : "text-paper"}`}>
+      {/* Photo de stade en fond : posée globalement dans layout.tsx (StadiumBackdrop), visible sur
+          toutes les pages y compris ici en mode club — cf. layout.tsx, `stadiumMode`. */}
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col text-paper">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold">Boot Room</h1>
           <div className="flex items-center gap-4">
             {profile?.is_admin && (
-              <Link
-                href="/admin"
-                className={clubHomeData ? `text-sm ${linkMuted}` : "text-sm font-bold text-paper/80 hover:text-paper"}
-              >
+              <Link href="/admin" className="text-sm font-bold text-paper/80 hover:text-paper">
                 Administration
               </Link>
             )}
             <Link href="/profile" className="relative flex h-16 w-16 shrink-0 items-center gap-2">
-              <span
-                className={`relative h-16 w-16 overflow-hidden rounded-full border-2 ${
-                  clubHomeData ? "border-line bg-cream" : "border-paper/30 bg-surface-inverse/30"
-                }`}
-              >
+              <span className="relative h-16 w-16 overflow-hidden rounded-full border-2 border-paper/30 bg-surface-inverse/30">
                 {profile?.avatar_url ? (
                   <Image src={profile.avatar_url} alt="" fill sizes="64px" className="object-cover" />
                 ) : (
-                  <span
-                    className={`flex h-full w-full items-center justify-center text-2xl font-bold ${
-                      clubHomeData ? "text-mute" : "text-paper/90"
-                    }`}
-                  >
+                  <span className="flex h-full w-full items-center justify-center text-2xl font-bold text-paper/90">
                     {(profile?.username ?? "?").slice(0, 1).toUpperCase()}
                   </span>
                 )}
@@ -100,10 +126,7 @@ export default async function DashboardPage() {
               <FavoriteTeamBadge logoUrl={favoriteTeamLogoUrl ?? null} size={22} />
             </Link>
             <form action={signOut}>
-              <button
-                type="submit"
-                className={clubHomeData ? `text-sm ${linkMuted}` : "text-sm font-bold text-paper/80 hover:text-paper"}
-              >
+              <button type="submit" className="text-sm font-bold text-paper/80 hover:text-paper">
                 Déconnexion
               </button>
             </form>
@@ -111,9 +134,7 @@ export default async function DashboardPage() {
         </div>
 
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <p className={`text-lg ${clubHomeData ? "text-mute" : "text-paper/85"}`}>
-            Salut {profile?.username ?? user?.email}.
-          </p>
+          <p className="text-lg text-paper/85">Salut {profile?.username ?? user?.email}.</p>
           <div className="flex items-center gap-2">
             <ThemeModeToggle
               initialUseClubTheme={profile?.use_club_theme ?? false}
@@ -124,97 +145,25 @@ export default async function DashboardPage() {
         </div>
 
         <div className="mt-4">
-          <LiveMatchesBanner initialMatches={liveMatches} variant={clubHomeData ? "light" : "dark"} />
+          <LiveMatchesBanner initialMatches={liveMatches} variant="dark" />
         </div>
 
         {clubHomeData ? (
           <div className="mt-5">
             <ClubHomeDashboard data={clubHomeData} />
             <div className="mt-7">
-              <div className="mb-2 text-sm font-bold text-mute">Le reste de l&rsquo;appli</div>
-              <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-5">
-                <QuickLink href="/calendar" emoji="🎯" label="Pronostics" />
-                <QuickLink href="/calendar/classements" emoji="🏆" label="Classements" />
-                <QuickLink href="/leaderboard" emoji="🏅" label="Général" />
-                <QuickLink href="/chat" emoji="🍻" label="Chat" badgeCount={unreadChatCount ?? 0} />
-                <QuickLink href="/quiz" emoji="🧠" label="Quiz" />
-              </div>
+              <div className="mb-2 text-sm font-bold text-paper/70">Le reste de l&rsquo;appli</div>
+              <NavCardCarousel cards={navCards} />
             </div>
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 overflow-hidden">
-            <NavCardCarousel
-              cards={[
-                {
-                  href: "/calendar",
-                  emoji: "🎯",
-                  title: "Pronostics",
-                  description: "Calendrier des matchs : score et buteur, championnat par championnat.",
-                },
-                {
-                  href: "/calendar/classements",
-                  emoji: "🏆",
-                  title: "Classement",
-                  description:
-                    "Le classement réel de chaque championnat, mis à jour après chaque match, plus les buteurs et passeurs.",
-                },
-                {
-                  href: "/leaderboard",
-                  emoji: "🏅",
-                  title: "Podium",
-                  description: "Le total des points de chacun entre potes, et le détail par championnat.",
-                },
-                {
-                  href: "/chat",
-                  emoji: "🍻",
-                  title: "3ème mi‑temps",
-                  description: "La discussion entre tous les membres.",
-                  badgeCount: unreadChatCount ?? 0,
-                },
-                {
-                  href: "/quiz",
-                  emoji: "🧠",
-                  title: "Quiz du jour",
-                  description: "10 questions sur le foot, un nouveau quiz chaque jour à minuit. Classement quotidien entre potes.",
-                },
-              ]}
-            />
+            <NavCardCarousel cards={navCards} />
           </div>
         )}
 
         {!profile?.favorite_team_id && <FavoriteTeamOnboarding leagues={leagues} />}
       </div>
     </main>
-  );
-}
-
-function QuickLink({
-  href,
-  emoji,
-  label,
-  badgeCount,
-}: {
-  href: string;
-  emoji: string;
-  label: string;
-  badgeCount?: number;
-}) {
-  return (
-    <Link
-      href={href}
-      // Sans ça, ces 5 raccourcis (tous vers une page dynamique à plusieurs allers-retours
-      // Supabase) préchargent tous en arrière-plan dès l'affichage du dashboard — le tout premier
-      // écran vu après connexion, le pire moment pour saturer Supabase de requêtes inutiles.
-      prefetch={false}
-      className="relative flex flex-col items-center gap-1.5 rounded-2xl border border-line bg-paper px-2 py-3 text-center transition-colors hover:border-ink hover:bg-cream"
-    >
-      {!!badgeCount && (
-        <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-paper">
-          {badgeCount}
-        </span>
-      )}
-      <span className="text-xl">{emoji}</span>
-      <span className="text-[11px] font-bold leading-tight">{label}</span>
-    </Link>
   );
 }

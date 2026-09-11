@@ -76,7 +76,7 @@ export function ClubHomeDashboard({ data }: { data: ClubHomeData }) {
       {data.nextMatch && (
         <Link
           href={matchHref(data.nextMatch.id)}
-          className="-mt-4 mx-3 flex items-center gap-3 rounded-2xl border border-line bg-paper p-4 shadow-md transition-colors hover:border-ink"
+          className="-mt-4 mx-3 flex items-center gap-3 rounded-2xl border border-line bg-surface p-4 shadow-md transition-colors hover:border-ink"
         >
           <div className="min-w-0 flex-1">
             <div className="text-[11px] font-bold uppercase tracking-wide text-mute">Prochain match</div>
@@ -114,7 +114,7 @@ export function ClubHomeDashboard({ data }: { data: ClubHomeData }) {
               Voir tout
             </Link>
           </div>
-          <div className="overflow-hidden rounded-2xl border border-line bg-paper">
+          <div className="overflow-hidden rounded-2xl border border-line bg-surface">
             {data.standing.tableWindow.map((row) => (
               <div
                 key={row.teamId}
@@ -137,7 +137,7 @@ export function ClubHomeDashboard({ data }: { data: ClubHomeData }) {
       {data.lastResult && data.lastResult.homeScore !== null && data.lastResult.awayScore !== null && (
         <div className="mt-6">
           <div className="mb-2 text-sm font-bold">Dernier résultat</div>
-          <div className="flex items-center justify-center gap-3 rounded-2xl border border-line bg-paper p-4">
+          <div className="flex items-center justify-center gap-3 rounded-2xl border border-line bg-surface p-4">
             {data.logoUrl && <Image src={data.logoUrl} alt="" width={28} height={28} className="h-7 w-7 object-contain" />}
             <span className="text-lg font-extrabold">
               {data.lastResult.isHome ? data.lastResult.homeScore : data.lastResult.awayScore}
@@ -161,7 +161,7 @@ export function ClubHomeDashboard({ data }: { data: ClubHomeData }) {
           <div className="mb-2 text-sm font-bold">L&rsquo;effectif</div>
           <div className="-mx-6 flex gap-3 overflow-x-auto px-6 pb-1">
             {data.squad.map((p) => (
-              <div key={p.id} className="w-24 shrink-0 rounded-2xl border border-line bg-paper p-3 text-center">
+              <div key={p.id} className="w-24 shrink-0 rounded-2xl border border-line bg-surface p-3 text-center">
                 <div className="mx-auto flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2" style={{ borderColor: accent, background: darken(data.primaryColor, 0.55) }}>
                   {p.photoUrl ? (
                     <Image src={p.photoUrl} alt="" width={48} height={48} className="h-full w-full object-cover" />
