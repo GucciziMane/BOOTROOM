@@ -2,7 +2,7 @@
 
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
 import { getDailyQuiz, parisDateString } from "@/lib/quiz/daily";
-import { LEADERBOARD_RESET_KEY, PRIVATE_RANKING_USERNAMES } from "@/lib/leaderboard-reset";
+import { QUIZ_SEASON_RESET_KEY, PRIVATE_RANKING_USERNAMES } from "@/lib/leaderboard-reset";
 import { summarizeQuizResults, type SeasonLeaderboardRow } from "@/lib/quiz/season-summary";
 
 export interface SubmitAnswerResult {
@@ -164,13 +164,14 @@ export async function getQuizLeaderboard(): Promise<LeaderboardRow[]> {
 
 export type { SeasonLeaderboardRow };
 
-/** Cumul des scores quotidiens depuis la remise à zéro (voir app_settings, LEADERBOARD_RESET_KEY),
- * pour départager un vainqueur en fin de saison — remise à zéro pour l'arrivée de nouveaux
- * joueurs, rien n'est supprimé en base, seul ce qui est sommé ici change. */
+/** Cumul des scores quotidiens depuis le début de la saison quiz en cours (voir app_settings,
+ * QUIZ_SEASON_RESET_KEY — indépendante du classement des pronos), pour départager un vainqueur en
+ * fin de saison (voir src/app/api/cron/quiz-season-bonus/route.ts, 1er janvier). Rien n'est
+ * supprimé en base, seul ce qui est sommé ici change. */
 export async function getQuizSeasonLeaderboard(): Promise<SeasonLeaderboardRow[]> {
   const admin = createServiceRoleClient();
 
-  const { data: resetSetting } = await admin.from("app_settings").select("value").eq("key", LEADERBOARD_RESET_KEY).maybeSingle();
+  const { data: resetSetting } = await admin.from("app_settings").select("value").eq("key", QUIZ_SEASON_RESET_KEY).maybeSingle();
   let query = admin.from("quiz_results").select("user_id, score");
   // completed_at (timestamp précis), pas quiz_date (jour civil) : un quiz déjà complété plus tôt
   // le jour même de la remise à zéro ne doit pas compter pour le classement général, exactement

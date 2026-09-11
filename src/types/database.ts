@@ -16,7 +16,8 @@ export type PointsSourceType =
   | "season_flop"
   | "season_final_team"
   | "season_final_winner"
-  | "midseason_malus";
+  | "midseason_malus"
+  | "quiz_season_bonus";
 
 export interface Database {
   public: {
