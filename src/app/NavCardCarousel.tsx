@@ -17,6 +17,20 @@ export interface NavCarouselCard {
 const CARD_WIDTH_PCT = 78;
 const SIDE_PADDING_PCT = (100 - CARD_WIDTH_PCT) / 2;
 
+// Le dessin visible d'un emoji ne touche pas forcément le haut de sa propre boîte de caractère —
+// cet espace vide au-dessus varie d'un emoji à l'autre (mesuré via canvas, pixels non-transparents,
+// à 60px — la taille réelle de text-6xl), donc même avec des boîtes CSS identiques et centrées,
+// le contenu de chaque carte démarrait visuellement à une hauteur différente selon l'emoji.
+// Valeurs relatives à 🏆/🏅 (déjà au ras du haut de leur boîte, donc 0) : les emoji plus "petits"
+// dans leur boîte sont remontés d'autant pour aligner leur haut visible sur celui du trophée.
+const EMOJI_TOP_OFFSET_PX: Record<string, number> = {
+  "🎯": 5,
+  "🏆": 0,
+  "🏅": 0,
+  "🍻": 2.5,
+  "🧠": 2,
+};
+
 /**
  * Carrousel de cartes qui tourne à l'infini : le scroll horizontal natif (scroll-snap) gère le
  * swipe/drag/momentum sans réinventer la physique du geste, sur 3 copies bout à bout de la liste —
@@ -139,7 +153,12 @@ export function NavCardCarousel({ cards }: { cards: NavCarouselCard[] }) {
               {c.badgeCount}
             </span>
           )}
-          <span className="text-6xl">{c.emoji}</span>
+          <span
+            className="text-6xl"
+            style={{ transform: `translateY(-${EMOJI_TOP_OFFSET_PX[c.emoji] ?? 0}px)` }}
+          >
+            {c.emoji}
+          </span>
           <span className="mt-4 text-3xl font-bold">{c.title}</span>
           {/* min-h-24 (mesuré : la description la plus longue tient sur 4 lignes à ~256px de
               large, largeur de contenu réaliste d'une carte mobile) : sans ça, le bloc
