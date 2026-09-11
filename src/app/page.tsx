@@ -159,7 +159,6 @@ export default async function DashboardPage() {
           <div className="mt-5">
             <ClubHomeDashboard data={clubHomeData} />
             <div className="mt-7">
-              <div className="mb-2 text-sm font-bold text-paper/70">Le reste de l&rsquo;appli</div>
               <NavCardCarousel cards={navCards} />
             </div>
           </div>
