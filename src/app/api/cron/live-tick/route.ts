@@ -154,7 +154,7 @@ export async function GET(request: NextRequest) {
       const [{ data: existingGoals }, { data: existingSubs }] = await Promise.all([
         supabase
           .from("match_goals")
-          .select("id, player_id, assist_player_id, assist_name, minute, scorer_name")
+          .select("id, team_id, player_id, assist_player_id, assist_name, minute, scorer_name")
           .eq("match_id", match.id),
         supabase.from("match_substitutions").select("player_out_id, player_in_id").eq("match_id", match.id),
       ]);
@@ -271,10 +271,21 @@ export async function GET(request: NextRequest) {
         for (const s of [...(existingSubs ?? []), ...newSubRows]) {
           if (s.player_in_id != null && s.player_out_id != null) playerInToOut.set(s.player_in_id, s.player_out_id);
         }
+        // Score affiché dans la notif recalculé depuis match_goals (buts déjà en base + ceux tout
+        // juste insérés ci-dessus), jamais depuis espnMatch.homeScore/awayScore : vu en prod (but
+        // de Baldé, Lorient-Toulouse) — le score du "scoreboard" ESPN peut ne pas encore refléter
+        // un but déjà présent dans la liste d'événements du MÊME appel, la notif annonçait "But !"
+        // avec un score encore à 0-0. Le score du scoreboard se corrige tout seul au tick suivant
+        // pour l'affichage en base, mais une notif déjà envoyée ne peut plus être corrigée après
+        // coup — mieux vaut la calculer juste, depuis la même source que le but qu'elle annonce.
+        let derivedHomeScore = 0;
+        let derivedAwayScore = 0;
+        for (const g of [...(existingGoals ?? []), ...insertedGoals]) {
+          if (g.team_id === match.home_team_id) derivedHomeScore++;
+          else if (g.team_id === match.away_team_id) derivedAwayScore++;
+        }
         for (const goal of insertedGoals) {
-          goalPushJobs.push(() =>
-            notifyGoal(supabase, match, home.name, away.name, espnMatch.homeScore ?? 0, espnMatch.awayScore ?? 0, goal, playerInToOut)
-          );
+          goalPushJobs.push(() => notifyGoal(supabase, match, home.name, away.name, derivedHomeScore, derivedAwayScore, goal, playerInToOut));
         }
       }
 
