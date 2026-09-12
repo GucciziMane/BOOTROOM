@@ -8,7 +8,7 @@ import { getEspnScoreboard, getEspnMatchEvents, ESPN_LEAGUE_SLUG } from "@/lib/e
 import { teamNamesMatch, matchPlayerByName } from "@/lib/sync/name-match";
 import { computeStandings } from "@/lib/scoring/standings";
 import { computeMatchOdds } from "@/lib/scoring/match-odds";
-import { LIVE_TICK_LOOKAHEAD_MS } from "@/lib/live-tick-window";
+import { LIVE_TICK_LOOKAHEAD_MS, LIVE_TICK_HEARTBEAT_STALE_MS } from "@/lib/live-tick-window";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const MAX_EVENT_CALLS_PER_RUN = 40; // reste sous le quota de 100 req/jour de Highlightly (1 call/date+championnat + 1 call/match)
@@ -43,6 +43,17 @@ async function wakeLiveTickIfNeeded(supabase: ReturnType<typeof createServiceRol
     .gt("kickoff_at", new Date(now - LIVE_TICK_WAKEUP_TRAILING_MS).toISOString())
     .lte("kickoff_at", new Date(now + LIVE_TICK_LOOKAHEAD_MS).toISOString());
   if (!count || count === 0) return;
+
+  // Ne réveille que si aucune chaîne d'auto-réveil ne tourne déjà (voir LIVE_TICK_HEARTBEAT_STALE_MS
+  // pour l'incident que ça corrige) : sans ce garde-fou, ce réveil partait à chaque passage de ce
+  // cron (30 min) tant qu'un match restait dans la fenêtre, empilant une chaîne parallèle de plus
+  // à chaque fois plutôt que de laisser la chaîne déjà active se poursuivre seule.
+  const { data: heartbeat } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("key", "live_tick_last_heartbeat")
+    .maybeSingle();
+  if (heartbeat && now - new Date(heartbeat.value).getTime() < LIVE_TICK_HEARTBEAT_STALE_MS) return;
 
   try {
     const client = new QStashClient({ token });

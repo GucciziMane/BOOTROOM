@@ -67,6 +67,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ inWindow: 0, pending: 0 });
   }
 
+  // Battement de la chaîne d'auto-réveil (voir LIVE_TICK_HEARTBEAT_STALE_MS) : seulement quand il
+  // y a réellement quelque chose à suivre, pour qu'un tick isolé/résiduel après la fin d'un match
+  // (plus rien dans inWindowMatches au prochain passage) ne masque pas artificiellement le besoin
+  // d'un réveil pour un tout autre match qui entrerait dans la fenêtre juste après.
+  await supabase.from("app_settings").upsert({ key: "live_tick_last_heartbeat", value: new Date().toISOString() });
+
   const [{ data: leagues }, { data: teams }] = await Promise.all([
     // .eq("active", true) : un championnat désactivé (Bundesliga, Primeira Liga) garde ses matchs
     // en base mais ne doit plus être suivi minute par minute — absent d'ici, son league_id ne
@@ -228,17 +234,36 @@ export async function GET(request: NextRequest) {
       });
 
       if (newGoalRows.length > 0) {
-        await supabase.from("match_goals").insert(
-          newGoalRows.map((row) => ({
-            match_id: row.match_id,
-            team_id: row.team_id,
-            player_id: row.player_id,
-            assist_player_id: row.assist_player_id,
-            minute: row.minute,
-            scorer_name: row.scorerName,
-            assist_name: row.assistName,
-          }))
-        );
+        // upsert + ignoreDuplicates (contrainte unique match_id/player_id/minute, migration 0052)
+        // plutôt qu'un simple insert : filet de sécurité si deux invocations concurrentes de
+        // live-tick (voir le battement anti-chaînes multiples plus haut) finissaient quand même
+        // par se chevaucher — seule la ligne qui remporte la course est réellement insérée, et
+        // .select() après ignoreDuplicates ne renvoie QUE les lignes effectivement insérées, pas
+        // les buteurs non résolus (player_id null, jamais contraints par cette unicité) : la notif
+        // ci-dessous ne part donc que pour un but réellement nouveau en base.
+        const { data: reallyInserted } = await supabase
+          .from("match_goals")
+          .upsert(
+            newGoalRows.map((row) => ({
+              match_id: row.match_id,
+              team_id: row.team_id,
+              player_id: row.player_id,
+              assist_player_id: row.assist_player_id,
+              minute: row.minute,
+              scorer_name: row.scorerName,
+              assist_name: row.assistName,
+            })),
+            { onConflict: "match_id,player_id,minute", ignoreDuplicates: true }
+          )
+          .select("match_id, team_id, player_id, assist_player_id, minute, scorer_name, assist_name");
+        const insertedGoals: NewGoal[] = (reallyInserted ?? []).map((r) => ({
+          match_id: r.match_id,
+          team_id: r.team_id,
+          player_id: r.player_id,
+          assist_player_id: r.assist_player_id,
+          minute: r.minute,
+          scorerName: r.scorer_name ?? "",
+        }));
         // "Garantie buteur/passeur" (voir process-scoring) : le remplaçant entré à la place du
         // joueur pronostiqué compte aussi, y compris pour la notif temps réel — pas seulement au
         // calcul des points a posteriori.
@@ -246,7 +271,7 @@ export async function GET(request: NextRequest) {
         for (const s of [...(existingSubs ?? []), ...newSubRows]) {
           if (s.player_in_id != null && s.player_out_id != null) playerInToOut.set(s.player_in_id, s.player_out_id);
         }
-        for (const goal of newGoalRows) {
+        for (const goal of insertedGoals) {
           goalPushJobs.push(() =>
             notifyGoal(supabase, match, home.name, away.name, espnMatch.homeScore ?? 0, espnMatch.awayScore ?? 0, goal, playerInToOut)
           );
@@ -315,7 +340,23 @@ export async function GET(request: NextRequest) {
     const config = await loadPointConfig(supabase);
     const result = await processFinishedMatches(supabase, config, newlyFinishedMatchIds);
     scoredMatches = result.processed ?? 0;
-    await notifyFinalResults(supabase, newlyFinishedMatchIds, teamById);
+
+    // Notif "fin de match" une seule fois par match : `justFinished` plus haut se base sur le
+    // statut lu en tout début de tick, pas revérifié atomiquement — deux invocations concurrentes
+    // (voir l'incident qui a motivé le battement anti-chaînes multiples ci-dessus) pouvaient donc
+    // toutes les deux se croire seules à faire passer le même match à "finished" et notifier
+    // chacune la leur. Seule l'invocation qui remporte cette écriture conditionnelle (n'affecte que
+    // les matchs pas encore notifiés) envoie la notification pour ce match.
+    const { data: claimed } = await supabase
+      .from("matches")
+      .update({ final_notified_at: new Date().toISOString() })
+      .in("id", newlyFinishedMatchIds)
+      .is("final_notified_at", null)
+      .select("id");
+    const claimedIds = (claimed ?? []).map((m) => m.id as number);
+    if (claimedIds.length > 0) {
+      await notifyFinalResults(supabase, claimedIds, teamById);
+    }
   }
 
   if (pendingCount > 0) {
