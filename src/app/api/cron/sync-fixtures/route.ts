@@ -110,9 +110,14 @@ export async function GET(request: NextRequest) {
 
   const startedAt = Date.now();
   const supabase = createServiceRoleClient();
+  // .eq("active", true) : un championnat désactivé (Bundesliga, Primeira Liga) gardait ses
+  // matchs/scores/événements resynchronisés à chaque passage (toutes les 30 min) comme n'importe
+  // quel autre — même correctif que sync-teams-players, pour arrêter de consommer du quota
+  // football-data.org/Highlightly/ESPN sur des championnats que personne ne suit cette saison.
   const { data: leagues, error: leaguesError } = await supabase
     .from("leagues")
-    .select("id, football_data_code, highlightly_league_id");
+    .select("id, football_data_code, highlightly_league_id")
+    .eq("active", true);
 
   if (leaguesError || !leagues) {
     return NextResponse.json({ error: leaguesError?.message ?? "leagues introuvables" }, { status: 500 });

@@ -88,9 +88,15 @@ export async function GET(request: NextRequest) {
   if (unauthorized) return unauthorized;
 
   const supabase = createServiceRoleClient();
+  // .eq("active", true) : un championnat désactivé (Bundesliga, Primeira Liga — pas suivi cette
+  // saison) gardait ses effectifs synchronisés à chaque passage comme n'importe quel autre,
+  // consommant pour rien le quota football-data.org (déjà serré, voir FOOTBALL_DATA_RATE_LIMIT_DELAY_MS)
+  // sur des données que personne n'utilise. live-tick excluait déjà ces championnats de son suivi
+  // minute par minute ; celui-ci (et sync-fixtures, même correctif) ne le faisait pas.
   const { data: leagues, error: leaguesError } = await supabase
     .from("leagues")
     .select("id, football_data_code")
+    .eq("active", true)
     .order("roster_synced_at", { ascending: true, nullsFirst: true })
     .limit(BATCH_SIZE);
 
