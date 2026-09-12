@@ -71,6 +71,12 @@ export function teamNamesMatch(a: string, b: string): boolean {
  * correspond le mieux à un nom donné par API-Football (souvent abrégé, ex: "A. Gouiri").
  * Compare sur le nom de famille (dernier token) pour rester robuste aux abréviations de prénom ;
  * renvoie null si aucune correspondance unique n'est trouvée plutôt que de deviner.
+ *
+ * Comparaison sur le DERNIER token du candidat uniquement (pas "un token quelconque du nom
+ * contient ça") : bug vu en prod — sur un effectif avec "João Pedro" et "Pedro Neto", chercher
+ * "pedro" (nom de famille de "João Pedro") en acceptant n'importe quel token candidat matchait
+ * AUSSI "Pedro Neto" (prénom "Pedro"), rendait la recherche ambiguë entre les deux, et le but de
+ * João Pedro finissait avec player_id=null — jamais compté pour un pronostic buteur.
  */
 export function matchPlayerByName<P extends { id: number; name: string }>(
   targetName: string,
@@ -79,7 +85,7 @@ export function matchPlayerByName<P extends { id: number; name: string }>(
   const targetLastName = normalizeName(targetName).split(" ").pop();
   if (!targetLastName) return null;
 
-  const matches = candidates.filter((c) => normalizeName(c.name).split(" ").includes(targetLastName));
+  const matches = candidates.filter((c) => normalizeName(c.name).split(" ").pop() === targetLastName);
 
   return matches.length === 1 ? matches[0] : null;
 }
