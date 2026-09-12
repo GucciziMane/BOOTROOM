@@ -17,7 +17,7 @@ function isTextEntryElement(el: EventTarget | null): boolean {
 const TABS = [
   { href: "/calendar", label: "Pronos", emoji: "🎯", isActive: (p: string) => p.startsWith("/calendar") || /^\/leagues\/[^/]+\/calendar/.test(p) },
   { href: "/quiz", label: "Quiz", emoji: "🧠", isActive: (p: string) => p.startsWith("/quiz") },
-  { href: "/leaderboard", label: "Classement", emoji: "🏅", isActive: (p: string) => p.startsWith("/leaderboard") },
+  { href: "/leaderboard", label: "Podium", emoji: "🏅", isActive: (p: string) => p.startsWith("/leaderboard") },
   { href: "/chat", label: "Chat", emoji: "🍻", isActive: (p: string) => p.startsWith("/chat") },
 ];
 
