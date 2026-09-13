@@ -316,10 +316,16 @@ export async function processFinishedMatches(supabase: ServiceClient, config: Po
 }
 
 async function processFinishedSeasons(supabase: ServiceClient, config: PointConfig) {
+  // .is("points_processed_at", null) : sans ce filtre (contrairement à processFinishedMatches, qui
+  // l'a toujours eu), une saison déjà entièrement résolue continuait d'être requêtée et retraitée
+  // à chaque passage de ce cron (30 min), à vie — plusieurs requêtes par saison (matchs, buts,
+  // pronostics...) rejouées pour rien, saison après saison au fil des mois. Jamais de mauvais
+  // paiement (alreadyAwarded protège déjà), juste une charge DB qui grossit sans borne.
   const { data: seasons, error } = await supabase
     .from("seasons")
     .select("id, league_id, actual_surprise_team_id, actual_flop_team_id")
-    .eq("status", "finished");
+    .eq("status", "finished")
+    .is("points_processed_at", null);
 
   if (error || !seasons || seasons.length === 0) {
     return { processed: 0, error: error?.message };
