@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
-import { getDailyQuiz, parisDateString, stripAnswer } from "@/lib/quiz/daily";
+import { getDailyQuiz, quizDayString, stripAnswer } from "@/lib/quiz/daily";
 import { BackLink } from "@/app/BackLink";
 import { PRIVATE_RANKING_USERNAMES } from "@/lib/leaderboard-reset";
 import { QuizRunner } from "./QuizRunner";
@@ -16,7 +16,7 @@ export default async function QuizPage() {
   if (!user) redirect("/login");
 
   const admin = createServiceRoleClient();
-  const quizDate = parisDateString();
+  const quizDate = quizDayString();
 
   const [{ data: existingAnswers }, { data: existingResult }, { data: profile }] = await Promise.all([
     admin

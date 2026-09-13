@@ -45,6 +45,18 @@ export function parisDateString(date: Date = new Date()): string {
   return date.toLocaleDateString("en-CA", { timeZone: "Europe/Paris" });
 }
 
+// Le quiz change de jour à 1h du matin (Europe/Paris) plutôt qu'à minuit pile : demandé pour
+// laisser une vraie marge après minuit (ex: deux joueurs en train de terminer le quiz ensemble
+// juste après le changement de jour) plutôt qu'un nouveau quiz qui apparaît en pleine partie.
+// N'affecte QUE le quiz — parisDateString reste inchangée pour tout le reste de l'appli (ex:
+// middleware.ts, redirection "première visite du jour"), qui continue de basculer à minuit pile.
+const QUIZ_DAY_OFFSET_MS = 60 * 60 * 1000;
+
+/** Comme parisDateString, mais le "jour" du quiz commence à 1h du matin (Europe/Paris), pas minuit. */
+export function quizDayString(date: Date = new Date()): string {
+  return parisDateString(new Date(date.getTime() - QUIZ_DAY_OFFSET_MS));
+}
+
 const EPOCH = "2026-01-01";
 
 function mod(n: number, m: number): number {

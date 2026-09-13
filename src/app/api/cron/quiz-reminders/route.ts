@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { sendPushToUserIds } from "@/lib/push/server";
-import { parisDateString } from "@/lib/quiz/daily";
+import { quizDayString } from "@/lib/quiz/daily";
 
 // Tourne toutes les heures (voir .github/workflows/quiz-reminders.yml) et ne fait quelque chose
 // qu'à ces heures-là (Paris) : évite d'avoir à recalculer/mettre à jour un horaire UTC fixe à
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = createServiceRoleClient();
-  const quizDate = parisDateString();
+  const quizDate = quizDayString();
 
   const { data: profiles } = await supabase.from("profiles").select("id");
   const allUserIds = (profiles ?? []).map((p) => p.id);

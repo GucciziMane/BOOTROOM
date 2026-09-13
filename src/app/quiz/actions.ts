@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient, createServiceRoleClient } from "@/lib/supabase/server";
-import { getDailyQuiz, parisDateString } from "@/lib/quiz/daily";
+import { getDailyQuiz, quizDayString } from "@/lib/quiz/daily";
 import { QUIZ_SEASON_RESET_KEY, PRIVATE_RANKING_USERNAMES } from "@/lib/leaderboard-reset";
 import { summarizeQuizResults, type SeasonLeaderboardRow } from "@/lib/quiz/season-summary";
 
@@ -35,7 +35,7 @@ export async function submitQuizAnswer(quizDate: string, position: number, choic
   if (!user) return { error: "Non connecté." };
 
   const admin = createServiceRoleClient();
-  const todayMs = new Date(`${parisDateString()}T00:00:00Z`).getTime();
+  const todayMs = new Date(`${quizDayString()}T00:00:00Z`).getTime();
   const claimedMs = new Date(`${quizDate}T00:00:00Z`).getTime();
   if (!Number.isFinite(claimedMs) || Math.abs(claimedMs - todayMs) > 24 * 60 * 60 * 1000) {
     return { error: "Date de quiz invalide." };
@@ -149,7 +149,7 @@ export interface LeaderboardRow {
 
 export async function getQuizLeaderboard(): Promise<LeaderboardRow[]> {
   const admin = createServiceRoleClient();
-  const quizDate = parisDateString();
+  const quizDate = quizDayString();
 
   const { data: results } = await admin
     .from("quiz_results")
