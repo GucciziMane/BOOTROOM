@@ -310,6 +310,20 @@ async function fetchGoalsForMatches(supabase: ServiceClient, matchIds: number[])
   return (data ?? []) as GoalRow[];
 }
 
+// Un même club/joueur réel est suivi sous PLUSIEURS lignes (une par championnat où il apparaît,
+// ex: PSG en Ligue 1 ET en Ligue des Champions — voir l'incident Ferrán Torres du 13/09/2026) :
+// deux entités DIFFÉRENTES en base peuvent donc porter le même nom affiché. Aucun des générateurs
+// ci-dessous ne dédoublonne les leurres par nom (seulement par id), donc une question pourrait en
+// théorie proposer deux fois le même nom parmi les 4 choix — jamais observé en prod à ce jour (105
+// questions dynamiques générées, vérifié), mais le risque est réel vu le nombre de doublons
+// id-différents/nom-identique déjà confirmés dans la base (345 au 13/09/2026). Vérifié juste avant
+// de renvoyer une question plutôt que de complexifier chaque sélection de leurres : en cas de
+// collision, la question est abandonnée comme n'importe quel autre échec de génération (le
+// créneau retente un autre type, puis la réserve statique — jamais un quiz cassé pour ça).
+function hasDuplicateChoiceNames(choices: string[]): boolean {
+  return new Set(choices).size !== choices.length;
+}
+
 /** "Ces 3 joueurs jouent dans la même équipe, qui est le 4e ?" — généré depuis les vrais effectifs. */
 function genHiddenTeammate(
   data: LeagueData,
@@ -337,6 +351,7 @@ function genHiddenTeammate(
     `${seedStr}-order`
   );
   const correctIndex = choiceObjs.findIndex((c) => c.id === hidden.id);
+  if (hasDuplicateChoiceNames(choiceObjs.map((c) => c.name))) return null;
 
   return {
     position,
@@ -369,6 +384,7 @@ function genGuessCrest(
 
   const choiceObjs = seededShuffle([team, ...decoys], `${seedStr}-order`);
   const correctIndex = choiceObjs.findIndex((c) => c.id === team.id);
+  if (hasDuplicateChoiceNames(choiceObjs.map((c) => c.name))) return null;
 
   return {
     position,
@@ -404,6 +420,7 @@ function genGuessPlayerTeam(
 
   const choiceObjs = seededShuffle([correctTeam, ...decoys], `${seedStr}-order`);
   const correctIndex = choiceObjs.findIndex((c) => c.id === correctTeam.id);
+  if (hasDuplicateChoiceNames(choiceObjs.map((c) => c.name))) return null;
 
   return {
     position,
@@ -553,6 +570,7 @@ function genLeagueTopScorer(
 
   const choiceObjs = seededShuffle([topPlayer, ...decoyPlayers], `${seedStr}-order`);
   const correctIndex = choiceObjs.findIndex((p) => p.id === topPlayer.id);
+  if (hasDuplicateChoiceNames(choiceObjs.map((p) => p.name))) return null;
   const tied = topScorerIds.length > 1;
 
   return {
@@ -614,6 +632,7 @@ function genGuessMatchScorer(
 
   const choiceObjs = seededShuffle([{ id: scorer.id, name: scorer.name }, ...decoys], `${seedStr}-order`);
   const correctIndex = choiceObjs.findIndex((c) => c.id === scorer.id);
+  if (hasDuplicateChoiceNames(choiceObjs.map((c) => c.name))) return null;
 
   return {
     position,

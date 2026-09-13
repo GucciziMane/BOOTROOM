@@ -33,6 +33,26 @@ export default async function QuizPage() {
   const quiz = await getDailyQuiz(admin, quizDate);
   const publicQuiz = quiz.map(stripAnswer);
 
+  // Filet de secours : si les 10 réponses existent déjà mais qu'aucun quiz_results n'a été
+  // enregistré (l'upsert dans submitQuizAnswer a pu échouer une fois sans que personne ne le
+  // revoie — jamais vérifié côté appelant), le joueur qui a bien terminé son quiz retombait pour
+  // toujours sur "pas encore disponible" au lieu de son résultat, avec plus aucun moyen de
+  // resoumettre (la position est hors limites, et chaque position n'accepte qu'une réponse). On
+  // recalcule ici depuis les réponses déjà en base — jamais inventé, la même formule que
+  // submitQuizAnswer — et on retente l'enregistrement pour que les prochains chargements n'aient
+  // plus besoin de repasser par ce recalcul.
+  let existingResultRow = existingResult;
+  if (!existingResultRow && (existingAnswers?.length ?? 0) === quiz.length && quiz.length > 0) {
+    const totalPoints = existingAnswers!.reduce((sum, a) => sum + a.points, 0);
+    const correctCount = existingAnswers!.filter((a) => a.is_correct).length;
+    const bonus = correctCount === quiz.length ? 3 : 0;
+    const recoveredScore = totalPoints + bonus;
+    await admin
+      .from("quiz_results")
+      .upsert({ user_id: user.id, quiz_date: quizDate, score: recoveredScore, correct_count: correctCount }, { onConflict: "user_id,quiz_date" });
+    existingResultRow = { score: recoveredScore };
+  }
+
   return (
     // Hauteur ancrée sur le viewport réel (moins la barre du bas et la safe-area, cf. page.tsx du
     // dashboard) + overflow-hidden : sans ça, la page défilait de haut en bas dès que son contenu
@@ -51,7 +71,7 @@ export default async function QuizPage() {
             isCorrect: a.is_correct,
             points: a.points,
           }))}
-          initialFinalScore={existingResult?.score ?? null}
+          initialFinalScore={existingResultRow?.score ?? null}
           showPrivateRanking={showPrivateRanking}
           quizDate={quizDate}
         />
