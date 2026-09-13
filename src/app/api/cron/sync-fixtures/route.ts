@@ -483,7 +483,13 @@ async function syncGoalEvents(
   const { data: teams } = await supabase.from("teams").select("id, name").in("id", teamIds);
   const teamNameById = new Map((teams ?? []).map((t) => [t.id, t.name]));
 
-  const { data: players } = await supabase.from("players").select("id, name, team_id").in("team_id", teamIds);
+  // .is("left_at", null) : sans ce filtre, un joueur parti (ligne remplacée par une nouvelle, ex:
+  // changement d'orthographe/accent renvoyé par la source, cf. Ferrán/Ferran Torres) restait quand
+  // même candidat ici — deux lignes portant le même nom de famille (l'ancienne partie, la nouvelle
+  // active) rendaient matchPlayerByName ambigu et le but repartait avec player_id=null, jamais
+  // compté pour un pronostic buteur. live-tick filtrait déjà ainsi ; ce chemin de sync (Highlightly,
+  // filet de secours) ne le faisait pas.
+  const { data: players } = await supabase.from("players").select("id, name, team_id").in("team_id", teamIds).is("left_at", null);
   const playersByTeamId = new Map<number, Array<{ id: number; name: string }>>();
   for (const p of players ?? []) {
     if (!playersByTeamId.has(p.team_id)) playersByTeamId.set(p.team_id, []);
