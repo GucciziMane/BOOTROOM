@@ -130,6 +130,10 @@ export function ChatRoom({
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const isFirstScroll = useRef(true);
+  // Verrou synchrone : `isSending` (state React) ne désactive le bouton qu'au rendu suivant, donc
+  // un double-tap rapide (ou Entrée + tap quasi simultané) pouvait lancer handleSendMessage deux
+  // fois avant que ce rendu n'arrive — chaque appel envoyait son propre message, dupliquant l'envoi.
+  const sendingLock = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const formImageInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -559,8 +563,14 @@ export function ChatRoom({
    * la laisser sinon jusqu'à ce que Realtime livre le vrai message) — un aller-retour qu'un effet
    * observant un state réactif ne peut faire qu'après un rendu supplémentaire. */
   async function handleSendMessage(formData: FormData) {
+    if (sendingLock.current) return;
+    sendingLock.current = true;
+
     const content = String(formData.get("content") ?? "").trim();
-    if (!content && !imageFile) return;
+    if (!content && !imageFile) {
+      sendingLock.current = false;
+      return;
+    }
 
     const pendingEntry: PendingMessage = {
       tempId: Date.now() + Math.random(),
@@ -577,6 +587,7 @@ export function ChatRoom({
     const result = await sendChatMessage(initialState, formData);
 
     setIsSending(false);
+    sendingLock.current = false;
     if (result.error) {
       setSendError(result.error);
       if (pendingEntry.imageUrl) URL.revokeObjectURL(pendingEntry.imageUrl);
