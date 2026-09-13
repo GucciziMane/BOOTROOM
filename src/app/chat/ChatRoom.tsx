@@ -599,7 +599,20 @@ export function ChatRoom({
     setSendError(null);
     setIsSending(true);
 
-    const result = await sendChatMessage(initialState, formData);
+    let result: SendChatMessageState;
+    try {
+      result = await sendChatMessage(initialState, formData);
+    } catch {
+      // Comme pour le quiz (answeringLock) : une exception imprévue (réseau, timeout) ne doit
+      // jamais laisser le verrou bloqué à true — sans ce catch, plus aucun message ne pouvait
+      // repartir pour le reste de la session, jusqu'à recharger complètement la page.
+      setIsSending(false);
+      sendingLock.current = false;
+      setSendError("Erreur réseau, réessaie.");
+      if (pendingEntry.imageUrl) URL.revokeObjectURL(pendingEntry.imageUrl);
+      setPendingMessages((prev) => prev.filter((p) => p.tempId !== pendingEntry.tempId));
+      return;
+    }
 
     setIsSending(false);
     sendingLock.current = false;

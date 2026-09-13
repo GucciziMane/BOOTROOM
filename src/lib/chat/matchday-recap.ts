@@ -95,6 +95,17 @@ async function postOneMatchdayRecap(supabase: ServiceClient, group: TouchedMatch
   }
   const [topUserId] = [...totalByUser.entries()].sort((a, b) => b[1] - a[1])[0];
 
+  // Réclamée ICI, avant tout post dans le chat — pas après (voir plus bas) : deux exécutions
+  // concurrentes de processFinishedMatches (cron + relance manuelle admin, ou deux runs qui se
+  // chevauchent — vécu aujourd'hui même avec le quota QStash) passaient toutes les deux le check
+  // "existing" ci-dessus avant qu'aucune n'ait committé, chacune postant ensuite son propre récap
+  // en double dans le chat. La contrainte unique (season_id, matchday, migration 0033) protège
+  // maintenant CETTE écriture directement : seule l'exécution qui la gagne continue.
+  const { error: claimError } = await supabase
+    .from("matchday_recaps")
+    .insert({ season_id: group.seasonId, league_id: group.leagueId, matchday: group.matchday, top_user_id: topUserId });
+  if (claimError) return;
+
   const [{ data: profiles }, { data: teams }, { data: league }] = await Promise.all([
     supabase.from("profiles").select("id, username"),
     supabase.from("teams").select("id, name").in("id", [
