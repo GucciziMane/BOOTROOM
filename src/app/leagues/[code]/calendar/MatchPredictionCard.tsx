@@ -136,6 +136,23 @@ export function MatchPredictionCard({
   const [assistId, setAssistId] = useState(
     initial.predictedAssistPlayerId != null ? String(initial.predictedAssistPlayerId) : ""
   );
+  // 0-0 : aucun but marqué, donc aucun buteur/passeur possible (revalidé aussi côté serveur, voir
+  // saveMatchPrediction) — sélecteurs désactivés plutôt que de laisser un choix qui sera refusé.
+  const isZeroZero = homeScore === "0" && awayScore === "0";
+  function handleHomeScoreChange(value: string) {
+    setHomeScore(value);
+    if (value === "0" && awayScore === "0") {
+      setScorerId("");
+      setAssistId("");
+    }
+  }
+  function handleAwayScoreChange(value: string) {
+    setAwayScore(value);
+    if (value === "0" && homeScore === "0") {
+      setScorerId("");
+      setAssistId("");
+    }
+  }
 
   const scorer = scorerId ? [...homePlayers, ...awayPlayers].find((p) => p.id === Number(scorerId)) : undefined;
   const scorerPoints = scorer ? (scoring.scorerTierPoints[scoring.playerTier[scorer.id]] ?? 0) : 0;
@@ -285,7 +302,7 @@ export function MatchPredictionCard({
           min={0}
           placeholder="0"
           value={homeScore}
-          onChange={(e) => setHomeScore(e.target.value)}
+          onChange={(e) => handleHomeScoreChange(e.target.value)}
           className={`w-12 text-center font-bold ${input}`}
         />
         <span className={textFaint}>–</span>
@@ -295,7 +312,7 @@ export function MatchPredictionCard({
           min={0}
           placeholder="0"
           value={awayScore}
-          onChange={(e) => setAwayScore(e.target.value)}
+          onChange={(e) => handleAwayScoreChange(e.target.value)}
           className={`w-12 text-center font-bold ${input}`}
         />
         <TeamBadge name={awayTeamName} logoUrl={awayLogoUrl} theme={theme} form={awayForm} />
@@ -305,7 +322,8 @@ export function MatchPredictionCard({
         name="predicted_scorer_player_id"
         value={scorerId}
         onChange={(e) => setScorerId(e.target.value)}
-        className={`relative mt-3 text-sm ${input}`}
+        disabled={isZeroZero}
+        className={`relative mt-3 text-sm ${input} ${isZeroZero ? "opacity-50" : ""}`}
       >
         <option value="">Buteur (optionnel)</option>
         {playerGroups.map((group) => (
@@ -323,7 +341,8 @@ export function MatchPredictionCard({
         name="predicted_assist_player_id"
         value={assistId}
         onChange={(e) => setAssistId(e.target.value)}
-        className={`relative mt-2 text-sm ${input}`}
+        disabled={isZeroZero}
+        className={`relative mt-2 text-sm ${input} ${isZeroZero ? "opacity-50" : ""}`}
       >
         <option value="">Passeur décisif (optionnel)</option>
         {playerGroups.map((group) => (
@@ -336,6 +355,9 @@ export function MatchPredictionCard({
           </optgroup>
         ))}
       </select>
+      {isZeroZero && (
+        <p className={`relative mt-1 text-center text-xs ${textFaint}`}>0-0 : pas de buteur ni de passeur possible.</p>
+      )}
 
       {/* Une ligne par nature de points plutôt qu'une seule phrase à rallonge : buteur/passeur
           distingués par emoji (jamais juste deux noms à la suite, ambigu si même joueur choisi

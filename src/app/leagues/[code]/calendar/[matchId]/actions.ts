@@ -26,6 +26,13 @@ export async function saveMatchPrediction(
     return { error: "Le score doit être un nombre entier positif.", success: false };
   }
 
+  // 0-0 : aucun but marqué, donc aucun buteur ni passeur possible — revalidé ici indépendamment
+  // du client (les deux formulaires désactivent déjà les sélecteurs dans ce cas, mais rien
+  // n'empêche un appel direct de cette action avec des champs encore renseignés).
+  if (homeScore === 0 && awayScore === 0 && (scorerId != null || assistId != null)) {
+    return { error: "Score 0-0 : impossible de choisir un buteur ou un passeur.", success: false };
+  }
+
   const supabase = await createClient();
   const {
     data: { user },

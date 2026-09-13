@@ -74,6 +74,23 @@ export function MatchPredictionForm({
   const [assistId, setAssistId] = useState(
     initial.predictedAssistPlayerId != null ? String(initial.predictedAssistPlayerId) : ""
   );
+  // 0-0 : aucun but marqué, donc aucun buteur/passeur possible (revalidé aussi côté serveur, voir
+  // saveMatchPrediction) — sélecteurs désactivés plutôt que de laisser un choix qui sera refusé.
+  const isZeroZero = homeScore === "0" && awayScore === "0";
+  function handleHomeScoreChange(value: string) {
+    setHomeScore(value);
+    if (value === "0" && awayScore === "0") {
+      setScorerId("");
+      setAssistId("");
+    }
+  }
+  function handleAwayScoreChange(value: string) {
+    setAwayScore(value);
+    if (value === "0" && homeScore === "0") {
+      setScorerId("");
+      setAssistId("");
+    }
+  }
 
   const scorer = scorerId ? [...homePlayers, ...awayPlayers].find((p) => p.id === Number(scorerId)) : undefined;
   const scorerPoints = scorer ? scoring.scorerTierPoints[scoring.playerTier[scorer.id]] ?? 0 : 0;
@@ -122,7 +139,7 @@ export function MatchPredictionForm({
             min={0}
             placeholder="0"
             value={homeScore}
-            onChange={(e) => setHomeScore(e.target.value)}
+            onChange={(e) => handleHomeScoreChange(e.target.value)}
             className={`w-20 text-center text-xl font-bold ${input}`}
           />
         </div>
@@ -135,11 +152,15 @@ export function MatchPredictionForm({
             min={0}
             placeholder="0"
             value={awayScore}
-            onChange={(e) => setAwayScore(e.target.value)}
+            onChange={(e) => handleAwayScoreChange(e.target.value)}
             className={`w-20 text-center text-xl font-bold ${input}`}
           />
         </div>
       </div>
+
+      {isZeroZero && (
+        <p className="text-center text-xs text-mute">0-0 : pas de buteur ni de passeur possible.</p>
+      )}
 
       <div>
         <label className="mb-1 block text-sm font-bold text-mute">Un buteur (optionnel)</label>
@@ -147,7 +168,8 @@ export function MatchPredictionForm({
           name="predicted_scorer_player_id"
           value={scorerId}
           onChange={(e) => setScorerId(e.target.value)}
-          className={input}
+          disabled={isZeroZero}
+          className={`${input} ${isZeroZero ? "opacity-50" : ""}`}
         >
           <option value="">—</option>
           {playerGroups.map((group) => (
@@ -168,7 +190,8 @@ export function MatchPredictionForm({
           name="predicted_assist_player_id"
           value={assistId}
           onChange={(e) => setAssistId(e.target.value)}
-          className={input}
+          disabled={isZeroZero}
+          className={`${input} ${isZeroZero ? "opacity-50" : ""}`}
         >
           <option value="">—</option>
           {playerGroups.map((group) => (
