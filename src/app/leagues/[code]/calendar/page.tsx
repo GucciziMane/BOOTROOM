@@ -5,7 +5,7 @@ import { formatParisDateTime } from "@/lib/format-date";
 import { listCard } from "@/lib/ui";
 import { FALLBACK_SCORER_TIER, FALLBACK_ASSIST_TIER, type OddsTier } from "@/lib/scoring/points";
 import { computeTeamForm } from "@/lib/scoring/team-form";
-import { getMostRecentFinishedMatchIdByTeam } from "@/lib/recent-red-cards";
+import { getMostRecentFinishedMatchIdByTeam, resolveRecentRedCardedPlayerIds } from "@/lib/recent-red-cards";
 import { KNOCKOUT_STAGE_LABEL } from "@/lib/knockout-stage-label";
 import { BackLink } from "@/app/BackLink";
 import { MatchPredictionCard } from "./MatchPredictionCard";
@@ -50,7 +50,7 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
   const { data: matches } = await supabase
     .from("matches")
     .select(
-      "id, home_team_id, away_team_id, kickoff_at, status, home_score, away_score, favorite_team_id, odds_tier, matchday, stage"
+      "id, home_team_id, away_team_id, kickoff_at, status, home_score, away_score, favorite_team_id, odds_tier, matchday, stage, penalty_winner_team_id"
     )
     .eq("season_id", season.id)
     .order("kickoff_at", { ascending: true });
@@ -76,6 +76,7 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
       homeScore: m.home_score as number,
       awayScore: m.away_score as number,
       kickoffAt: m.kickoff_at,
+      penaltyWinnerTeamId: m.penalty_winner_team_id,
     }));
   const teamFormById = new Map(teamIds.map((id) => [id, computeTeamForm(finishedForForm, id)]));
 
@@ -87,15 +88,6 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
       .map((m) => ({ id: m.id, homeTeamId: m.home_team_id, awayTeamId: m.away_team_id, kickoffAt: m.kickoff_at })),
     teamIds
   );
-  const { data: recentRedCards } = await supabase
-    .from("match_cards")
-    .select("player_id")
-    .eq("card_type", "red")
-    .in("match_id", lastMatchIdByTeam.size > 0 ? [...new Set(lastMatchIdByTeam.values())] : [-1]);
-  const recentlyRedCardedPlayerIds = (recentRedCards ?? [])
-    .map((c) => c.player_id)
-    .filter((id): id is number => id != null);
-
   const upcomingMatchIds = [...live, ...upcoming].map((m) => m.id);
 
   const [
@@ -147,6 +139,12 @@ export default async function CalendarPage({ params }: PageProps<"/leagues/[code
       .eq("user_id", user!.id)
       .in("match_id", upcomingMatchIds.length > 0 ? upcomingMatchIds : [-1]),
   ]);
+
+  const recentlyRedCardedPlayerIds = await resolveRecentRedCardedPlayerIds(
+    supabase,
+    [...new Set(lastMatchIdByTeam.values())],
+    players ?? []
+  );
 
   const predictionByMatchId = new Map((fullPredictions ?? []).map((p) => [p.match_id, p]));
   const goalSubscribedMatchIds = new Set((goalSubscriptions ?? []).map((s) => s.match_id));

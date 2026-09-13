@@ -6,6 +6,10 @@ export interface FinishedMatchForForm {
   homeScore: number;
   awayScore: number;
   kickoffAt: string;
+  /** Vainqueur aux tirs au but, s'il y en a eu — home_score/away_score stockent alors le score du
+   * temps réglementaire (à égalité), jamais celui incluant les tab (voir sync-fixtures/
+   * resolveMatchScore) : sans cette colonne, une victoire aux tab s'affichait comme un nul. */
+  penaltyWinnerTeamId?: number | null;
 }
 
 /** Forme récente d'une équipe : résultat (victoire/nul/défaite) de ses `limit` derniers matchs
@@ -17,6 +21,7 @@ export function computeTeamForm(matches: FinishedMatchForForm[], teamId: number,
     .slice(0, limit)
     .reverse()
     .map((m) => {
+      if (m.penaltyWinnerTeamId != null) return m.penaltyWinnerTeamId === teamId ? "W" : "L";
       const isHome = m.homeTeamId === teamId;
       const teamScore = isHome ? m.homeScore : m.awayScore;
       const oppScore = isHome ? m.awayScore : m.homeScore;

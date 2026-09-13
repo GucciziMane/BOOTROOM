@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toggleGoalSubscription } from "./[matchId]/actions";
 
 /** Cloche "but" d'un match — muette par défaut (voir migration match_goal_subscriptions), chacun
@@ -8,12 +8,25 @@ import { toggleGoalSubscription } from "./[matchId]/actions";
  * entre MatchPredictionCard (pronostic) et ScoreRow (affichage compact "en direct"). */
 export function GoalBell({ matchId, initialSubscribed }: { matchId: number; initialSubscribed: boolean }) {
   const [subscribed, setSubscribed] = useState(initialSubscribed);
+  // Verrou synchrone (même pattern que answeringLock/sendingLock ailleurs dans l'app) : `subscribed`
+  // lu par fermeture n'est à jour qu'au rendu suivant — une rafale de taps avant ce rendu pouvait
+  // lire deux fois la même valeur et envoyer deux fois le même sens (ex: "abonner" au lieu
+  // d'alterner abonner/désabonner), désynchronisant l'affichage de l'état réel en base.
+  const toggling = useRef(false);
 
   async function toggle() {
+    if (toggling.current) return;
+    toggling.current = true;
     const next = !subscribed;
     setSubscribed(next); // optimiste : le retour serveur ne change quasiment jamais ce résultat
-    const { error } = await toggleGoalSubscription(matchId, next);
-    if (error) setSubscribed(!next);
+    try {
+      const { error } = await toggleGoalSubscription(matchId, next);
+      if (error) setSubscribed(!next);
+    } catch {
+      setSubscribed(!next);
+    } finally {
+      toggling.current = false;
+    }
   }
 
   return (

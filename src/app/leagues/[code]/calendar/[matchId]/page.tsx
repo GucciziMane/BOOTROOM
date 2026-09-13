@@ -11,7 +11,7 @@ import {
   type ResultTierMultiplier,
 } from "@/lib/scoring/points";
 import { BackLink } from "@/app/BackLink";
-import { getMostRecentFinishedMatchIdByTeam } from "@/lib/recent-red-cards";
+import { getMostRecentFinishedMatchIdByTeam, resolveRecentRedCardedPlayerIds } from "@/lib/recent-red-cards";
 import { MatchPredictionForm } from "./MatchPredictionForm";
 
 export default async function MatchPage({ params }: PageProps<"/leagues/[code]/calendar/[matchId]">) {
@@ -104,14 +104,11 @@ export default async function MatchPage({ params }: PageProps<"/leagues/[code]/c
     })),
     [match.home_team_id, match.away_team_id]
   );
-  const { data: recentRedCards } = await supabase
-    .from("match_cards")
-    .select("player_id")
-    .eq("card_type", "red")
-    .in("match_id", lastMatchIdByTeam.size > 0 ? [...new Set(lastMatchIdByTeam.values())] : [-1]);
-  const recentlyRedCardedPlayerIds = (recentRedCards ?? [])
-    .map((c) => c.player_id)
-    .filter((id): id is number => id != null);
+  const recentlyRedCardedPlayerIds = await resolveRecentRedCardedPlayerIds(
+    supabase,
+    [...new Set(lastMatchIdByTeam.values())],
+    players ?? []
+  );
   const lockHours = Number(setting?.value ?? 1);
   const lockAt = new Date(new Date(match.kickoff_at).getTime() - lockHours * 3600_000);
   const locked = lockAt <= new Date();

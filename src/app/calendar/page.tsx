@@ -4,7 +4,7 @@ import { LEAGUE_FLAG, LEAGUE_COLOR } from "@/lib/country-flags";
 import { KNOCKOUT_STAGE_LABEL } from "@/lib/knockout-stage-label";
 import { FALLBACK_SCORER_TIER, FALLBACK_ASSIST_TIER, type OddsTier } from "@/lib/scoring/points";
 import { computeTeamForm } from "@/lib/scoring/team-form";
-import { getMostRecentFinishedMatchIdByTeam } from "@/lib/recent-red-cards";
+import { getMostRecentFinishedMatchIdByTeam, resolveRecentRedCardedPlayerIds } from "@/lib/recent-red-cards";
 import { MatchPredictionCard } from "@/app/leagues/[code]/calendar/MatchPredictionCard";
 import { BackLink } from "@/app/BackLink";
 import { CalendarTabs } from "./CalendarTabs";
@@ -152,7 +152,7 @@ export default async function CalendarPage() {
     // pour le signal "carton rouge récent" (voir recent-red-cards.ts).
     supabase
       .from("matches")
-      .select("id, home_team_id, away_team_id, home_score, away_score, kickoff_at")
+      .select("id, home_team_id, away_team_id, home_score, away_score, kickoff_at, penalty_winner_team_id")
       .in("season_id", seasonIds.length > 0 ? seasonIds : [-1])
       .eq("status", "finished"),
   ]);
@@ -167,6 +167,7 @@ export default async function CalendarPage() {
       homeScore: m.home_score as number,
       awayScore: m.away_score as number,
       kickoffAt: m.kickoff_at,
+      penaltyWinnerTeamId: m.penalty_winner_team_id,
     }));
   const teamFormById = new Map(teamIds.map((id) => [id, computeTeamForm(finishedForForm, id)]));
 
@@ -181,14 +182,11 @@ export default async function CalendarPage() {
     })),
     teamIds
   );
-  const { data: recentRedCards } = await supabase
-    .from("match_cards")
-    .select("player_id")
-    .eq("card_type", "red")
-    .in("match_id", lastMatchIdByTeam.size > 0 ? [...new Set(lastMatchIdByTeam.values())] : [-1]);
-  const recentlyRedCardedPlayerIds = (recentRedCards ?? [])
-    .map((c) => c.player_id)
-    .filter((id): id is number => id != null);
+  const recentlyRedCardedPlayerIds = await resolveRecentRedCardedPlayerIds(
+    supabase,
+    [...new Set(lastMatchIdByTeam.values())],
+    players ?? []
+  );
   // x2 : un seul actif par (championnat, journée) — plusieurs championnats se mélangent sur cette
   // page, donc la clé doit inclure le championnat, pas seulement le numéro de journée. Construit à
   // partir de matchdaySiblings (toute la journée, tous statuts confondus), pas seulement `upcoming`
