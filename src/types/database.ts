@@ -369,6 +369,7 @@ export interface Database {
           is_ephemeral: boolean;
           is_system: boolean;
           created_at: string;
+          reply_to_id: number | null;
         };
         Insert: Partial<Database["public"]["Tables"]["chat_messages"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["chat_messages"]["Row"]>;

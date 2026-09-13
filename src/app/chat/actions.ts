@@ -55,15 +55,38 @@ export async function sendChatMessage(
   // dans la pellicule restent des photos classiques, comme convenu avec l'utilisateur.
   const isEphemeral = hasImage && formData.get("ephemeral") === "1";
 
-  const { error } = await supabase
-    .from("chat_messages")
-    .insert({ user_id: user.id, content, image_url: imageUrl, is_ephemeral: isEphemeral });
+  // Réponse à un message précis (sélectionné côté client par appui long/glissement) : simple
+  // parseInt défensif, jamais fait confiance sans vérifier que ça reste un entier fini — un champ
+  // de formulaire reste un `string | null` quelconque de par sa nature.
+  const rawReplyToId = formData.get("replyToId");
+  const replyToId = typeof rawReplyToId === "string" && rawReplyToId.trim() !== "" ? Number(rawReplyToId) : null;
+  const hasValidReplyToId = replyToId != null && Number.isFinite(replyToId);
+
+  const { error } = await supabase.from("chat_messages").insert({
+    user_id: user.id,
+    content,
+    image_url: imageUrl,
+    is_ephemeral: isEphemeral,
+    reply_to_id: hasValidReplyToId ? replyToId : null,
+  });
   if (error) return { error: "Échec de l'envoi, réessaie." };
 
   const { data: profiles } = await supabase.from("profiles").select("id, username");
   const senderName = profiles?.find((p) => p.id === user.id)?.username ?? "Quelqu'un";
   const mentionedUserIds = extractMentionedUserIds(content, profiles ?? []).filter((id) => id !== user.id);
   const pushBody = isEphemeral ? "📸 Photo à voir une fois" : content || "📷 Photo";
+
+  // Auteur du message cité, prévenu spécifiquement (comme une mention) — sauf s'il s'est déjà
+  // mentionné lui-même ou répond à son propre message, pour ne jamais se notifier soi-même.
+  let repliedToUserId: string | null = null;
+  if (hasValidReplyToId) {
+    const { data: repliedToMessage } = await supabase
+      .from("chat_messages")
+      .select("user_id")
+      .eq("id", replyToId)
+      .maybeSingle();
+    if (repliedToMessage?.user_id && repliedToMessage.user_id !== user.id) repliedToUserId = repliedToMessage.user_id;
+  }
 
   try {
     if (mentionedUserIds.length > 0) {
@@ -73,7 +96,15 @@ export async function sendChatMessage(
         url: "/chat",
       });
     }
-    await sendPushToOthers([user.id, ...mentionedUserIds], {
+    if (repliedToUserId && !mentionedUserIds.includes(repliedToUserId)) {
+      await sendPushToUserIds([repliedToUserId], {
+        title: `${senderName} a répondu à ton message — 3ème mi-temps`,
+        body: pushBody,
+        url: "/chat",
+      });
+    }
+    const alreadyNotified = [user.id, ...mentionedUserIds, ...(repliedToUserId ? [repliedToUserId] : [])];
+    await sendPushToOthers(alreadyNotified, {
       title: `${senderName} — 3ème mi-temps`,
       body: pushBody,
       url: "/chat",

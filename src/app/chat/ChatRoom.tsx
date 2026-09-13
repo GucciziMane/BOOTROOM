@@ -49,6 +49,9 @@ interface ChatMessage {
   // en bandeau centré plutôt qu'en bulle avatar+pseudo.
   isSystem: boolean;
   createdAt: string;
+  /** Message cité en réponse (sélectionné par appui long/glissement) : résolu à l'affichage depuis
+   * `messages` (cf. findMessageById plus bas), jamais dupliqué en base. */
+  replyToId: number | null;
 }
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -86,6 +89,7 @@ interface PendingMessage {
   imageUrl: string | null;
   isEphemeral: boolean;
   createdAt: string;
+  replyTo: { id: number; username: string; preview: string } | null;
 }
 
 const initialState: SendChatMessageState = { error: null };
@@ -110,6 +114,14 @@ export function ChatRoom({
     )
   );
   const [viewedIds, setViewedIds] = useState<Set<number>>(() => new Set(initialViewedMessageIds));
+  // Message actuellement ciblé par "Répondre à" (appui long ou glissement sur une bulle) : affiché
+  // en bandeau au-dessus du champ de saisie, envoyé comme reply_to_id à la prochaine soumission.
+  const [replyingTo, setReplyingTo] = useState<{ id: number; username: string; preview: string } | null>(null);
+  // Retour visuel du glissement en cours (une seule bulle à la fois) : décalage horizontal courant,
+  // appliqué en transform sur la bulle concernée pendant le geste, remis à zéro au relâchement.
+  const [swipeState, setSwipeState] = useState<{ id: number; dx: number } | null>(null);
+  const touchGestureRef = useRef<{ id: number; startX: number; startY: number; axis: "x" | "y" | null } | null>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [openedPhoto, setOpenedPhoto] = useState<ChatMessage | null>(null);
   const [openPickerFor, setOpenPickerFor] = useState<number | null>(null);
   const [pendingMessages, setPendingMessages] = useState<PendingMessage[]>([]);
@@ -440,6 +452,7 @@ export function ChatRoom({
             is_ephemeral: boolean;
             is_system: boolean;
             created_at: string;
+            reply_to_id: number | null;
           };
           // image_url est un chemin de stockage privé (bucket privé, cf. migration 0030), jamais
           // une URL utilisable telle quelle : on l'affiche d'abord sans image, puis on résout une
@@ -461,6 +474,7 @@ export function ChatRoom({
                     isEphemeral: row.is_ephemeral,
                     isSystem: row.is_system,
                     createdAt: row.created_at,
+                    replyToId: row.reply_to_id,
                   },
                 ]
           );
@@ -579,6 +593,7 @@ export function ChatRoom({
       imageUrl: imageFile ? URL.createObjectURL(imageFile) : null,
       isEphemeral: isEphemeralPick,
       createdAt: new Date().toISOString(),
+      replyTo: replyingTo,
     };
     setPendingMessages((prev) => [...prev, pendingEntry]);
     setSendError(null);
@@ -596,7 +611,82 @@ export function ChatRoom({
       formRef.current?.reset();
       setMessageText("");
       clearImage();
+      setReplyingTo(null);
     }
+  }
+
+  /** Aperçu tronqué du message cité (texte, ou libellé générique pour une photo sans texte) —
+   * jamais plus que quelques mots, juste de quoi identifier de quel message il s'agit. */
+  function previewOf(m: ChatMessage): string {
+    if (m.content) return m.content.length > 80 ? `${m.content.slice(0, 80)}…` : m.content;
+    return m.isEphemeral ? "📸 Photo à voir une fois" : "📷 Photo";
+  }
+
+  function beginReplySelection(m: ChatMessage) {
+    if (m.isSystem) return; // rien de pertinent à citer sur un récap automatique
+    const username = m.userId === currentUserId ? "toi" : (profilesById[m.userId as string]?.username ?? "?");
+    setReplyingTo({ id: m.id, username, preview: previewOf(m) });
+    setSwipeState(null);
+  }
+
+  const SWIPE_COMMIT_PX = 56;
+  const SWIPE_MAX_PX = 72;
+  const LONG_PRESS_MS = 480;
+
+  function clearLongPressTimer() {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }
+
+  function handleBubbleTouchStart(e: React.TouchEvent, m: ChatMessage) {
+    if (m.isSystem) return;
+    const touch = e.touches[0];
+    touchGestureRef.current = { id: m.id, startX: touch.clientX, startY: touch.clientY, axis: null };
+    clearLongPressTimer();
+    longPressTimer.current = setTimeout(() => {
+      longPressTimer.current = null;
+      touchGestureRef.current = null;
+      setSwipeState(null);
+      if (navigator.vibrate) navigator.vibrate(15);
+      beginReplySelection(m);
+    }, LONG_PRESS_MS);
+  }
+
+  function handleBubbleTouchMove(e: React.TouchEvent, m: ChatMessage) {
+    const gesture = touchGestureRef.current;
+    if (!gesture || gesture.id !== m.id) return;
+    const touch = e.touches[0];
+    const dx = touch.clientX - gesture.startX;
+    const dy = touch.clientY - gesture.startY;
+
+    if (gesture.axis === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+      gesture.axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+      // Un vrai geste (horizontal ou vertical) a démarré : ni l'un ni l'autre n'est plus un appui
+      // immobile, l'appui long n'a plus lieu d'être détecté.
+      clearLongPressTimer();
+    }
+    if (gesture.axis === "y") return; // défilement vertical normal, on ne touche à rien
+
+    if (gesture.axis === "x") {
+      e.preventDefault();
+      const bounded = Math.max(0, Math.min(SWIPE_MAX_PX, dx));
+      setSwipeState({ id: m.id, dx: bounded });
+    }
+  }
+
+  function handleBubbleTouchEnd(_e: React.TouchEvent, m: ChatMessage) {
+    clearLongPressTimer();
+    const gesture = touchGestureRef.current;
+    touchGestureRef.current = null;
+    if (!gesture || gesture.id !== m.id || gesture.axis !== "x") {
+      setSwipeState(null);
+      return;
+    }
+    const committed = swipeState?.id === m.id && swipeState.dx >= SWIPE_COMMIT_PX;
+    setSwipeState(null);
+    if (committed) beginReplySelection(m);
   }
 
   return (
@@ -651,8 +741,41 @@ export function ChatRoom({
           const mentionsMe = !isOwn && !!currentUsername && m.content.includes(`@${currentUsername}`);
           const isLockedEphemeral = m.isEphemeral && m.hasImage && !isOwn && !viewedIds.has(m.id);
           const isConsumedEphemeral = m.isEphemeral && m.hasImage && !isOwn && viewedIds.has(m.id);
+          const repliedToMessage = m.replyToId != null ? (messages.find((x) => x.id === m.replyToId) ?? null) : null;
+          const swipeDx = swipeState?.id === m.id ? swipeState.dx : 0;
           return (
-            <div key={m.id} className={`flex items-end gap-2 ${isOwn ? "flex-row-reverse" : ""}`}>
+            <div key={m.id} className="relative">
+              {/* Icône "répondre" révélée derrière le message pendant le glissement — même signal
+                  que l'appui long, juste une confirmation visuelle du geste en cours. */}
+              {swipeDx > 0 && (
+                <span
+                  className="absolute left-1 top-1/2 -translate-y-1/2 text-lg"
+                  style={{ opacity: Math.min(1, swipeDx / SWIPE_COMMIT_PX) }}
+                  aria-hidden
+                >
+                  ↩️
+                </span>
+              )}
+              <div
+                className={`flex select-none items-end gap-2 ${isOwn ? "flex-row-reverse" : ""}`}
+                // touchAction: "pan-y" laisse le navigateur gérer le défilement vertical nativement
+                // tout en lui signalant qu'il n'y a pas de pan horizontal natif ici — nécessaire
+                // pour que notre propre geste horizontal (glissement pour répondre) et le
+                // défilement de la page ne se disputent pas le même toucher.
+                style={{ transform: swipeDx > 0 ? `translateX(${swipeDx}px)` : undefined, touchAction: "pan-y" }}
+                onTouchStart={(e) => handleBubbleTouchStart(e, m)}
+                onTouchMove={(e) => handleBubbleTouchMove(e, m)}
+                onTouchEnd={(e) => handleBubbleTouchEnd(e, m)}
+                onTouchCancel={(e) => handleBubbleTouchEnd(e, m)}
+                onMouseDown={() => {
+                  if (m.isSystem) return;
+                  clearLongPressTimer();
+                  longPressTimer.current = setTimeout(() => beginReplySelection(m), LONG_PRESS_MS);
+                }}
+                onMouseUp={clearLongPressTimer}
+                onMouseLeave={clearLongPressTimer}
+                onContextMenu={(e) => e.preventDefault()}
+              >
               {!isOwn && (
                 <span className="relative h-7 w-7 shrink-0">
                   <span className="relative block h-7 w-7 overflow-hidden rounded-full bg-surface">
@@ -670,6 +793,24 @@ export function ChatRoom({
               <div className={`flex max-w-[75%] flex-col ${isOwn ? "items-end" : "items-start"}`}>
                 {!isOwn && (
                   <p className="mb-1 px-1 text-[11px] font-bold text-mute">{profile?.username ?? "?"}</p>
+                )}
+                {m.replyToId != null && (
+                  <div
+                    className={`mb-1 max-w-full rounded-xl border-l-2 border-accent bg-surface/70 px-2.5 py-1.5 text-xs ${
+                      isOwn ? "self-end" : "self-start"
+                    }`}
+                  >
+                    <p className="font-bold text-accent-hover">
+                      {repliedToMessage
+                        ? repliedToMessage.userId === currentUserId
+                          ? "toi"
+                          : (profilesById[repliedToMessage.userId as string]?.username ?? "?")
+                        : "Message"}
+                    </p>
+                    <p className="truncate text-mute">
+                      {repliedToMessage ? previewOf(repliedToMessage) : "indisponible"}
+                    </p>
+                  </div>
                 )}
                 {isLockedEphemeral ? (
                   <button
@@ -785,12 +926,19 @@ export function ChatRoom({
                   </div>
                 )}
               </div>
+              </div>
             </div>
           );
         })}
         {pendingMessages.map((p) => (
           <div key={p.tempId} className="flex items-end justify-end gap-2">
             <div className="flex max-w-[75%] flex-col items-end opacity-60">
+              {p.replyTo && (
+                <div className="mb-1 max-w-full self-end rounded-xl border-l-2 border-accent bg-surface/70 px-2.5 py-1.5 text-xs">
+                  <p className="font-bold text-accent-hover">{p.replyTo.username}</p>
+                  <p className="truncate text-mute">{p.replyTo.preview}</p>
+                </div>
+              )}
               {p.imageUrl && (
                 <div className={`relative overflow-hidden rounded-2xl rounded-br-md ${p.content ? "mb-1" : ""}`}>
                   {/* eslint-disable-next-line @next/next/no-img-element -- object URL local, non compatible avec le loader next/image */}
@@ -838,9 +986,28 @@ export function ChatRoom({
           </div>
         </div>
       )}
+      {replyingTo && (
+        <div className="mx-4 flex items-center gap-2 rounded-xl border-l-2 border-accent bg-surface/70 px-3 py-2 text-xs">
+          <div className="min-w-0 flex-1">
+            <p className="font-bold text-accent-hover">Réponse à {replyingTo.username}</p>
+            <p className="truncate text-mute">{replyingTo.preview}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReplyingTo(null)}
+            aria-label="Annuler la réponse"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-mute hover:text-ink"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+      )}
       <form ref={formRef} action={handleSendMessage} className="flex items-center gap-2 p-4 pt-2">
         <input ref={formImageInputRef} type="file" name="image" className="hidden" />
         <input type="hidden" name="ephemeral" value={isEphemeralPick ? "1" : "0"} />
+        <input type="hidden" name="replyToId" value={replyingTo?.id ?? ""} />
         <input
           ref={cameraInputRef}
           type="file"

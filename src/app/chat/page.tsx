@@ -19,7 +19,7 @@ export default async function ChatPage() {
   const [{ data: messages }, { data: profiles }] = await Promise.all([
     supabase
       .from("chat_messages")
-      .select("id, user_id, content, image_url, is_ephemeral, is_system, created_at")
+      .select("id, user_id, content, image_url, is_ephemeral, is_system, created_at, reply_to_id")
       .order("created_at", { ascending: false })
       .limit(100),
     supabase.from("profiles").select("id, username, avatar_url, favorite_team_id"),
@@ -84,6 +84,7 @@ export default async function ChatPage() {
       isEphemeral: m.is_ephemeral,
       isSystem: m.is_system,
       createdAt: m.created_at,
+      replyToId: m.reply_to_id,
     }));
 
   return (
