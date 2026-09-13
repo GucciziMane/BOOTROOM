@@ -34,8 +34,12 @@ export async function fetchLeaderboardTotals(
   supabase: SupabaseClient<Database>,
   activeLeagueIds: Set<number>
 ): Promise<LeaderboardLedger> {
+  // .order("user_id") : sans un tri explicite, Postgres ne garantit aucun ordre de retour des
+  // lignes, ce qui rendait l'ordre d'insertion de `totalByUser` — donc le départage d'égalités
+  // exactes par tout appelant qui trierait cette Map (voir le cron du bonus mi-saison) —
+  // reproductible ni d'un appel à l'autre, ni forcément identique à celui affiché à l'écran.
   const [{ data: ledgerAll }, { data: resetSetting }] = await Promise.all([
-    supabase.from("points_ledger").select("user_id, league_id, points, created_at"),
+    supabase.from("points_ledger").select("user_id, league_id, points, created_at").order("user_id", { ascending: true }),
     supabase.from("app_settings").select("value").eq("key", LEADERBOARD_RESET_KEY).maybeSingle(),
   ]);
 

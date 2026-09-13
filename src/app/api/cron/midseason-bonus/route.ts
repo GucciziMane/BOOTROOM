@@ -33,7 +33,17 @@ export async function GET(request: NextRequest) {
   const activeLeagueIds = new Set((leagues ?? []).map((l) => l.id));
   const { totalByUser } = await fetchLeaderboardTotals(supabase, activeLeagueIds);
 
-  const sorted = [...totalByUser.entries()].sort((a, b) => b[1] - a[1]);
+  // Départage d'égalité EXACTE identique à celui affiché à l'écran (leaderboard/page.tsx trie ses
+  // lignes construites depuis `profiles` déjà ordonné par pseudo, tri stable) : sans ça, deux
+  // joueurs à exactement le même total pouvaient se retrouver classés différemment ici que sur la
+  // page — celui visuellement en position 3 n'était alors pas garanti être celui réellement
+  // récompensé par ce cron.
+  const { data: profilesForTieBreak } = await supabase.from("profiles").select("id").order("username", { ascending: true });
+  const usernameOrder = new Map((profilesForTieBreak ?? []).map((p, i) => [p.id, i]));
+  const sorted = [...totalByUser.entries()].sort((a, b) => {
+    if (b[1] !== a[1]) return b[1] - a[1];
+    return (usernameOrder.get(a[0]) ?? 0) - (usernameOrder.get(b[0]) ?? 0);
+  });
   const top3 = sorted.slice(0, 3);
   // >= 6 pour garantir que top3 et bottom3 ne se recoupent jamais (sinon un même joueur pourrait
   // se retrouver à la fois "gagnant" et "dernier").

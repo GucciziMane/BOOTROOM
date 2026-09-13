@@ -42,12 +42,21 @@ export async function spendMidseasonBonus(targetUserId: string): Promise<UseMids
   if (bonus.expires_at <= new Date().toISOString()) return { error: "Ce bonus a expiré." };
   if (!target) return { error: "Joueur introuvable." };
 
-  const { error: updateError } = await admin
+  // .select() + vérification du nombre de lignes réellement affectées — pas seulement
+  // `updateError` : un UPDATE conditionnel qui ne matche aucune ligne (`used_at` déjà posé par une
+  // requête concurrente gagnante) NE renvoie PAS d'erreur côté Postgres/Supabase, juste 0 ligne.
+  // Sans cette vérification, la requête perdante d'un double-clic/double-tap continuait quand même
+  // jusqu'à l'insert points_ledger + message de chat + notification push — dupliqués si la même
+  // cible était visée, ou pire, un DEUXIÈME joueur réellement crédité/pénalisé depuis un seul et
+  // même bonus si les deux clics visaient des cibles différentes.
+  const { data: claimed, error: updateError } = await admin
     .from("midseason_bonuses")
     .update({ used_at: new Date().toISOString(), target_user_id: targetUserId })
     .eq("id", bonus.id)
-    .is("used_at", null); // double-clic/double-tap : la 2e requête ne trouve plus de ligne à mettre à jour
+    .is("used_at", null)
+    .select("id");
   if (updateError) return { error: "Erreur réseau, réessaie." };
+  if (!claimed || claimed.length === 0) return { error: "Ce bonus a déjà été utilisé." };
 
   const isMalus = bonus.kind === "malus";
 
