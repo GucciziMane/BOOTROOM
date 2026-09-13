@@ -53,6 +53,7 @@ export default async function QuizPage() {
           }))}
           initialFinalScore={existingResult?.score ?? null}
           showPrivateRanking={showPrivateRanking}
+          quizDate={quizDate}
         />
       </div>
     </main>

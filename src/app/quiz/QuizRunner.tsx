@@ -27,6 +27,11 @@ interface Props {
   /** Classement privé "Entre nous" (voir PRIVATE_RANKING_USERNAMES) : décidé côté page (a accès à
    * la session), jamais recalculé ici pour ne pas exposer ce choix au client. */
   showPrivateRanking: boolean;
+  /** Date (Europe/Paris) du quiz réellement affiché — transmise telle quelle à chaque soumission
+   * plutôt que laissée au serveur pour recalculer "aujourd'hui" à cet instant précis (voir
+   * submitQuizAnswer : une session commencée juste avant minuit doit continuer à valider contre le
+   * quiz d'hier, celui effectivement affiché, pas celui du nouveau jour). */
+  quizDate: string;
 }
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -68,7 +73,7 @@ function deriveStreak(history: AnswerState[]): number {
   return streak;
 }
 
-export function QuizRunner({ questions, initialAnswers, initialFinalScore, showPrivateRanking }: Props) {
+export function QuizRunner({ questions, initialAnswers, initialFinalScore, showPrivateRanking, quizDate }: Props) {
   // questions.length et non 10 en dur : un jour où une question dynamique n'a pas pu être générée,
   // le quiz du jour compte moins de 10 questions (cf. src/lib/quiz/daily.ts) — sans ça, la dernière
   // question ne serait jamais reconnue comme la fin du quiz.
@@ -140,7 +145,7 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
 
     let res: SubmitAnswerResult;
     try {
-      res = await submitQuizAnswer(position, choiceIndex);
+      res = await submitQuizAnswer(quizDate, position, choiceIndex);
     } catch {
       // Une exception (réseau, timeout serveur) ne doit jamais planter toute la page : on repasse
       // en état "pas encore répondu" pour permettre de retaper une réponse.

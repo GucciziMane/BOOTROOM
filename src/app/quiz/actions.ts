@@ -15,8 +15,19 @@ export interface SubmitAnswerResult {
   finalScore?: number | null;
 }
 
-/** Revalide indépendamment côté serveur (le client n'envoie que sa réponse, jamais la question). */
-export async function submitQuizAnswer(position: number, choiceIndex: number): Promise<SubmitAnswerResult> {
+/**
+ * Revalide indépendamment côté serveur (le client n'envoie que sa réponse, jamais la question).
+ *
+ * `quizDate` : celle affichée au client (passée depuis le rendu de la page), pas recalculée ici
+ * via `parisDateString()` — bug vu en prod (quiz commencé juste avant minuit Europe/Paris, terminé
+ * juste après) : le quiz affiché restait celui d'hier (calculé une fois au chargement de la page),
+ * mais recalculer "aujourd'hui" à chaque soumission validait la première réponse contre LE quiz DU
+ * NOUVEAU jour — une question différente de celle réellement affichée, avec une bonne réponse
+ * différente, marquée "fausse" alors que le joueur avait bien cliqué la bonne. Écart volontairement
+ * borné à ±1 jour (ne fait que couvrir ce chevauchement de minuit légitime, jamais une date
+ * arbitraire) plutôt que de faire confiance sans limite à une valeur venue du client.
+ */
+export async function submitQuizAnswer(quizDate: string, position: number, choiceIndex: number): Promise<SubmitAnswerResult> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -24,7 +35,11 @@ export async function submitQuizAnswer(position: number, choiceIndex: number): P
   if (!user) return { error: "Non connecté." };
 
   const admin = createServiceRoleClient();
-  const quizDate = parisDateString();
+  const todayMs = new Date(`${parisDateString()}T00:00:00Z`).getTime();
+  const claimedMs = new Date(`${quizDate}T00:00:00Z`).getTime();
+  if (!Number.isFinite(claimedMs) || Math.abs(claimedMs - todayMs) > 24 * 60 * 60 * 1000) {
+    return { error: "Date de quiz invalide." };
+  }
 
   // Le quiz du jour et les réponses déjà données sont indépendants l'un de l'autre : lancés en
   // parallèle plutôt qu'en série pour réduire la latence perçue à chaque tap (c'était jusqu'à 5-6
