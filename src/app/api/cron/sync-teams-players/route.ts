@@ -255,11 +255,37 @@ export async function GET(request: NextRequest) {
       // autre).
       const teamIds = [...new Set(playerRows.map((p) => p.team_id))];
       const syncedFdIds = rowsWithFdId.map((p) => p.football_data_id);
-      if (teamIds.length > 0) {
+
+      // Garde-fou avant tout marquage "parti" : football-data.org peut renvoyer un effectif
+      // TRONQUÉ (pas vide — le repli par club plus haut ne se déclenche alors pas — juste
+      // incomplet) pour un club précis sans que rien ne le signale. Constaté en prod le 14/09/2026
+      // sur Sabah FK (29 → 1 joueur) et SK Slavia Praha (28 → 6) : sans ce filet, une réponse
+      // incomplète ponctuelle "partait" en masse des joueurs bien réels. Un effectif qui rétrécirait
+      // de plus de moitié en un seul sync est plus probablement une réponse tronquée qu'un vrai
+      // exode — dans ce cas on garde l'effectif existant tel quel pour ce club plutôt que de
+      // marquer qui que ce soit parti, et on retente au prochain passage du cron.
+      const countByTeamThisRun = new Map<number, number>();
+      for (const p of playerRows) countByTeamThisRun.set(p.team_id, (countByTeamThisRun.get(p.team_id) ?? 0) + 1);
+      const { data: currentActiveCounts } = await supabase
+        .from("players")
+        .select("team_id")
+        .in("team_id", teamIds)
+        .is("left_at", null);
+      const currentCountByTeam = new Map<number, number>();
+      for (const row of currentActiveCounts ?? []) {
+        currentCountByTeam.set(row.team_id, (currentCountByTeam.get(row.team_id) ?? 0) + 1);
+      }
+      const safeTeamIds = teamIds.filter((teamId) => {
+        const before = currentCountByTeam.get(teamId) ?? 0;
+        const now = countByTeamThisRun.get(teamId) ?? 0;
+        return before === 0 || now >= before / 2;
+      });
+
+      if (safeTeamIds.length > 0) {
         await supabase
           .from("players")
           .update({ left_at: new Date().toISOString() })
-          .in("team_id", teamIds)
+          .in("team_id", safeTeamIds)
           .is("left_at", null)
           .not("football_data_id", "is", null)
           .not("football_data_id", "in", `(${syncedFdIds.join(",") || "-1"})`);
@@ -270,7 +296,7 @@ export async function GET(request: NextRequest) {
         if (!namesByTeamId.has(p.team_id)) namesByTeamId.set(p.team_id, []);
         namesByTeamId.get(p.team_id)!.push(p.name);
       }
-      for (const teamId of teamIds) {
+      for (const teamId of safeTeamIds) {
         const names = namesByTeamId.get(teamId) ?? [];
         const escapedNames = names.map((n) => `"${n.replace(/"/g, '""')}"`).join(",");
         await supabase
