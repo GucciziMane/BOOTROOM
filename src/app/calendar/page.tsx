@@ -74,7 +74,23 @@ export default async function CalendarPage() {
         .order("kickoff_at", { ascending: true })
         .limit(30);
       const rows = data ?? [];
-      const nextMatchday = rows.find((m) => m.matchday != null)?.matchday;
+      // La journée la plus PEUPLÉE parmi les lignes récupérées, pas la plus PETITE : un match
+      // reporté (souvent un seul, déplacé à une autre date) laisse la journée en cours "ouverte"
+      // avec un unique match encore scheduled/live pendant que tout le reste est déjà finished —
+      // sans ça, cette journée quasi terminée "gagnait" contre la vraie prochaine journée complète
+      // juste derrière (bug vu en prod : La Liga/Premier League semblaient absentes de l'onglet
+      // "Prochaine journée", en fait réduites à ce seul match égaré). En cas d'égalité, on garde la
+      // plus petite journée (ordre naturel de `rows`, déjà trié par matchday croissant).
+      const countByMatchday = new Map<number, number>();
+      for (const m of rows) if (m.matchday != null) countByMatchday.set(m.matchday, (countByMatchday.get(m.matchday) ?? 0) + 1);
+      let nextMatchday: number | undefined;
+      let bestCount = 0;
+      for (const [matchday, count] of countByMatchday) {
+        if (count > bestCount) {
+          nextMatchday = matchday;
+          bestCount = count;
+        }
+      }
       return nextMatchday != null ? rows.filter((m) => m.matchday === nextMatchday) : rows.slice(0, 20);
     })
   );
