@@ -81,12 +81,16 @@ export function LeaderboardFilter({
   rows,
   leagues,
   trophies,
+  outsiderBonusWinner,
 }: {
   rows: LeaderboardRow[];
   leagues: LeagueOption[];
   /** Trophée mi-saison (voir migration 0049) : permanent, indépendant du classement actuel — donc
    * séparé du style or/argent/bronze ci-dessus (les deux peuvent coexister sur une même ligne). */
   trophies: Map<string, { rank: number; seasonYear: number }>;
+  /** Prime à l'outsider (voir api/cron/weekly-outsider-bonus) : contrairement au trophée
+   * mi-saison, pas cumulatif — juste la gagnante/le gagnant de la semaine la plus récente. */
+  outsiderBonusWinner: { userId: string; weekStart: string } | null;
 }) {
   const [selected, setSelected] = useState<number | "all">("all");
 
@@ -179,6 +183,14 @@ export function LeaderboardFilter({
                   {trophy && (
                     <span className="shrink-0 text-base" title={`Top ${trophy.rank} mi-saison ${trophy.seasonYear}`}>
                       🏆
+                    </span>
+                  )}
+                  {outsiderBonusWinner?.userId === p.id && (
+                    <span
+                      className="shrink-0 text-base"
+                      title={`Prime à l'outsider — semaine du ${new Date(`${outsiderBonusWinner.weekStart}T00:00:00Z`).toLocaleDateString("fr-FR", { timeZone: "UTC", day: "numeric", month: "long" })}`}
+                    >
+                      🏹
                     </span>
                   )}
                 </span>

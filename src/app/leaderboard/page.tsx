@@ -20,6 +20,7 @@ export default async function LeaderboardPage() {
     { data: predictions },
     { data: finishedMatches },
     { data: bonuses },
+    { data: latestOutsiderBonus },
   ] = await Promise.all([
     supabase.auth.getSession(),
     supabase.from("profiles").select("id, username, avatar_url, favorite_team_id").order("username"),
@@ -33,6 +34,15 @@ export default async function LeaderboardPage() {
     // Trophées mi-saison (toutes années confondues) : permanents, indépendants de la remise à
     // zéro et du classement actuel — voir MEDAL_ROW/le badge dans LeaderboardFilter.
     supabase.from("midseason_bonuses").select("id, user_id, rank, season_year, amount, kind, used_at, expires_at, target_user_id"),
+    // Prime à l'outsider (voir api/cron/weekly-outsider-bonus) : contrairement au trophée
+    // mi-saison, PAS permanente — seule la gagnante/le gagnant de la semaine EN COURS garde le
+    // badge, remplacé la semaine suivante (limit 1 sur le plus récent user_id non nul).
+    supabase
+      .from("weekly_outsider_bonuses")
+      .select("user_id, week_start")
+      .not("user_id", "is", null)
+      .order("week_start", { ascending: false })
+      .limit(1),
   ]);
   const user = session?.user ?? null;
 
@@ -129,6 +139,13 @@ export default async function LeaderboardPage() {
     if (!existing || b.season_year > existing.seasonYear) trophies.set(b.user_id, { rank: b.rank, seasonYear: b.season_year });
   }
 
+  // Badge "prime à l'outsider" (voir api/cron/weekly-outsider-bonus) : un seul à la fois, jamais
+  // cumulatif comme le trophée mi-saison — juste la gagnante/le gagnant de la semaine la plus
+  // récente où la prime a été distribuée (limit 1 côté requête).
+  const outsiderBonusWinner = latestOutsiderBonus?.[0]
+    ? { userId: latestOutsiderBonus[0].user_id as string, weekStart: latestOutsiderBonus[0].week_start }
+    : null;
+
   // Bonus actif de l'utilisateur connecté (non utilisé, pas encore expiré) : seul cas où on lui
   // montre le sélecteur de cible sur cette page.
   const now = new Date().toISOString();
@@ -178,6 +195,7 @@ export default async function LeaderboardPage() {
         rows={rows}
         leagues={(leagues ?? []).map((l) => ({ id: l.id, name: l.name, flag: LEAGUE_FLAG[l.football_data_code] ?? "🏆" }))}
         trophies={trophies}
+        outsiderBonusWinner={outsiderBonusWinner}
       />
     </main>
   );

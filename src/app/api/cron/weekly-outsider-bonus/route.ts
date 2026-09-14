@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
-import { sendPushToUserIds } from "@/lib/push/server";
+import { sendPushBroadcastWithOverrides } from "@/lib/push/server";
 import { fetchLeaderboardTotals } from "@/lib/leaderboard-totals";
 import { parisDateString } from "@/lib/quiz/daily";
 
@@ -115,11 +115,27 @@ export async function GET(request: NextRequest) {
     content: `🏹 Prime à l'outsider ! ${username} a fait le meilleur score de pronostics de la semaine (${bestPoints} pts) sans être dans le top 3 — +${OUTSIDER_BONUS_POINTS} points bonus au classement général !`,
   });
 
-  await sendPushToUserIds([bestUserId], {
-    title: "Boot Room 🏹",
-    body: `Meilleur pronostiqueur de la semaine hors du top 3 — tu gagnes ${OUTSIDER_BONUS_POINTS} points bonus !`,
-    url: "/leaderboard",
-  });
+  // À tout le monde, pas seulement au gagnant — même pattern que postMatchdayRecaps (annonce de
+  // chat = notif à tous les abonnés), message personnalisé pour le gagnant, générique pour les
+  // autres. sendPushToUserIds([bestUserId], ...) ne notifiait QUE le gagnant, personne d'autre ne
+  // voyait jamais passer l'annonce alors même qu'elle vient d'être postée dans le chat de tous.
+  await sendPushBroadcastWithOverrides(
+    new Map([
+      [
+        bestUserId,
+        {
+          title: "Boot Room 🏹",
+          body: `Meilleur pronostiqueur de la semaine hors du top 3 — tu gagnes ${OUTSIDER_BONUS_POINTS} points bonus !`,
+          url: "/leaderboard",
+        },
+      ],
+    ]),
+    {
+      title: "Boot Room 🏹",
+      body: `Prime à l'outsider : ${username} décroche +${OUTSIDER_BONUS_POINTS} points bonus cette semaine.`,
+      url: "/leaderboard",
+    }
+  );
 
   return NextResponse.json({ awarded: true, bestUserId, bestPoints, bonus: OUTSIDER_BONUS_POINTS });
 }
