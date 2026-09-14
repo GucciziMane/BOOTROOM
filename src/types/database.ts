@@ -18,7 +18,8 @@ export type PointsSourceType =
   | "season_final_winner"
   | "midseason_malus"
   | "quiz_season_bonus"
-  | "midseason_bonus_gift";
+  | "midseason_bonus_gift"
+  | "weekly_outsider_bonus";
 
 export interface Database {
   public: {
@@ -358,6 +359,20 @@ export interface Database {
           expires_at: string;
         };
         Update: Partial<Database["public"]["Tables"]["midseason_bonuses"]["Row"]>;
+        Relationships: [];
+      };
+      weekly_outsider_bonuses: {
+        Row: {
+          id: number;
+          week_start: string;
+          user_id: string | null;
+          points: number;
+          granted_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["weekly_outsider_bonuses"]["Row"]> & {
+          week_start: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["weekly_outsider_bonuses"]["Row"]>;
         Relationships: [];
       };
       chat_messages: {
