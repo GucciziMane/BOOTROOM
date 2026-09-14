@@ -74,23 +74,27 @@ export default async function CalendarPage() {
         .order("kickoff_at", { ascending: true })
         .limit(30);
       const rows = data ?? [];
-      // La journée la plus PEUPLÉE parmi les lignes récupérées, pas la plus PETITE : un match
-      // reporté (souvent un seul, déplacé à une autre date) laisse la journée en cours "ouverte"
-      // avec un unique match encore scheduled/live pendant que tout le reste est déjà finished —
-      // sans ça, cette journée quasi terminée "gagnait" contre la vraie prochaine journée complète
-      // juste derrière (bug vu en prod : La Liga/Premier League semblaient absentes de l'onglet
-      // "Prochaine journée", en fait réduites à ce seul match égaré). En cas d'égalité, on garde la
-      // plus petite journée (ordre naturel de `rows`, déjà trié par matchday croissant).
+      // La plus PETITE journée qui n'est pas un reliquat, pas juste la plus petite tout court : un
+      // match reporté (souvent un seul, déplacé à une autre date) laisse la journée en cours
+      // "ouverte" avec un unique match encore scheduled/live pendant que tout le reste est déjà
+      // finished — sans ça, cette journée quasi terminée "gagnait" contre la vraie prochaine
+      // journée juste derrière (bug vu en prod : La Liga/Premier League semblaient absentes de
+      // l'onglet "Prochaine journée", en fait réduites à ce seul match égaré).
+      //
+      // STRAGGLER_MAX_MATCHES et non "la journée la plus peuplée" (première version de ce fix,
+      // corrigée avant déploiement) : prendre le maximum global aurait sauté une journée
+      // légitimement presque complète (9 matchs sur 10, elle aussi amputée d'un seul report) au
+      // profit d'une journée plus tardive mais complète (10/10) — préférer toujours la PREMIÈRE
+      // journée non-reliquat (pas la plus peuplée) garde le tri chronologique intact. Un seuil fixe
+      // plutôt qu'une proportion du max local : une journée de Coupe (ex. une finale à 1 match, des
+      // demies à 2 matchs aller-retour) est un reliquat légitime, pas un report — le seuil doit
+      // rester bas pour ne jamais l'exclure à tort.
+      const STRAGGLER_MAX_MATCHES = 2;
       const countByMatchday = new Map<number, number>();
       for (const m of rows) if (m.matchday != null) countByMatchday.set(m.matchday, (countByMatchday.get(m.matchday) ?? 0) + 1);
-      let nextMatchday: number | undefined;
-      let bestCount = 0;
-      for (const [matchday, count] of countByMatchday) {
-        if (count > bestCount) {
-          nextMatchday = matchday;
-          bestCount = count;
-        }
-      }
+      const sortedMatchdays = [...countByMatchday.entries()].sort(([a], [b]) => a - b);
+      const nextMatchday =
+        sortedMatchdays.find(([, count]) => count > STRAGGLER_MAX_MATCHES)?.[0] ?? sortedMatchdays[0]?.[0];
       return nextMatchday != null ? rows.filter((m) => m.matchday === nextMatchday) : rows.slice(0, 20);
     })
   );
