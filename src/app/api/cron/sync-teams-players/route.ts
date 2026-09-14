@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
-import { footballData, normalizePosition } from "@/lib/football-data/client";
+import { footballData, normalizePosition, type FdSquadPlayer } from "@/lib/football-data/client";
 
 // Sans ce plafond explicite, une invocation s'est fait couper (constaté en préparant l'arrivée de
 // la Ligue des Champions) avant la fin des ~13 appels espacés de FOOTBALL_DATA_RATE_LIMIT_DELAY_MS
@@ -163,14 +163,50 @@ export async function GET(request: NextRequest) {
 
       const teamIdByFdId = new Map(upsertedTeams.map((t) => [t.football_data_id, t.id]));
 
-      const playerRowsById = new Map<number, (typeof teams)[number]["squad"][number] & { team_id: number }>();
+      // Repli par club (voir footballData.getTeamSquad) pour toute équipe dont l'effectif est
+      // revenu VIDE via l'appel groupé ci-dessus — constaté sur la Ligue des Champions le
+      // 14/09/2026, effectif vide pour la totalité des 36 clubs (y compris Barcelone, Real Madrid,
+      // vérifié en direct), apparemment une restriction propre à cette compétition sur notre offre.
+      // Seules les équipes qui n'ont AUCUNE autre compétition suivie en commun sont concernées ici
+      // (les autres — Barcelone, Real Madrid... — reçoivent déjà un effectif à jour via leur sync
+      // domestique) : sans ce filtre, une seule invocation dépasserait largement le budget de temps
+      // pour un gain nul sur ces clubs-là.
+      const emptySquadTeams = teams.filter((t) => t.squad.length === 0 && teamIdByFdId.has(t.id));
+      const coveredElsewhere = new Set<number>();
+      if (emptySquadTeams.length > 0) {
+        const { data: sameTeamOtherLeagues } = await supabase
+          .from("teams")
+          .select("football_data_id")
+          .in("football_data_id", emptySquadTeams.map((t) => t.id))
+          .neq("league_id", league.id);
+        for (const row of sameTeamOtherLeagues ?? []) coveredElsewhere.add(row.football_data_id);
+      }
+
+      const squadByFdTeamId = new Map(teams.map((t) => [t.id, t.squad]));
+      for (const t of emptySquadTeams) {
+        if (coveredElsewhere.has(t.id)) continue;
+        try {
+          const detail = await footballData.getTeamSquad(t.id);
+          squadByFdTeamId.set(t.id, detail.squad);
+        } catch {
+          // Repli lui-même en échec (club pas trouvé sous cet id, panne ponctuelle...) : l'effectif
+          // déjà en base pour ce club reste tel quel plutôt que d'échouer toute la synchro.
+        }
+        await sleep(FOOTBALL_DATA_RATE_LIMIT_DELAY_MS);
+      }
+
+      // Clé scopée par équipe (pas seulement l'id joueur) : un joueur sans id football-data.org
+      // (constaté sur les clubs ci-dessus avant le repli) ne doit jamais pouvoir écraser, via une
+      // même clé "undefined", le joueur d'une TOUTE AUTRE équipe traitée dans la même boucle.
+      const playerRowsById = new Map<string, FdSquadPlayer & { team_id: number }>();
       for (const t of teams) {
         const teamId = teamIdByFdId.get(t.id);
         if (!teamId) continue;
+        const squad = squadByFdTeamId.get(t.id) ?? t.squad;
         // football-data.org liste parfois un joueur dans 2 effectifs lors d'un transfert en
         // cours de synchro : on ne garde que la dernière occurrence rencontrée.
-        for (const p of t.squad) {
-          playerRowsById.set(p.id, { ...p, team_id: teamId });
+        for (const p of squad) {
+          playerRowsById.set(`${teamId}:${p.id ?? `name:${p.name}`}`, { ...p, team_id: teamId });
         }
       }
 
@@ -178,35 +214,72 @@ export async function GET(request: NextRequest) {
         team_id: p.team_id,
         name: p.name,
         position: normalizePosition(p.position),
-        football_data_id: p.id,
+        football_data_id: p.id ?? null,
         // Repasse actif un joueur qui reviendrait dans l'effectif (retour de prêt...) après avoir
         // été marqué "parti" par un sync précédent.
         left_at: null,
         updated_at: new Date().toISOString(),
       }));
 
-      // Même raisonnement que pour teams ci-dessus : un joueur transféré entre deux clubs suivis
-      // garde le même football_data_id, donc onConflict doit être scopé par team_id.
+      // Deux upserts, deux cibles de conflit : un joueur SANS football_data_id (voir le repli
+      // ci-dessus — arrive encore que le repli lui-même échoue) ne peut pas passer par
+      // (team_id, football_data_id) — NULL n'est jamais égal à NULL pour une contrainte unique,
+      // donc CHAQUE sync le réinsérerait en double au lieu de mettre à jour la ligne existante.
+      // Repose sur l'index partiel (team_id, name) where football_data_id is null — voir migration
+      // 0055 — posé après coup, une fois ce trou constaté en prod (503 joueurs concernés sur 17
+      // clubs de Ligue des Champions, jamais dédupliqués ni marqués "partis").
+      const rowsWithFdId = playerRows.filter((p) => p.football_data_id != null);
+      const rowsWithoutFdId = playerRows.filter((p) => p.football_data_id == null);
+
       const { error: playersError } = await supabase
         .from("players")
-        .upsert(playerRows, { onConflict: "team_id,football_data_id" });
+        .upsert(rowsWithFdId, { onConflict: "team_id,football_data_id" });
+      if (playersError) throw new Error(playersError.message);
 
-      if (playersError) {
-        throw new Error(playersError.message);
+      if (rowsWithoutFdId.length > 0) {
+        const { error: noFdIdError } = await supabase
+          .from("players")
+          .upsert(rowsWithoutFdId, { onConflict: "team_id,name" });
+        if (noFdIdError) throw new Error(noFdIdError.message);
       }
 
       // Marque "parti" (sans supprimer : des buts/pronostics passés référencent peut-être ce
       // joueur) toute personne qui était dans cet effectif et ne s'y trouve plus dans la réponse
       // actuelle — le mercato ne se reflétait jamais côté départs avant ce correctif.
+      //
+      // Deux requêtes séparées, pas une seule "not in" sur football_data_id : côté fd_id connu,
+      // classique ; côté fd_id null, NOT IN une liste ne matche JAMAIS une ligne dont
+      // football_data_id est lui-même null (NULL se propage, la condition ne vaut jamais TRUE) —
+      // ces lignes ne partaient donc jamais, quel que soit le mercato. Repli sur le NOM, borné par
+      // équipe (jamais une liste globale : un nom valide dans un club ne doit rien protéger dans un
+      // autre).
       const teamIds = [...new Set(playerRows.map((p) => p.team_id))];
-      const syncedFdIds = playerRows.map((p) => p.football_data_id);
+      const syncedFdIds = rowsWithFdId.map((p) => p.football_data_id);
       if (teamIds.length > 0) {
         await supabase
           .from("players")
           .update({ left_at: new Date().toISOString() })
           .in("team_id", teamIds)
           .is("left_at", null)
+          .not("football_data_id", "is", null)
           .not("football_data_id", "in", `(${syncedFdIds.join(",") || "-1"})`);
+      }
+
+      const namesByTeamId = new Map<number, string[]>();
+      for (const p of rowsWithoutFdId) {
+        if (!namesByTeamId.has(p.team_id)) namesByTeamId.set(p.team_id, []);
+        namesByTeamId.get(p.team_id)!.push(p.name);
+      }
+      for (const teamId of teamIds) {
+        const names = namesByTeamId.get(teamId) ?? [];
+        const escapedNames = names.map((n) => `"${n.replace(/"/g, '""')}"`).join(",");
+        await supabase
+          .from("players")
+          .update({ left_at: new Date().toISOString() })
+          .eq("team_id", teamId)
+          .is("left_at", null)
+          .is("football_data_id", null)
+          .not("name", "in", `(${escapedNames || '"-"'})`);
       }
 
       await sleep(FOOTBALL_DATA_RATE_LIMIT_DELAY_MS);

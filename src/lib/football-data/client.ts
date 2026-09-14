@@ -49,6 +49,12 @@ export interface FdCompetitionTeamsResponse {
   teams: FdTeam[];
 }
 
+/** Sous-ensemble de la réponse de /teams/{id} réellement utilisé (effectif seul). */
+export interface FdTeamDetail {
+  id: number;
+  squad: FdSquadPlayer[];
+}
+
 export interface FdSeason {
   id: number;
   startDate: string;
@@ -124,9 +130,18 @@ export interface FdStandingsResponse {
 export const footballData = {
   getCompetition: (code: string) => footballDataFetch<FdCompetition>(`/competitions/${code}`),
 
-  /** Un seul appel donne toutes les équipes ET leurs effectifs complets. */
+  /** Un seul appel donne toutes les équipes ET leurs effectifs complets — sauf que, constaté sur
+   * la Ligue des Champions le 14/09/2026, football-data.org y renvoie un effectif VIDE pour
+   * absolument tous les clubs via CET endpoint (y compris Barcelone, Real Madrid — confirmé en
+   * appelant l'API en direct), apparemment une restriction propre à cette compétition sur notre
+   * offre. getTeamSquad ci-dessous (endpoint par club, pas par compétition) reste lui pleinement
+   * fonctionnel et sert de repli — voir sync-teams-players. */
   getCompetitionTeams: (code: string) =>
     footballDataFetch<FdCompetitionTeamsResponse>(`/competitions/${code}/teams`),
+
+  /** Effectif d'un club par son id football-data.org (indépendant de toute compétition) — repli
+   * pour quand getCompetitionTeams renvoie un effectif vide pour ce club (voir plus haut). */
+  getTeamSquad: (footballDataTeamId: number) => footballDataFetch<FdTeamDetail>(`/teams/${footballDataTeamId}`),
 
   getCompetitionMatches: (code: string) =>
     footballDataFetch<FdCompetitionMatchesResponse>(`/competitions/${code}/matches`),
