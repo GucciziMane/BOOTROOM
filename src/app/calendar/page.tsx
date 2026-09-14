@@ -95,28 +95,42 @@ export default async function CalendarPage() {
       const sortedMatchdays = [...countByMatchday.entries()].sort(([a], [b]) => a - b);
       const nextMatchday =
         sortedMatchdays.find(([, count]) => count > STRAGGLER_MAX_MATCHES)?.[0] ?? sortedMatchdays[0]?.[0];
-      return nextMatchday != null ? rows.filter((m) => m.matchday === nextMatchday) : rows.slice(0, 20);
+      // Le(s) reliquat(s) sautés ci-dessus (matchs reportés de la journée en cours, encore à
+      // jouer) restent affichés — seulement relégués à leur vraie date au lieu de bloquer la
+      // prochaine journée complète. Un match bien réel et à pronostiquer ne doit jamais disparaître
+      // purement et simplement de l'onglet (vu en prod : le match du jour même avait disparu après
+      // la première version de ce fix).
+      const matchdaysToShow = new Set(sortedMatchdays.filter(([matchday]) => nextMatchday == null || matchday <= nextMatchday).map(([matchday]) => matchday));
+      return nextMatchday != null ? rows.filter((m) => m.matchday != null && matchdaysToShow.has(m.matchday)) : rows.slice(0, 20);
     })
   );
 
   const upcoming = matchesPerSeason.flat().sort((a, b) => a.kickoff_at.localeCompare(b.kickoff_at));
   const upcomingMatchIds = upcoming.map((m) => m.id);
 
-  // x2 déjà actif sur la journée courante d'un championnat, y compris posé sur un match de cette
+  // x2 déjà actif sur une journée affichée d'un championnat, y compris posé sur un match de cette
   // même journée qui vient de terminer (donc absent de `upcoming`, filtré scheduled/live plus haut
   // dans matchesPerSeason) : sans ce lot à part, le bouton x2 restait affiché à tort sur les autres
   // matchs de la journée une fois ce match-là verrouillé, jusqu'au refus côté serveur.
-  const currentMatchdayBySeasonId = new Map<number, number>();
+  //
+  // Plusieurs journées possibles par saison (Set, pas un seul number) depuis que `upcoming` peut
+  // contenir à la fois le reliquat de la journée en cours ET la prochaine journée complète (voir
+  // plus haut) : un seul x2 par (championnat, journée) doit rester détecté correctement sur
+  // CHACUNE des deux, pas seulement la première rencontrée chronologiquement.
+  const matchdaysBySeasonId = new Map<number, Set<number>>();
   for (const m of upcoming) {
-    if (m.matchday != null && !currentMatchdayBySeasonId.has(m.season_id)) {
-      currentMatchdayBySeasonId.set(m.season_id, m.matchday);
+    if (m.matchday != null) {
+      if (!matchdaysBySeasonId.has(m.season_id)) matchdaysBySeasonId.set(m.season_id, new Set());
+      matchdaysBySeasonId.get(m.season_id)!.add(m.matchday);
     }
   }
   const matchdaySiblingsPerSeason = await Promise.all(
-    [...currentMatchdayBySeasonId.entries()].map(async ([seasonId, matchday]) => {
-      const { data } = await supabase.from("matches").select("id").eq("season_id", seasonId).eq("matchday", matchday);
-      return (data ?? []).map((m) => ({ matchId: m.id, seasonId, matchday }));
-    })
+    [...matchdaysBySeasonId.entries()].flatMap(([seasonId, matchdays]) =>
+      [...matchdays].map(async (matchday) => {
+        const { data } = await supabase.from("matches").select("id").eq("season_id", seasonId).eq("matchday", matchday);
+        return (data ?? []).map((m) => ({ matchId: m.id, seasonId, matchday }));
+      })
+    )
   );
   const matchdaySiblings = matchdaySiblingsPerSeason.flat();
   const matchdaySiblingBySiblingId = new Map(matchdaySiblings.map((s) => [s.matchId, s]));
