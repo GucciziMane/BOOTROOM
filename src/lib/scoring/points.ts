@@ -113,13 +113,22 @@ export function predictedWinnerTeamId(
   return predictedHome > predictedAway ? homeTeamId : awayTeamId;
 }
 
+/** Plancher minimum de points pour un "bon résultat" correctement deviné, quel que soit l'écart de
+ * niveau entre les deux équipes — sans lui, un favori écrasant (tier 5 : multiplicateur à 6 %)
+ * réduisait un pronostic pourtant juste à une poignée de points symbolique (ex. 3 pts sur une base
+ * de 50). Un pari sans risque doit rapporter moins qu'un pari risqué, jamais rien — ça reste un
+ * jeu, deviner juste doit toujours valoir la peine. N'agit que sur le résultat scalé par la cote
+ * (jamais sur un pronostic faux, dont basePoints vaut déjà 0 et sort avant ce plancher). */
+const MIN_CORRECT_RESULT_POINTS = 20;
+
 /**
  * Ajuste les points de score selon la cote du match : un pronostic gagnant sur l'outsider
  * rapporte plus qu'un pronostic gagnant sur le favori "logique", et un nul est lui aussi scalé
  * (plus l'écart de niveau est grand, plus un nul rapporte — voir drawMultiplierPct). Sans tier
  * connu (début de saison, historique insuffisant) les points de base ne sont pas modifiés ; sans
  * favori connu mais avec un tier, seul le cas "victoire" reste non scalé (impossible de dire qui
- * est favori/outsider), le nul l'est quand même.
+ * est favori/outsider), le nul l'est quand même. Le résultat scalé ne descend jamais sous
+ * MIN_CORRECT_RESULT_POINTS (voir plus haut).
  */
 export function applyResultOdds(
   basePoints: number,
@@ -131,8 +140,8 @@ export function applyResultOdds(
   if (basePoints <= 0 || tier === null) return basePoints;
   const mult = multiplierByTier.get(tier);
   if (!mult) return basePoints;
-  if (winnerTeamId === null) return Math.round((basePoints * mult.drawMultiplierPct) / 100);
+  if (winnerTeamId === null) return Math.max(Math.round((basePoints * mult.drawMultiplierPct) / 100), MIN_CORRECT_RESULT_POINTS);
   if (favoriteTeamId === null) return basePoints;
   const pct = winnerTeamId === favoriteTeamId ? mult.favoriteMultiplierPct : mult.underdogMultiplierPct;
-  return Math.round((basePoints * pct) / 100);
+  return Math.max(Math.round((basePoints * pct) / 100), MIN_CORRECT_RESULT_POINTS);
 }
