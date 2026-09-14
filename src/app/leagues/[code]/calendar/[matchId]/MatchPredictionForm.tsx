@@ -107,10 +107,11 @@ export function MatchPredictionForm({
   const multiplierByTier = new Map(
     Object.entries(resultOdds.multiplierByTier).map(([tier, mult]) => [Number(tier) as OddsTier, mult])
   );
-  const winnerTeamId =
-    homeScore !== "" && awayScore !== ""
-      ? predictedWinnerTeamId(Number(homeScore), Number(awayScore), resultOdds.homeTeamId, resultOdds.awayTeamId)
-      : null;
+  // Number("") vaut 0 en JS, exactement comme côté serveur (saveMatchPrediction fait
+  // Number(formData.get(...)) sans filet) — voir MatchPredictionCard.tsx pour le détail du bug que
+  // ça évite : un champ encore vide (juste le placeholder "0") ne doit jamais faire passer
+  // l'aperçu en "résultat inconnu"/nul alors que la sauvegarde validerait un vrai résultat décisif.
+  const winnerTeamId = predictedWinnerTeamId(Number(homeScore), Number(awayScore), resultOdds.homeTeamId, resultOdds.awayTeamId);
   const backingFavorite = winnerTeamId !== null && winnerTeamId === resultOdds.favoriteTeamId;
   const backingUnderdog =
     winnerTeamId !== null && resultOdds.favoriteTeamId !== null && winnerTeamId !== resultOdds.favoriteTeamId;

@@ -168,10 +168,16 @@ export function MatchPredictionCard({
   const multiplierByTier = new Map(
     Object.entries(resultOdds.multiplierByTier).map(([tier, mult]) => [Number(tier) as OddsTier, mult])
   );
-  const winnerTeamId =
-    homeScore !== "" && awayScore !== ""
-      ? predictedWinnerTeamId(Number(homeScore), Number(awayScore), resultOdds.homeTeamId, resultOdds.awayTeamId)
-      : null;
+  // Number("") vaut 0 en JS, exactement comme côté serveur (saveMatchPrediction fait
+  // Number(formData.get(...)) sans filet) : un champ encore vide compte donc déjà comme "0" ici,
+  // pour que l'aperçu affiché corresponde à ce qui serait RÉELLEMENT enregistré en l'état — sans
+  // ça, un champ non touché (juste le placeholder "0", visuellement identique à un vrai 0 tapé)
+  // faisait passer le calcul en "résultat inconnu" côté aperçu (nul, don la cote applique le
+  // multiplicateur du nul, souvent bien plus généreux) alors que la sauvegarde validait un vrai
+  // résultat décisif (ex. "3-0") avec un tout autre multiplicateur — l'aperçu affichait alors des
+  // points bien plus élevés que ceux réellement en jeu (vu en prod : Barcelone favori écrasant
+  // contre Santander, +122/+142 affichés au lieu de +3/+23 pour une victoire du favori).
+  const winnerTeamId = predictedWinnerTeamId(Number(homeScore), Number(awayScore), resultOdds.homeTeamId, resultOdds.awayTeamId);
   const correctResultPoints = applyResultOdds(
     scoring.matchCorrectResultNoScore,
     winnerTeamId,
