@@ -704,11 +704,24 @@ function rowToQuestion(row: DynamicRow): DailyQuestionFull {
 
 /** Génère (une seule fois par date) puis fige en base les questions dynamiques du jour, pour que
  * l'affichage et la validation d'une réponse lisent toujours la même version — voir migration
- * 0025_quiz_daily_dynamic_cache pour le pourquoi. */
+ * 0025_quiz_daily_dynamic_cache pour le pourquoi.
+ *
+ * `reserve` (banque statique restante, voir pickStaticQuestions) est consommée ICI comme repli
+ * pour tout créneau dynamique qui échoue à produire une question — et ce repli est gravé dans le
+ * MÊME insert atomique que les questions réellement dynamiques (voir plus bas), jamais recalculé
+ * "en direct" par getDailyQuiz à chaque appel. Bug vu en prod le 14/09/2026 : le tout premier
+ * appel du jour échouait totalement à générer (`generated.length === 0`, ex. lecture transitoire
+ * vide) et repartait donc SANS RIEN INSÉRER (ancien comportement, "on retente au prochain
+ * appel") — le quiz affiché à l'utilisateur (repli statique calculé en direct côté
+ * `getDailyQuiz`) montrait alors une question totalement différente de celle validée quelques
+ * secondes plus tard par `submitQuizAnswer`, dont le propre appel à `getDailyQuiz` avait entre-
+ * temps réussi à générer et figer un vrai contenu dynamique pour ce créneau — la "bonne réponse"
+ * mise en avant ne correspondait plus à la question réellement affichée. */
 async function getOrGenerateDynamicQuestions(
   supabase: ServiceClient,
   quizDate: string,
-  dynamicPositions: number[]
+  dynamicPositions: number[],
+  reserve: DailyQuestionFull[]
 ): Promise<Map<number, DailyQuestionFull>> {
   if (dynamicPositions.length === 0) return new Map();
 
@@ -783,6 +796,7 @@ async function getOrGenerateDynamicQuestions(
   // donc essayés avant ceux déjà pris, un repli sur un type déjà utilisé restant préférable à un
   // créneau vide si vraiment aucun type frais ne peut être satisfait ce jour-là.
   const usedTypes = new Set<DynamicType>();
+  let reserveCursor = 0;
   const generated = dynamicPositions
     .map((position, idx) => {
       const primaryType = typeOrder[idx % typeOrder.length];
@@ -802,6 +816,13 @@ async function getOrGenerateDynamicQuestions(
           usedTypes.add(type);
           return question;
         }
+      }
+      // Aucun type dynamique n'a pu produire de question pour ce créneau : repli immédiat sur la
+      // réserve statique, figé ici même plutôt que laissé vide (voir le commentaire de fonction).
+      const fallback = reserve[reserveCursor];
+      if (fallback) {
+        reserveCursor++;
+        return { ...fallback, position };
       }
       return null;
     })
@@ -849,13 +870,15 @@ async function getOrGenerateDynamicQuestions(
 export async function getDailyQuiz(supabase: ServiceClient, quizDate: string): Promise<DailyQuestionFull[]> {
   const dynamicPositions = SLOT_PLAN.map((slot, i) => (slot.kind === "dynamic" ? i : -1)).filter((i) => i >= 0);
 
-  // Indépendantes l'une de l'autre : lancées en parallèle plutôt qu'en série pour ne pas doubler
-  // la latence à chaque soumission de réponse (ce chemin est appelé sur chaque tap, pas qu'au
-  // premier chargement de la page).
-  const [{ byPosition: staticByPosition, reserve }, dynamicByPosition] = await Promise.all([
-    pickStaticQuestions(supabase, quizDate),
-    getOrGenerateDynamicQuestions(supabase, quizDate, dynamicPositions),
-  ]);
+  // Séquentiel et non plus en parallèle : `reserve` doit être connue AVANT de générer les
+  // questions dynamiques, pour que le repli statique d'un créneau dynamique en échec soit choisi
+  // et figé dans le MÊME insert atomique que le reste (voir getOrGenerateDynamicQuestions) plutôt
+  // que recalculé "en direct" à chaque appel — l'ancien parallélisme est ce qui permettait à cette
+  // dernière étape de diverger d'un appel à l'autre (bug vu en prod le 14/09/2026). Le coût
+  // (latence légèrement plus élevée) ne touche que la toute première génération du jour ; tous les
+  // appels suivants lisent directement le cache (`cached.length > 0`) sans jamais repasser ici.
+  const { byPosition: staticByPosition, reserve } = await pickStaticQuestions(supabase, quizDate);
+  const dynamicByPosition = await getOrGenerateDynamicQuestions(supabase, quizDate, dynamicPositions, reserve);
 
   // Tableau de taille fixe indexé par position (jamais un push-si-présent) : un créneau qui
   // échoue à produire une question ne doit plus décaler tous les créneaux suivants vers des
@@ -863,6 +886,10 @@ export async function getDailyQuiz(supabase: ServiceClient, quizDate: string): P
   // position ne correspondait plus à celle validée côté serveur). Toute position encore vide
   // après dynamique+statique pioche dans la réserve de la banque statique — jamais inventée,
   // jamais un doublon d'une question déjà utilisée ce jour-là (voir pickStaticQuestions).
+  //
+  // Pour les créneaux dynamiques, ceci ne devrait plus jamais se déclencher en pratique : leur
+  // repli est désormais choisi et figé DANS getOrGenerateDynamicQuestions elle-même (voir plus
+  // haut) — ce qui suit n'est qu'un filet de sécurité si la réserve s'épuisait complètement.
   const questions: (DailyQuestionFull | undefined)[] = new Array(SLOT_PLAN.length);
   for (let position = 0; position < SLOT_PLAN.length; position++) {
     questions[position] = dynamicByPosition.get(position) ?? staticByPosition.get(position);
