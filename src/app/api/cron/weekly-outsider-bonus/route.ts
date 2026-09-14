@@ -64,13 +64,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ skipped: "no prediction points this week" });
   }
 
-  const [bestUserId, bestPoints] = weekRanking[0];
-
   const { totalByUser } = await fetchLeaderboardTotals(supabase, activeLeagueIds);
   const generalRanking = [...totalByUser.entries()].sort((a, b) => b[1] - a[1]);
   const topUserIds = new Set(generalRanking.slice(0, TOP_N_EXCLUDED).map(([userId]) => userId));
 
-  const eligible = !topUserIds.has(bestUserId);
+  // Le meilleur pronostiqueur de la semaine HORS top 3, pas seulement le tout premier : si le n°1
+  // de la semaine est déjà dans le top 3 général, la prime va au premier de la liste qui n'y est
+  // pas plutôt que de ne rien distribuer cette semaine-là — sinon une semaine dominée par le
+  // classement établi ne récompense jamais personne, ce qui va à l'encontre du but du mini-jeu.
+  const bestOutsider = weekRanking.find(([userId]) => !topUserIds.has(userId));
 
   // Claim AVANT tout effet visible (message chat, notif push) — même raisonnement que
   // midseason-bonus/matchday-recap : la contrainte unique week_start protège une double écriture
@@ -79,16 +81,19 @@ export async function GET(request: NextRequest) {
     .from("weekly_outsider_bonuses")
     .insert({
       week_start: weekStartStr,
-      user_id: eligible ? bestUserId : null,
-      points: eligible ? OUTSIDER_BONUS_POINTS : 0,
+      user_id: bestOutsider ? bestOutsider[0] : null,
+      points: bestOutsider ? OUTSIDER_BONUS_POINTS : 0,
     })
     .select("id")
     .single();
   if (claimError || !claimed) return NextResponse.json({ skipped: "already claimed by a concurrent run" });
 
-  if (!eligible) {
-    return NextResponse.json({ skipped: "best performer already in general top 3", bestUserId, bestPoints });
+  if (!bestOutsider) {
+    // N'arrive en pratique que si tout le monde ayant marqué des points de prono cette semaine
+    // fait déjà partie du top 3 général (groupe restreint de joueurs) — rien à distribuer.
+    return NextResponse.json({ skipped: "no eligible outsider this week" });
   }
+  const [bestUserId, bestPoints] = bestOutsider;
 
   // source_id : pas de match/saison ici (contrairement aux autres source_type), l'id de la ligne
   // weekly_outsider_bonuses elle-même sert d'identifiant unique — même rôle que bonus.id pour
