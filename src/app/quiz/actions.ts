@@ -27,7 +27,14 @@ export interface SubmitAnswerResult {
  * borné à ±1 jour (ne fait que couvrir ce chevauchement de minuit légitime, jamais une date
  * arbitraire) plutôt que de faire confiance sans limite à une valeur venue du client.
  */
-export async function submitQuizAnswer(quizDate: string, position: number, choiceIndex: number): Promise<SubmitAnswerResult> {
+export async function submitQuizAnswer(
+  quizDate: string,
+  position: number,
+  // null : le minuteur de 10s (voir QuizRunner.tsx) s'est écoulé sans qu'aucun choix n'ait été
+  // fait — soumis comme une réponse à part entière (jamais correcte) plutôt que de laisser la
+  // question bloquée indéfiniment.
+  choiceIndex: number | null
+): Promise<SubmitAnswerResult> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -68,7 +75,7 @@ export async function submitQuizAnswer(quizDate: string, position: number, choic
     else streak = 0;
   }
 
-  const isCorrect = choiceIndex === question.correctIndex;
+  const isCorrect = choiceIndex !== null && choiceIndex === question.correctIndex;
   const streakAfter = isCorrect ? streak + 1 : 0;
   const points = isCorrect ? (streakAfter >= 3 ? 2 : 1) : 0;
 

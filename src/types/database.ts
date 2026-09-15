@@ -473,7 +473,8 @@ export interface Database {
           user_id: string;
           quiz_date: string;
           position: number;
-          choice_index: number;
+          // null : le minuteur de 10s s'est écoulé sans réponse choisie (voir QuizRunner.tsx).
+          choice_index: number | null;
           is_correct: boolean;
           points: number;
           created_at: string;
@@ -482,7 +483,7 @@ export interface Database {
           user_id: string;
           quiz_date: string;
           position: number;
-          choice_index: number;
+          choice_index: number | null;
           is_correct: boolean;
           points: number;
         };

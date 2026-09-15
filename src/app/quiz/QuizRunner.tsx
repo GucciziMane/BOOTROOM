@@ -55,6 +55,11 @@ type ResultPhase = "idle" | "hold" | "flying";
 
 const HOLD_MS = 1100;
 const FLY_MS = 420;
+const TIMER_SECONDS = 10;
+// Sentinelle purement côté client (jamais envoyée telle quelle au serveur, voir handleAnswer) :
+// distincte de `null` (qui signifie "pas encore répondu" pour `selected`) et des index réels
+// 0-3, pour verrouiller les boutons exactement comme une vraie réponse une fois le temps écoulé.
+const TIMEOUT_SENTINEL = -1;
 
 function deriveStreak(history: AnswerState[]): number {
   let streak = 0;
@@ -89,7 +94,11 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
   const [privateRanking, setPrivateRanking] = useState<SeasonLeaderboardRow[] | null>(null);
   const [leaderboardView, setLeaderboardView] = useState<"today" | "season">("today");
   const [resultPhase, setResultPhase] = useState<ResultPhase>("idle");
+  const [timeLeft, setTimeLeft] = useState(TIMER_SECONDS);
   const holdTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Empêche un double déclenchement du timeout (le décompte peut re-render plusieurs fois à 0
+  // avant que handleAnswer n'ait eu le temps de poser son propre verrou synchrone).
+  const timeoutFired = useRef(false);
   // Verrou synchrone : contrairement à `submitting` (state React, appliqué après un re-render),
   // ce ref est lu/écrit immédiatement. Sur mobile, un double-tap déclenche deux `handleAnswer`
   // avant que le re-render qui désactive les boutons n'ait eu lieu, envoyant deux réponses pour la
@@ -129,6 +138,34 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
     if (holdTimeout.current) clearTimeout(holdTimeout.current);
   }, []);
 
+  // Minuteur de 10s par question : repart à chaque nouvelle position. Ajustement pendant le rendu
+  // (comparaison à un ref, pas un useEffect) — le pattern documenté par React pour "réinitialiser
+  // un state quand une prop/valeur change", qui évite un aller-retour de rendu supplémentaire.
+  const lastTimerPosition = useRef(position);
+  if (lastTimerPosition.current !== position) {
+    lastTimerPosition.current = position;
+    setTimeLeft(TIMER_SECONDS);
+    timeoutFired.current = false;
+  }
+
+  // Décompte actif seulement tant qu'aucune réponse n'a encore été posée pour la position en
+  // cours (`selected === null`) — s'arrête de lui-même dès qu'un choix, réel ou par timeout, est
+  // enregistré (voir handleAnswer), donc jamais pendant l'écran de résultat (hold/flying) ni une
+  // fois le quiz terminé.
+  useEffect(() => {
+    if (selected !== null || finalScore != null) return;
+    if (timeLeft <= 0) {
+      if (!timeoutFired.current) {
+        timeoutFired.current = true;
+        handleAnswer(TIMEOUT_SENTINEL);
+      }
+      return;
+    }
+    const t = setTimeout(() => setTimeLeft((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeLeft, selected, finalScore]);
+
   async function handleAnswer(choiceIndex: number) {
     if (answeringLock.current || submitting || selected !== null) return;
     answeringLock.current = true;
@@ -136,9 +173,14 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
     setSubmitting(true);
     setError(null);
 
+    // Le serveur ne connaît pas la sentinelle client TIMEOUT_SENTINEL : une réponse par timeout
+    // s'envoie comme `null` (voir submitQuizAnswer), jamais fausse par accident si -1 finissait un
+    // jour par correspondre à un index réel.
+    const choiceIndexForServer = choiceIndex === TIMEOUT_SENTINEL ? null : choiceIndex;
+
     let res: SubmitAnswerResult;
     try {
-      res = await submitQuizAnswer(quizDate, position, choiceIndex);
+      res = await submitQuizAnswer(quizDate, position, choiceIndexForServer);
     } catch {
       // Une exception (réseau, timeout serveur) ne doit jamais planter toute la page : on repasse
       // en état "pas encore répondu" pour permettre de retaper une réponse.
@@ -384,9 +426,21 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
                     <p className="text-xs font-bold uppercase tracking-wide text-paper/70">Score</p>
                     <p className="text-4xl font-black leading-none">{score}</p>
                   </div>
-                  {streak >= 2 && (
-                    <span className="rounded-full bg-paper/15 px-3 py-1 text-sm font-bold">🔥 Série de {streak}</span>
-                  )}
+                  <div className="flex flex-col items-end gap-2">
+                    {selected === null && (
+                      <span
+                        className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-black tabular-nums transition-colors ${
+                          timeLeft <= 3 ? "animate-pulse bg-bad text-paper" : "bg-paper/15 text-paper"
+                        }`}
+                        aria-label={`${timeLeft} secondes restantes`}
+                      >
+                        {timeLeft}
+                      </span>
+                    )}
+                    {streak >= 2 && (
+                      <span className="rounded-full bg-paper/15 px-3 py-1 text-sm font-bold">🔥 Série de {streak}</span>
+                    )}
+                  </div>
                 </div>
 
                 <p className="mt-4 text-xs font-bold uppercase tracking-wide text-paper/70">
