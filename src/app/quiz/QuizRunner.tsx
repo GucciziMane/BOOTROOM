@@ -55,7 +55,7 @@ type ResultPhase = "idle" | "hold" | "flying";
 
 const HOLD_MS = 1100;
 const FLY_MS = 420;
-const TIMER_SECONDS = 10;
+const TIMER_SECONDS = 20;
 // Sentinelle purement côté client (jamais envoyée telle quelle au serveur, voir handleAnswer) :
 // distincte de `null` (qui signifie "pas encore répondu" pour `selected`) et des index réels
 // 0-3, pour verrouiller les boutons exactement comme une vraie réponse une fois le temps écoulé.
@@ -138,7 +138,7 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
     if (holdTimeout.current) clearTimeout(holdTimeout.current);
   }, []);
 
-  // Minuteur de 10s par question : repart à chaque nouvelle position. Ajustement pendant le rendu
+  // Minuteur de 20s par question : repart à chaque nouvelle position. Ajustement pendant le rendu
   // (comparaison à un ref, pas un useEffect) — le pattern documenté par React pour "réinitialiser
   // un state quand une prop/valeur change", qui évite un aller-retour de rendu supplémentaire.
   const lastTimerPosition = useRef(position);

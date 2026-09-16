@@ -30,7 +30,7 @@ export interface SubmitAnswerResult {
 export async function submitQuizAnswer(
   quizDate: string,
   position: number,
-  // null : le minuteur de 10s (voir QuizRunner.tsx) s'est écoulé sans qu'aucun choix n'ait été
+  // null : le minuteur de 20s (voir QuizRunner.tsx) s'est écoulé sans qu'aucun choix n'ait été
   // fait — soumis comme une réponse à part entière (jamais correcte) plutôt que de laisser la
   // question bloquée indéfiniment.
   choiceIndex: number | null
