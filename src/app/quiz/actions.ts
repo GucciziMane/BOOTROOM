@@ -52,7 +52,7 @@ export async function submitQuizAnswer(
   // parallèle plutôt qu'en série pour réduire la latence perçue à chaque tap (c'était jusqu'à 5-6
   // aller-retours Supabase séquentiels, sensible sur mobile).
   const [quiz, { data: priorAnswers }] = await Promise.all([
-    getDailyQuiz(admin, quizDate),
+    getDailyQuiz(admin, quizDate, user.id),
     admin
       .from("quiz_answers")
       .select("is_correct, points")

@@ -30,7 +30,7 @@ export default async function QuizPage() {
   ]);
   const showPrivateRanking = PRIVATE_RANKING_USERNAMES.includes(profile?.username ?? "");
 
-  const quiz = await getDailyQuiz(admin, quizDate);
+  const quiz = await getDailyQuiz(admin, quizDate, user.id);
   const publicQuiz = quiz.map(stripAnswer);
 
   // Filet de secours : si les 10 réponses existent déjà mais qu'aucun quiz_results n'a été

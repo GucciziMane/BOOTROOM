@@ -123,14 +123,24 @@ interface QuestionRow {
   explanation: string | null;
 }
 
-function questionRowToDaily(row: QuestionRow, position: number): DailyQuestionFull {
+// La banque a été écrite à la main choix par choix, sans se soucier de varier la position de la
+// bonne réponse (beaucoup de questions l'ont en position 0) — sans ce mélange, un joueur assidu
+// finit par remarquer le motif et répondre sans même lire la question. Mélange déterministe par
+// (jour, position, joueur) : chacun voit un ordre différent, mais le même ordre à chaque relecture
+// de la question (affichage ET validation lisent ce même mélange, aucun état à faire diverger).
+function shuffleChoicesForUser(row: QuestionRow, position: number, seedStr: string): DailyQuestionFull {
+  const choices = row.choices as string[];
+  const order = seededShuffle(
+    choices.map((_, i) => i),
+    seedStr
+  );
   return {
     position,
     category: row.category as QuizCategory,
     difficulty: row.difficulty as QuizDifficulty,
     question: row.question,
-    choices: row.choices as unknown as string[],
-    correctIndex: row.correct_index,
+    choices: order.map((i) => choices[i]),
+    correctIndex: order.indexOf(row.correct_index),
     explanation: row.explanation,
   };
 }
@@ -143,7 +153,7 @@ function questionRowToDaily(row: QuestionRow, position: number): DailyQuestionFu
  * de la banque pour sa difficulté, et que affichage/validation lisent toujours EXACTEMENT la même
  * chose pour une date donnée (aucun état mutable, aucune génération, rien qui puisse diverger entre
  * deux appels le même jour). */
-export async function getDailyQuiz(supabase: ServiceClient, quizDate: string): Promise<DailyQuestionFull[]> {
+export async function getDailyQuiz(supabase: ServiceClient, quizDate: string, userId: string): Promise<DailyQuestionFull[]> {
   // .order("id") : garantit un ordre stable d'un appel à l'autre avant le mélange déterministe.
   const { data: rows } = await supabase
     .from("quiz_questions")
@@ -174,7 +184,7 @@ export async function getDailyQuiz(supabase: ServiceClient, quizDate: string): P
     const globalIndex = day * slotsPerDay[difficulty] + cursorWithinDay[difficulty];
     cursorWithinDay[difficulty]++;
     const row = bucket[mod(globalIndex, bucket.length)];
-    return questionRowToDaily(row, position);
+    return shuffleChoicesForUser(row, position, `${quizDate}:${userId}:${position}`);
   });
 
   return questions.filter((q): q is DailyQuestionFull => q !== undefined);
