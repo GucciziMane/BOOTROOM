@@ -52,7 +52,6 @@ export default async function BallonDorPage() {
       .select("user_id, picks, updated_at")
       .eq("edition_year", EDITION_YEAR)
       .order("updated_at", { ascending: true });
-    console.log("DEBUG ballon-dor allPredictions", { userId: user.id, count: allPredictions?.length, error: allPredictionsError });
 
     const userIds = (allPredictions ?? []).map((p) => p.user_id);
     const { data: profiles } =
@@ -75,6 +74,13 @@ export default async function BallonDorPage() {
             ? "Ton pronostic est enregistré et ne peut plus être modifié. Voici ceux des autres joueurs qui ont déjà validé le leur."
             : "Les pronostics sont verrouillés."}
         </p>
+        <pre className="mb-4 whitespace-pre-wrap break-all rounded bg-black/50 p-2 text-[10px] text-white">
+          {JSON.stringify(
+            { userId: user.id, allPredictionsError, allPredictionsCount: allPredictions?.length, allPredictions },
+            null,
+            2
+          )}
+        </pre>
         <BallonDorSubmittedList nominees={nominees ?? []} submitted={submitted} />
       </main>
     );
