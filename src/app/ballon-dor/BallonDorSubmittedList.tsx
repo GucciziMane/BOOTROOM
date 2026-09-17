@@ -71,7 +71,13 @@ export function BallonDorSubmittedList({ nominees, submitted }: Props) {
                       {nominee ? (
                         <>
                           {nominee.photo_url ? (
-                            <Image src={nominee.photo_url} alt="" width={32} height={32} className="h-8 w-8 shrink-0 rounded-full object-cover" />
+                            <Image
+                              src={nominee.photo_url}
+                              alt=""
+                              width={32}
+                              height={32}
+                              className="h-8 w-8 shrink-0 rounded-full object-cover object-top"
+                            />
                           ) : (
                             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-cream text-xs font-bold">
                               {nominee.name.slice(0, 1)}

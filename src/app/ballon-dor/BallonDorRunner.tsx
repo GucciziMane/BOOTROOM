@@ -154,18 +154,23 @@ export function BallonDorRunner({ nominees, username, avatarUrl }: Props) {
                         alt=""
                         width={44}
                         height={44}
-                        className="h-11 w-11 shrink-0 rounded-full object-cover"
+                        className="h-11 w-11 shrink-0 rounded-full object-cover object-top"
                       />
                     ) : (
                       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-cream text-sm font-bold">
                         {nominee.name.slice(0, 1)}
                       </div>
                     )}
-                    <span className="min-w-0 flex-1">
+                    <span className="min-w-0 flex-1" style={medalGradient ? { textShadow: "0 1px 4px rgba(0,0,0,0.65)" } : undefined}>
                       <span className="block truncate font-bold">{nominee.name.toUpperCase()}</span>
-                      <span className="block truncate text-xs opacity-80">{nominee.club_name}</span>
+                      <span className="block truncate text-xs opacity-90">{nominee.club_name}</span>
                     </span>
-                    <span className="shrink-0 text-xs font-bold opacity-80">+{RANK_POINTS[rank]} pts</span>
+                    <span
+                      className="shrink-0 text-xs font-bold opacity-90"
+                      style={medalGradient ? { textShadow: "0 1px 4px rgba(0,0,0,0.65)" } : undefined}
+                    >
+                      +{RANK_POINTS[rank]} pts
+                    </span>
                   </>
                 ) : (
                   <span className="flex-1 text-center font-bold">— ? —</span>
@@ -196,7 +201,13 @@ export function BallonDorRunner({ nominees, username, avatarUrl }: Props) {
                           }`}
                         >
                           {n.photo_url ? (
-                            <Image src={n.photo_url} alt="" width={36} height={36} className="h-9 w-9 shrink-0 rounded-full object-cover" />
+                            <Image
+                              src={n.photo_url}
+                              alt=""
+                              width={36}
+                              height={36}
+                              className="h-9 w-9 shrink-0 rounded-full object-cover object-top"
+                            />
                           ) : (
                             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-cream text-xs font-bold">
                               {n.name.slice(0, 1)}
