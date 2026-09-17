@@ -219,7 +219,7 @@ export function BallonDorRunner({ nominees, initialPicks, locked, username, avat
       </div>
 
       {!locked && (
-        <div className="sticky bottom-[calc(env(safe-area-inset-bottom)+5rem)] pt-2">
+        <div className="pt-2">
           {error && <p className="mb-2 text-center text-sm text-bad">{error}</p>}
           <button type="button" onClick={handleSave} disabled={saving} className={`w-full ${buttonPrimary}`}>
             {saving ? "Enregistrement..." : saved ? "Enregistré ✓" : "Enregistrer mon pronostic"}
