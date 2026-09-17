@@ -47,11 +47,12 @@ export default async function BallonDorPage() {
     // Client authentifié (pas admin) : laisse Postgres appliquer lui-même la règle de la migration
     // 0061 (les autres ne sont visibles que si le mien existe déjà, ou une fois verrouillé) —
     // l'admin bypasserait cette RLS et montrerait les pronostics des autres à tort.
-    const { data: allPredictions } = await supabase
+    const { data: allPredictions, error: allPredictionsError } = await supabase
       .from("ballon_dor_predictions")
       .select("user_id, picks, updated_at")
       .eq("edition_year", EDITION_YEAR)
       .order("updated_at", { ascending: true });
+    console.log("DEBUG ballon-dor allPredictions", { userId: user.id, count: allPredictions?.length, error: allPredictionsError });
 
     const userIds = (allPredictions ?? []).map((p) => p.user_id);
     const { data: profiles } =
