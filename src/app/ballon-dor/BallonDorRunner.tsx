@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { saveBallonDorPrediction } from "./actions";
 import { buttonPrimary } from "@/lib/ui";
@@ -14,8 +15,6 @@ export interface NomineeOption {
 
 interface Props {
   nominees: NomineeOption[];
-  initialPicks: Record<string, number>;
-  locked: boolean;
   username: string;
   avatarUrl: string | null;
 }
@@ -38,18 +37,21 @@ const MEDAL_GRADIENT: Record<number, string> = {
 const RANKS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 const RANK_POINTS: Record<number, number> = { 1: 50, 2: 30, 3: 20, 4: 20, 5: 20, 6: 10, 7: 10, 8: 10, 9: 10, 10: 10 };
 
-export function BallonDorRunner({ nominees, initialPicks, locked, username, avatarUrl }: Props) {
-  const [picks, setPicks] = useState<Record<string, number>>(initialPicks);
+// N'est monté par la page parente que si l'utilisateur n'a pas encore validé de pronostic ET que
+// l'édition n'est pas verrouillée (voir page.tsx) : jamais affiché en lecture seule, donc pas
+// besoin d'une prop "locked" ici — une fois enregistré (RLS, migration 0061 : plus aucune policy
+// UPDATE), la page bascule elle-même sur BallonDorSubmittedList au prochain rendu.
+export function BallonDorRunner({ nominees, username, avatarUrl }: Props) {
+  const router = useRouter();
+  const [picks, setPicks] = useState<Record<string, number>>({});
   const [openRank, setOpenRank] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
 
   const nomineeById = new Map(nominees.map((n) => [n.id, n]));
   const usedIds = new Set(Object.values(picks));
 
   function handlePick(rank: number, nomineeId: number) {
-    setSaved(false);
     setPicks((prev) => {
       const next = { ...prev };
       // Un même joueur ne peut être qu'à une seule place : le retirer de toute autre place avant
@@ -64,7 +66,6 @@ export function BallonDorRunner({ nominees, initialPicks, locked, username, avat
   }
 
   function handleClear(rank: number) {
-    setSaved(false);
     setPicks((prev) => {
       const next = { ...prev };
       delete next[String(rank)];
@@ -76,9 +77,14 @@ export function BallonDorRunner({ nominees, initialPicks, locked, username, avat
     setSaving(true);
     setError(null);
     const result = await saveBallonDorPrediction(picks);
-    setSaving(false);
-    if (result.error) setError(result.error);
-    else setSaved(true);
+    if (result.error) {
+      setSaving(false);
+      setError(result.error);
+      return;
+    }
+    // Verrouillé dès l'enregistrement (plus aucune policy UPDATE) : on force le serveur à
+    // relire l'état — la page bascule alors sur la liste en lecture seule (voir page.tsx).
+    router.refresh();
   }
 
   return (
@@ -103,18 +109,11 @@ export function BallonDorRunner({ nominees, initialPicks, locked, username, avat
           </div>
         )}
         <span className="text-lg font-bold">{username}</span>
-        {locked && (
-          <span
-            className="rounded-full px-3 py-1 text-xs font-bold text-paper"
-            style={{ backgroundColor: "var(--color-reward)" }}
-          >
-            🔒 Pronostics verrouillés
-          </span>
-        )}
       </div>
 
       <p className="text-center text-sm text-mute">
-        Place les 10 joueurs que tu penses voir au classement final du Ballon d&apos;Or.
+        Place les 10 joueurs que tu penses voir au classement final du Ballon d&apos;Or. Une fois
+        enregistré, ton pronostic ne pourra plus être modifié.
       </p>
 
       <div className="space-y-2">
@@ -128,9 +127,8 @@ export function BallonDorRunner({ nominees, initialPicks, locked, username, avat
             <div key={rank}>
               <button
                 type="button"
-                disabled={locked}
                 onClick={() => setOpenRank(isOpen ? null : rank)}
-                className={`flex w-full items-center gap-3 rounded-2xl border-2 p-3 text-left transition-transform active:scale-[0.98] disabled:active:scale-100 ${
+                className={`flex w-full items-center gap-3 rounded-2xl border-2 p-3 text-left transition-transform active:scale-[0.98] ${
                   nominee ? "border-transparent text-ink" : "border-dashed text-mute"
                 }`}
                 style={
@@ -174,7 +172,7 @@ export function BallonDorRunner({ nominees, initialPicks, locked, username, avat
                 )}
               </button>
 
-              {isOpen && !locked && (
+              {isOpen && (
                 <div className="mt-1 space-y-1 rounded-2xl border border-line bg-surface p-2">
                   {nominee && (
                     <button
@@ -218,14 +216,12 @@ export function BallonDorRunner({ nominees, initialPicks, locked, username, avat
         })}
       </div>
 
-      {!locked && (
-        <div className="pt-2">
-          {error && <p className="mb-2 text-center text-sm text-bad">{error}</p>}
-          <button type="button" onClick={handleSave} disabled={saving} className={`w-full ${buttonPrimary}`}>
-            {saving ? "Enregistrement..." : saved ? "Enregistré ✓" : "Enregistrer mon pronostic"}
-          </button>
-        </div>
-      )}
+      <div className="pt-2">
+        {error && <p className="mb-2 text-center text-sm text-bad">{error}</p>}
+        <button type="button" onClick={handleSave} disabled={saving} className={`w-full ${buttonPrimary}`}>
+          {saving ? "Enregistrement..." : "Valider mon pronostic (définitif)"}
+        </button>
+      </div>
     </div>
   );
 }

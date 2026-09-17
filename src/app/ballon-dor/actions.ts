@@ -34,6 +34,17 @@ export async function saveBallonDorPrediction(picks: Record<string, number>): Pr
     return { error: "Les pronostics sont verrouillés." };
   }
 
+  // Ce chemin passe par le service role (bypass RLS, voir plus bas) : la policy "insert-only"
+  // (migration 0061) ne protège donc pas ici contre une seconde validation — revérifié
+  // explicitement, une fois pour toutes, avant d'écrire quoi que ce soit.
+  const { data: existing } = await admin
+    .from("ballon_dor_predictions")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("edition_year", EDITION_YEAR)
+    .maybeSingle();
+  if (existing) return { error: "Ton pronostic est déjà validé, il ne peut plus être modifié." };
+
   const entries = Object.entries(picks);
   if (entries.length === 0) return { error: "Aucun joueur placé." };
   for (const [rank] of entries) {
@@ -55,13 +66,16 @@ export async function saveBallonDorPrediction(picks: Record<string, number>): Pr
     return { error: "Joueur invalide pour cette édition." };
   }
 
+  // insert (pas upsert) : il n'existe plus aucun chemin légitime de mise à jour une fois validé
+  // (voir la vérification "existing" ci-dessus) — la contrainte unique (user_id, edition_year)
+  // reste un filet en cas de double soumission concurrente.
   const { error } = await admin
     .from("ballon_dor_predictions")
-    .upsert(
-      { user_id: user.id, edition_year: EDITION_YEAR, picks, updated_at: new Date().toISOString() },
-      { onConflict: "user_id,edition_year" }
-    );
-  if (error) return { error: error.message };
+    .insert({ user_id: user.id, edition_year: EDITION_YEAR, picks, updated_at: new Date().toISOString() });
+  if (error) {
+    if (error.code === "23505") return { error: "Ton pronostic est déjà validé, il ne peut plus être modifié." };
+    return { error: error.message };
+  }
 
   revalidatePath("/ballon-dor");
   return { error: null, success: true };
