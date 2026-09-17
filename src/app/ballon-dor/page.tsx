@@ -4,6 +4,7 @@ import { BackLink } from "@/app/BackLink";
 import { BallonDorIcon } from "@/app/BallonDorIcon";
 import { BallonDorRunner } from "./BallonDorRunner";
 import { BallonDorSubmittedList, type SubmittedEntry } from "./BallonDorSubmittedList";
+import { BallonDorBackground } from "./BallonDorBackground";
 
 const EDITION_YEAR = 2026;
 
@@ -67,22 +68,26 @@ export default async function BallonDorPage() {
     }));
 
     return (
-      <main className="mx-auto w-full max-w-2xl px-6 pb-28 pt-4">
-        {header}
-        <p className="mb-4 text-center text-sm text-mute">
-          {hasSubmitted
-            ? "Ton pronostic est enregistré et ne peut plus être modifié. Voici ceux des autres joueurs qui ont déjà validé le leur."
-            : "Les pronostics sont verrouillés."}
-        </p>
-        <BallonDorSubmittedList nominees={nominees ?? []} submitted={submitted} />
-      </main>
+      <BallonDorBackground>
+        <main className="mx-auto w-full max-w-2xl px-6 pb-28 pt-4">
+          {header}
+          <p className="mb-4 text-center text-sm text-mute">
+            {hasSubmitted
+              ? "Ton pronostic est enregistré et ne peut plus être modifié. Voici ceux des autres joueurs qui ont déjà validé le leur."
+              : "Les pronostics sont verrouillés."}
+          </p>
+          <BallonDorSubmittedList nominees={nominees ?? []} submitted={submitted} />
+        </main>
+      </BallonDorBackground>
     );
   }
 
   return (
-    <main className="mx-auto w-full max-w-2xl px-6 pb-28 pt-4">
-      {header}
-      <BallonDorRunner nominees={nominees ?? []} username={profile?.username ?? "?"} avatarUrl={profile?.avatar_url ?? null} />
-    </main>
+    <BallonDorBackground>
+      <main className="mx-auto w-full max-w-2xl px-6 pb-28 pt-4">
+        {header}
+        <BallonDorRunner nominees={nominees ?? []} username={profile?.username ?? "?"} avatarUrl={profile?.avatar_url ?? null} />
+      </main>
+    </BallonDorBackground>
   );
 }

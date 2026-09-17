@@ -136,7 +136,7 @@ export function BallonDorRunner({ nominees, username, avatarUrl }: Props) {
                     ? medalGradient
                       ? { backgroundImage: medalGradient, backgroundSize: "55% 100%, 100% 100%" }
                       : { backgroundColor: "rgba(217,154,24,0.12)", borderColor: "var(--color-reward)" }
-                    : { borderColor: "var(--color-line)" }
+                    : { backgroundColor: "rgba(255,255,255,0.04)", borderColor: "rgba(217,154,24,0.3)" }
                 }
               >
                 <span
