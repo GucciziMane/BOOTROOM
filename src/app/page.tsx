@@ -10,6 +10,7 @@ import { FavoriteTeamOnboarding } from "./FavoriteTeamOnboarding";
 import { ClubHomeDashboard } from "./ClubHomeDashboard";
 import { LiveMatchesBanner } from "./LiveMatchesBanner";
 import { NavCardCarousel } from "./NavCardCarousel";
+import { BallonDorIcon } from "./BallonDorIcon";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -73,6 +74,12 @@ export default async function DashboardPage() {
       emoji: "🏅",
       title: "Podium",
       description: "Le total des points de chacun entre potes, et le détail par championnat.",
+    },
+    {
+      href: "/ballon-dor",
+      icon: () => <BallonDorIcon className="h-14 w-14" />,
+      title: "Ballon d'Or",
+      description: "Pronostique le top 10 du Ballon d'Or 2026, verrouillé dès que tu valides.",
     },
     {
       href: "/chat",

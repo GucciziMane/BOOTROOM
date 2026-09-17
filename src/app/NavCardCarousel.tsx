@@ -1,11 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import Link from "next/link";
 
 export interface NavCarouselCard {
   href: string;
-  emoji: string;
+  // Un seul des deux : `emoji` pour les cartes existantes (texte, calibré via
+  // EMOJI_TOP_OFFSET_PX ci-dessous), `icon` pour une icône dessinée sur mesure (ex: Ballon d'Or,
+  // pas d'emoji Unicode qui lui corresponde) — rendue dans une boîte de même taille visuelle
+  // (60px) plutôt que de réutiliser l'alignement calibré pour du texte.
+  emoji?: string;
+  icon?: () => ReactNode;
   title: string;
   description: string;
   badgeCount?: number;
@@ -153,12 +158,16 @@ export function NavCardCarousel({ cards }: { cards: NavCarouselCard[] }) {
               {c.badgeCount}
             </span>
           )}
-          <span
-            className="text-6xl"
-            style={{ transform: `translateY(-${EMOJI_TOP_OFFSET_PX[c.emoji] ?? 0}px)` }}
-          >
-            {c.emoji}
-          </span>
+          {c.icon ? (
+            <span className="flex h-[60px] w-[60px] items-center justify-center">{c.icon()}</span>
+          ) : (
+            <span
+              className="text-6xl"
+              style={{ transform: `translateY(-${EMOJI_TOP_OFFSET_PX[c.emoji ?? ""] ?? 0}px)` }}
+            >
+              {c.emoji}
+            </span>
+          )}
           {/* min-h-[72px] (= 2 lignes à text-3xl) : "3ème mi‑temps" passe sur 2 lignes sur une
               carte mobile étroite alors que "Podium" (un seul mot) tient sur 1 — sans hauteur
               fixe ici, ce titre plus haut poussait TOUT le bloc emoji+titre+description vers le

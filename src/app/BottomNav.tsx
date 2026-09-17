@@ -91,11 +91,13 @@ export function BottomNav() {
                 active ? "text-paper" : "text-paper/55"
               }`}
             >
-              {tab.emoji ? (
-                <span className="text-2xl">{tab.emoji}</span>
-              ) : (
-                <BallonDorIcon className="h-6 w-6" />
-              )}
+              {/* Boîte 32px identique pour l'emoji ET l'icône dessinée à la main (Ballon d'Or) :
+                  un emoji en text-2xl occupe une ligne de 32px (line-height par défaut) alors que
+                  le SVG, dimensionné en h-6 w-6 (24px), ne remplissait que 24px — l'icône
+                  paraissait plus petite et légèrement décalée par rapport aux 4 autres onglets. */}
+              <span className="flex h-8 w-8 items-center justify-center">
+                {tab.emoji ? <span className="text-2xl leading-none">{tab.emoji}</span> : <BallonDorIcon className="h-6 w-6" />}
+              </span>
               <span className="whitespace-nowrap">{tab.label}</span>
             </Link>
           );
