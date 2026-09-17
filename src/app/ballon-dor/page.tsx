@@ -47,7 +47,7 @@ export default async function BallonDorPage() {
     // Client authentifié (pas admin) : laisse Postgres appliquer lui-même la règle de la migration
     // 0061 (les autres ne sont visibles que si le mien existe déjà, ou une fois verrouillé) —
     // l'admin bypasserait cette RLS et montrerait les pronostics des autres à tort.
-    const { data: allPredictions, error: allPredictionsError } = await supabase
+    const { data: allPredictions } = await supabase
       .from("ballon_dor_predictions")
       .select("user_id, picks, updated_at")
       .eq("edition_year", EDITION_YEAR)
@@ -74,13 +74,6 @@ export default async function BallonDorPage() {
             ? "Ton pronostic est enregistré et ne peut plus être modifié. Voici ceux des autres joueurs qui ont déjà validé le leur."
             : "Les pronostics sont verrouillés."}
         </p>
-        <pre className="mb-4 whitespace-pre-wrap break-all rounded bg-black/50 p-2 text-[10px] text-white">
-          {JSON.stringify(
-            { userId: user.id, allPredictionsError, allPredictionsCount: allPredictions?.length, allPredictions },
-            null,
-            2
-          )}
-        </pre>
         <BallonDorSubmittedList nominees={nominees ?? []} submitted={submitted} />
       </main>
     );
