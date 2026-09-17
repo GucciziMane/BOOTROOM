@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { BallonDorIcon } from "./BallonDorIcon";
 
 // Types de <input> qui ouvrent un vrai clavier virtuel sur mobile — pas checkbox/radio/file/range/
 // color/submit/button, dont le focus ne déclenche jamais de clavier.
@@ -18,6 +19,7 @@ const TABS = [
   { href: "/calendar", label: "Pronos", emoji: "🎯", isActive: (p: string) => p.startsWith("/calendar") || /^\/leagues\/[^/]+\/calendar/.test(p) },
   { href: "/quiz", label: "Quiz", emoji: "🧠", isActive: (p: string) => p.startsWith("/quiz") },
   { href: "/leaderboard", label: "Podium", emoji: "🏅", isActive: (p: string) => p.startsWith("/leaderboard") },
+  { href: "/ballon-dor", label: "Ballon d'Or", emoji: null, isActive: (p: string) => p.startsWith("/ballon-dor") },
   { href: "/chat", label: "Chat", emoji: "🍻", isActive: (p: string) => p.startsWith("/chat") },
 ];
 
@@ -89,7 +91,11 @@ export function BottomNav() {
                 active ? "text-paper" : "text-paper/55"
               }`}
             >
-              <span className="text-2xl">{tab.emoji}</span>
+              {tab.emoji ? (
+                <span className="text-2xl">{tab.emoji}</span>
+              ) : (
+                <BallonDorIcon className="h-6 w-6" />
+              )}
               <span className="whitespace-nowrap">{tab.label}</span>
             </Link>
           );

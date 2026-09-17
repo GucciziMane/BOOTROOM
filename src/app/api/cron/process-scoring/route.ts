@@ -16,6 +16,7 @@ import {
   type ResultTierMultiplier,
 } from "@/lib/scoring/points";
 import { computeStandings } from "@/lib/scoring/standings";
+import { computeBallonDorPoints } from "@/lib/scoring/ballon-dor";
 import { postMatchdayRecaps } from "@/lib/chat/matchday-recap";
 import type { PointsSourceType } from "@/types/database";
 
@@ -51,14 +52,21 @@ export async function GET(request: NextRequest) {
 
   const matchesResult = await processFinishedMatches(supabase, config);
   const seasonsResult = await processFinishedSeasons(supabase, config);
+  const ballonDorResult = await processBallonDor(supabase);
 
   // QStash/le monitoring ne peuvent détecter un échec réel du traitement (upsert points_ledger en
   // erreur, etc.) que via le statut HTTP : processFinishedMatches/processFinishedSeasons portaient
   // déjà l'erreur dans leur champ `error`, mais la réponse restait 200 quoi qu'il arrive. Un
   // `processed: 0` sans `error` (aucun match/saison à traiter ce run) reste un succès métier normal.
-  const failed = ("error" in matchesResult && Boolean(matchesResult.error)) || ("error" in seasonsResult && Boolean(seasonsResult.error));
+  const failed =
+    ("error" in matchesResult && Boolean(matchesResult.error)) ||
+    ("error" in seasonsResult && Boolean(seasonsResult.error)) ||
+    ("error" in ballonDorResult && Boolean(ballonDorResult.error));
 
-  return NextResponse.json({ matches: matchesResult, seasons: seasonsResult }, failed ? { status: 500 } : undefined);
+  return NextResponse.json(
+    { matches: matchesResult, seasons: seasonsResult, ballonDor: ballonDorResult },
+    failed ? { status: 500 } : undefined
+  );
 }
 
 /**
@@ -513,6 +521,79 @@ async function processFinishedSeasons(supabase: ServiceClient, config: PointConf
   }
 
   return { processed: results.length, results };
+}
+
+/**
+ * Pronostic top 10 Ballon d'Or (voir ballon_dor_editions/ballon_dor_predictions) : ne dépend
+ * d'aucun match/saison, résolu par un simple `update` SQL des colonnes rank_*_nominee_id une fois
+ * le résultat réel connu (même pratique que season_predictions.actual_surprise_team_id) — repris
+ * automatiquement au prochain passage de ce cron, sans schedule QStash dédié.
+ */
+async function processBallonDor(supabase: ServiceClient) {
+  const { data: editions, error } = await supabase
+    .from("ballon_dor_editions")
+    .select(
+      "id, year, rank_1_nominee_id, rank_2_nominee_id, rank_3_nominee_id, rank_4_nominee_id, rank_5_nominee_id, rank_6_nominee_id, rank_7_nominee_id, rank_8_nominee_id, rank_9_nominee_id, rank_10_nominee_id"
+    )
+    .is("points_processed_at", null)
+    .not("rank_1_nominee_id", "is", null)
+    .not("rank_2_nominee_id", "is", null)
+    .not("rank_3_nominee_id", "is", null)
+    .not("rank_4_nominee_id", "is", null)
+    .not("rank_5_nominee_id", "is", null)
+    .not("rank_6_nominee_id", "is", null)
+    .not("rank_7_nominee_id", "is", null)
+    .not("rank_8_nominee_id", "is", null)
+    .not("rank_9_nominee_id", "is", null)
+    .not("rank_10_nominee_id", "is", null);
+
+  if (error || !editions || editions.length === 0) {
+    return { processed: 0, error: error?.message };
+  }
+
+  let processed = 0;
+  for (const edition of editions) {
+    const actual: Record<number, number | null> = {
+      1: edition.rank_1_nominee_id,
+      2: edition.rank_2_nominee_id,
+      3: edition.rank_3_nominee_id,
+      4: edition.rank_4_nominee_id,
+      5: edition.rank_5_nominee_id,
+      6: edition.rank_6_nominee_id,
+      7: edition.rank_7_nominee_id,
+      8: edition.rank_8_nominee_id,
+      9: edition.rank_9_nominee_id,
+      10: edition.rank_10_nominee_id,
+    };
+
+    const { data: predictions } = await supabase
+      .from("ballon_dor_predictions")
+      .select("user_id, picks")
+      .eq("edition_year", edition.year);
+
+    const ledgerInserts = (predictions ?? [])
+      .map((pred) => ({ user_id: pred.user_id, points: computeBallonDorPoints(pred.picks, actual) }))
+      .filter((row) => row.points > 0)
+      .map((row) => ({
+        user_id: row.user_id,
+        league_id: null,
+        source_type: "ballon_dor" as const,
+        source_id: edition.id,
+        points: row.points,
+      }));
+
+    if (ledgerInserts.length > 0) {
+      const { error: ledgerError } = await supabase
+        .from("points_ledger")
+        .upsert(ledgerInserts, { onConflict: "user_id,source_type,source_id", ignoreDuplicates: true });
+      if (ledgerError) return { processed, error: ledgerError.message };
+    }
+
+    await supabase.from("ballon_dor_editions").update({ points_processed_at: new Date().toISOString() }).eq("id", edition.id);
+    processed++;
+  }
+
+  return { processed };
 }
 
 /** Tous les joueurs à égalité au sommet (jamais un seul choisi arbitrairement en cas d'égalité) :

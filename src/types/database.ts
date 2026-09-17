@@ -19,7 +19,8 @@ export type PointsSourceType =
   | "midseason_malus"
   | "quiz_season_bonus"
   | "midseason_bonus_gift"
-  | "weekly_outsider_bonus";
+  | "weekly_outsider_bonus"
+  | "ballon_dor";
 
 export interface Database {
   public: {
@@ -289,6 +290,62 @@ export interface Database {
           season_id: number;
         };
         Update: Partial<Database["public"]["Tables"]["season_predictions"]["Row"]>;
+        Relationships: [];
+      };
+      ballon_dor_nominees: {
+        Row: {
+          id: number;
+          edition_year: number;
+          name: string;
+          club_name: string;
+          photo_url: string | null;
+          display_order: number;
+        };
+        Insert: Partial<Database["public"]["Tables"]["ballon_dor_nominees"]["Row"]> & {
+          name: string;
+          club_name: string;
+          display_order: number;
+        };
+        Update: Partial<Database["public"]["Tables"]["ballon_dor_nominees"]["Row"]>;
+        Relationships: [];
+      };
+      ballon_dor_editions: {
+        Row: {
+          id: number;
+          year: number;
+          predictions_lock_at: string;
+          rank_1_nominee_id: number | null;
+          rank_2_nominee_id: number | null;
+          rank_3_nominee_id: number | null;
+          rank_4_nominee_id: number | null;
+          rank_5_nominee_id: number | null;
+          rank_6_nominee_id: number | null;
+          rank_7_nominee_id: number | null;
+          rank_8_nominee_id: number | null;
+          rank_9_nominee_id: number | null;
+          rank_10_nominee_id: number | null;
+          points_processed_at: string | null;
+        };
+        Insert: Partial<Database["public"]["Tables"]["ballon_dor_editions"]["Row"]> & {
+          year: number;
+          predictions_lock_at: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["ballon_dor_editions"]["Row"]>;
+        Relationships: [];
+      };
+      ballon_dor_predictions: {
+        Row: {
+          id: number;
+          user_id: string;
+          edition_year: number;
+          picks: Record<string, number>;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["ballon_dor_predictions"]["Row"]> & {
+          user_id: string;
+          edition_year: number;
+        };
+        Update: Partial<Database["public"]["Tables"]["ballon_dor_predictions"]["Row"]>;
         Relationships: [];
       };
       match_predictions: {
