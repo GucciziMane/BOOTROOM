@@ -66,11 +66,23 @@ export function teamNamesMatch(a: string, b: string): boolean {
   return false;
 }
 
+// Certains joueurs (surtout brésiliens/lusophones) sont connus sous un diminutif qui ne partage
+// aucun token avec leur nom légal complet — ESPN renvoie parfois ce nom légal complet au lieu du
+// nom d'usage habituel pour un même but (vu en prod le 16/09/2026 : "Raphael Dias Belloli" au lieu
+// de "Raphinha", but non compté pour aucun pronostic buteur). Ni le dernier ni l'avant-dernier
+// token de "Raphael Dias Belloli" ne recoupent "Raphinha" — aucune règle générique de troncature
+// de patronyme ne peut couvrir ce cas, répertorié ici au fil des cas rencontrés, comme
+// TOKEN_ALIASES pour les noms d'équipe. Clé et valeur : formes déjà normalisées (voir normalizeName).
+const FULL_NAME_NICKNAME_ALIASES: Record<string, string> = {
+  "raphael dias belloli": "raphinha",
+};
+
 /**
  * Retrouve, parmi une liste de joueurs (déjà filtrée sur la bonne équipe), celui dont le nom
- * correspond le mieux à un nom donné par API-Football (souvent abrégé, ex: "A. Gouiri").
- * Compare sur le nom de famille (dernier token) pour rester robuste aux abréviations de prénom ;
- * renvoie null si aucune correspondance unique n'est trouvée plutôt que de deviner.
+ * correspond le mieux à un nom donné par une source externe (souvent abrégé, ex: "A. Gouiri", ou
+ * parfois au contraire le nom légal complet, ex: "Daniel Olmo Carvajal" pour "Dani Olmo").
+ * Compare sur le nom de famille du candidat (dernier token) pour rester robuste aux abréviations
+ * de prénom ; renvoie null si aucune correspondance unique n'est trouvée plutôt que de deviner.
  *
  * Comparaison sur le DERNIER token du candidat uniquement (pas "un token quelconque du nom
  * contient ça") : bug vu en prod — sur un effectif avec "João Pedro" et "Pedro Neto", chercher
@@ -82,10 +94,22 @@ export function matchPlayerByName<P extends { id: number; name: string }>(
   targetName: string,
   candidates: P[]
 ): P | null {
-  const targetLastName = normalizeName(targetName).split(" ").pop();
-  if (!targetLastName) return null;
+  const normalizedTarget = normalizeName(targetName);
+  const tokens = (FULL_NAME_NICKNAME_ALIASES[normalizedTarget] ?? normalizedTarget).split(" ").filter(Boolean);
+  if (tokens.length === 0) return null;
 
-  const matches = candidates.filter((c) => normalizeName(c.name).split(" ").pop() === targetLastName);
+  const byLastToken = (token: string) => candidates.filter((c) => normalizeName(c.name).split(" ").pop() === token);
+
+  let matches = byLastToken(tokens[tokens.length - 1]);
+  // Nom légal à double patronyme (courant en ibéro/lusophone), ex: "Daniel Olmo Carvajal" côté
+  // source externe pour un effectif qui ne connaît le joueur que sous son premier patronyme
+  // ("Dani Olmo") — le dernier token seul ("carvajal") ne suffit alors plus. Retente avec
+  // l'avant-dernier avant d'abandonner ; ne compare toujours que le DERNIER token du CANDIDAT
+  // (même garde-fou que ci-dessus), donc aucun nouveau risque d'ambiguïté introduit — un token de
+  // liaison ("de", "la"...) ne matchera simplement jamais aucun candidat.
+  if (matches.length !== 1 && tokens.length >= 3) {
+    matches = byLastToken(tokens[tokens.length - 2]);
+  }
 
   return matches.length === 1 ? matches[0] : null;
 }

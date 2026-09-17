@@ -81,12 +81,7 @@ function normalizeEspnStatus(name: string): EspnEvent["status"] {
   }
 }
 
-/** Tous les matchs d'un championnat sur une plage de dates (incluse), au format YYYYMMDD-YYYYMMDD. */
-export async function getEspnScoreboard(leagueSlug: string, fromYmd: string, toYmd: string): Promise<EspnEvent[]> {
-  const data = await espnFetch<EspnScoreboardResponse>(
-    `/${leagueSlug}/scoreboard?dates=${fromYmd}-${toYmd}&limit=200`
-  );
-
+function parseScoreboardResponse(data: EspnScoreboardResponse): EspnEvent[] {
   return (data.events ?? []).flatMap((event) => {
     const comp = event.competitions[0];
     if (!comp) return [];
@@ -108,6 +103,38 @@ export async function getEspnScoreboard(leagueSlug: string, fromYmd: string, toY
       },
     ];
   });
+}
+
+function addDaysToYmd(ymd: string, days: number): string {
+  const d = new Date(`${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10).replace(/-/g, "");
+}
+
+/**
+ * Tous les matchs d'un championnat sur une plage de dates (incluse), au format YYYYMMDD.
+ *
+ * Une seule requête `dates=FROM-TO` (même à FROM===TO) suffisait jusqu'ici, mais ESPN a cessé sans
+ * préavis d'accepter ce paramètre en plage — vu en prod le 16/09/2026 : chaque appel échouait en
+ * 400 ("Failed to get events endpoint"), jamais remonté comme erreur (capturé par les appelants
+ * pour ne jamais faire échouer tout le sync), mais silencieusement aucun match jamais reconnu
+ * "live" — live-tick tournait toutes les minutes sans jamais accélérer à son rythme direct (20s),
+ * score/buts figés jusqu'au filet de repli (sync-fixtures, 30 min). Un endpoint non-officiel, sans
+ * garantie de stabilité (voir espnFetch) : une seule requête `dates=YYYYMMDD` (sans tiret, un jour
+ * exact) reste acceptée, donc une requête par jour de la plage plutôt qu'une requête pour toute la
+ * plage — coût négligeable (la plage la plus large de l'appli est de 5 jours, voir sync-fixtures).
+ */
+export async function getEspnScoreboard(leagueSlug: string, fromYmd: string, toYmd: string): Promise<EspnEvent[]> {
+  const days: string[] = [];
+  for (let d = fromYmd; d <= toYmd; d = addDaysToYmd(d, 1)) {
+    days.push(d);
+    if (days.length > 40) break; // garde-fou : jamais une plage assez large pour boucler indéfiniment sur un bug d'appelant.
+  }
+
+  const results = await Promise.all(
+    days.map((ymd) => espnFetch<EspnScoreboardResponse>(`/${leagueSlug}/scoreboard?dates=${ymd}&limit=200`))
+  );
+  return results.flatMap(parseScoreboardResponse);
 }
 
 export interface EspnGoal {
