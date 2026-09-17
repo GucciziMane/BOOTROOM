@@ -19,7 +19,7 @@ const TABS = [
   { href: "/calendar", label: "Pronos", emoji: "🎯", isActive: (p: string) => p.startsWith("/calendar") || /^\/leagues\/[^/]+\/calendar/.test(p) },
   { href: "/quiz", label: "Quiz", emoji: "🧠", isActive: (p: string) => p.startsWith("/quiz") },
   { href: "/leaderboard", label: "Podium", emoji: "🏅", isActive: (p: string) => p.startsWith("/leaderboard") },
-  { href: "/ballon-dor", label: "Ballon d'Or", emoji: null, isActive: (p: string) => p.startsWith("/ballon-dor") },
+  { href: "/ballon-dor", label: "Ballon", emoji: null, isActive: (p: string) => p.startsWith("/ballon-dor") },
   { href: "/chat", label: "Chat", emoji: "🍻", isActive: (p: string) => p.startsWith("/chat") },
 ];
 
