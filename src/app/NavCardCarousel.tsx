@@ -10,7 +10,10 @@ export interface NavCarouselCard {
   // pas d'emoji Unicode qui lui corresponde) — rendue dans une boîte de même taille visuelle
   // (60px) plutôt que de réutiliser l'alignement calibré pour du texte.
   emoji?: string;
-  icon?: () => ReactNode;
+  // Élément déjà construit (pas une fonction) : ce tableau est bâti côté Server Component
+  // (page.tsx) et passé en prop à ce composant client — une fonction ne peut pas franchir cette
+  // frontière (non sérialisable), un élément React déjà construit le peut.
+  icon?: ReactNode;
   title: string;
   description: string;
   badgeCount?: number;
@@ -159,7 +162,7 @@ export function NavCardCarousel({ cards }: { cards: NavCarouselCard[] }) {
             </span>
           )}
           {c.icon ? (
-            <span className="flex h-[60px] w-[60px] items-center justify-center">{c.icon()}</span>
+            <span className="flex h-[60px] w-[60px] items-center justify-center">{c.icon}</span>
           ) : (
             <span
               className="text-6xl"

@@ -77,7 +77,7 @@ export default async function DashboardPage() {
     },
     {
       href: "/ballon-dor",
-      icon: () => <BallonDorIcon className="h-14 w-14" />,
+      icon: <BallonDorIcon className="h-14 w-14" />,
       title: "Ballon d'Or",
       description: "Pronostique le top 10 du Ballon d'Or 2026, verrouillé dès que tu valides.",
     },
