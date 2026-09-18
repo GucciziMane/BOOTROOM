@@ -9,6 +9,11 @@ const nextConfig: NextConfig = {
     },
   },
   images: {
+    // Vercel ne facture les Image Optimization Transformations qu'une fois par image source,
+    // mais recompte dès que le cache d'une variante expire (défaut Next.js : 60s). Nos images
+    // (blasons, photos joueurs, avatars versionnés par ?t=) sont statiques ou déjà cache-bustées,
+    // donc un TTL long élimine les recalculs inutiles sans jamais servir une image périmée.
+    minimumCacheTTL: 31536000,
     remotePatterns: [
       // Photos de profil stockées dans Supabase Storage (bucket public) : on laisse next/image
       // les redimensionner/compresser à la volée plutôt que de servir le fichier original.
