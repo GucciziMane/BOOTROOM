@@ -34,7 +34,7 @@ const MEDAL_GRADIENT: Record<number, string> = {
 };
 
 const RANKS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-const RANK_POINTS: Record<number, number> = { 1: 50, 2: 30, 3: 20, 4: 20, 5: 20, 6: 10, 7: 10, 8: 10, 9: 10, 10: 10 };
+const RANK_POINTS: Record<number, number> = { 1: 50, 2: 30, 3: 20, 4: 15, 5: 15, 6: 10, 7: 10, 8: 10, 9: 10, 10: 10 };
 
 // N'est monté par la page parente que si l'utilisateur n'a pas encore validé de pronostic ET que
 // l'édition n'est pas verrouillée (voir page.tsx) : jamais affiché en lecture seule, donc pas
