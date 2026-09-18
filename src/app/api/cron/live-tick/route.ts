@@ -422,7 +422,13 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      if (espnMatch.status === "finished") {
+      // fetchSucceeded (pas juste "status finished") : sans cette garde, un match qui termine
+      // pile pendant un raté ponctuel de getEspnMatchEvents (goals/substitutions restés []) se
+      // voyait quand même marqué "événements synchronisés" — la synchro de secours de
+      // sync-fixtures (voir syncGoalEvents) ne le reprenait alors plus jamais (filtrée sur
+      // events_synced_at is null), et un but réel jamais récupéré restait silencieusement absent
+      // de match_goals. Voir la mémoire "P1 late event sync".
+      if (espnMatch.status === "finished" && fetchSucceeded) {
         await supabase.from("matches").update({ events_synced_at: new Date().toISOString() }).eq("id", match.id).is("events_synced_at", null);
       }
     }

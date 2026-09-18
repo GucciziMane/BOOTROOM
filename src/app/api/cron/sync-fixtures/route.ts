@@ -9,6 +9,7 @@ import { teamNamesMatch, matchPlayerByName } from "@/lib/sync/name-match";
 import { computeStandings } from "@/lib/scoring/standings";
 import { computeMatchOdds } from "@/lib/scoring/match-odds";
 import { LIVE_TICK_LOOKAHEAD_MS, LIVE_TICK_HEARTBEAT_STALE_MS } from "@/lib/live-tick-window";
+import { awardLateScorerAssistPoints } from "@/app/api/cron/process-scoring/route";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const MAX_EVENT_CALLS_PER_RUN = 40; // reste sous le quota de 100 req/jour de Highlightly (1 call/date+championnat + 1 call/match)
@@ -470,7 +471,7 @@ async function syncGoalEvents(
 
   const { data: pendingMatches, error } = await supabase
     .from("matches")
-    .select("id, league_id, home_team_id, away_team_id, kickoff_at, points_processed_at")
+    .select("id, league_id, season_id, home_team_id, away_team_id, kickoff_at, points_processed_at")
     .eq("status", "finished")
     .is("events_synced_at", null)
     .limit(MAX_EVENT_CALLS_PER_RUN);
@@ -507,11 +508,14 @@ async function syncGoalEvents(
 
   // Un match déjà noté (points_processed_at posé, presque toujours via le délai de grâce de
   // process-scoring quand events_synced_at n'a jamais pu être posé à temps — voir la mémoire "P1
-  // late event sync") ne doit plus jamais voir son match_goals réécrit ici : sans ce garde-fou,
-  // buteurs/passeurs affichés pouvaient diverger silencieusement de ce qui a réellement été payé,
-  // sans aucun mécanisme pour recalculer points_ledger en conséquence — même principe que le
-  // "un match finished ne redevient jamais autre chose" déjà appliqué plus haut à matches.status.
-  const alreadyScoredIds = new Set(pendingMatches.filter((m) => m.points_processed_at != null).map((m) => m.id));
+  // late event sync") : match_score est déjà figé et ne doit plus jamais changer, mais c'est
+  // justement le tout premier remplissage de match_goals pour lui (forcément vide jusqu'ici,
+  // puisque events_synced_at ne l'a jamais laissé passer par le traitement normal) — l'occasion de
+  // créditer rétroactivement les points buteur/passeur qui manquaient, voir
+  // awardLateScorerAssistPoints juste en dessous.
+  const alreadyScoredInfoById = new Map(
+    pendingMatches.filter((m) => m.points_processed_at != null).map((m) => [m.id, { leagueId: m.league_id, seasonId: m.season_id }])
+  );
 
   const saveMatchEvents = async (
     matchId: number,
@@ -529,13 +533,22 @@ async function syncGoalEvents(
     subRows: Array<{ match_id: number; team_id: number; player_out_id: number | null; player_in_id: number | null; minute: number | null }> = [],
     cardRows: Array<{ match_id: number; team_id: number; player_id: number | null; card_type: "yellow" | "red"; minute: number | null }> = []
   ) => {
-    if (alreadyScoredIds.has(matchId)) {
-      skippedAlreadyScored++;
-      // On pose quand même events_synced_at : sans ça, ce match resterait indéfiniment dans
-      // pendingMatches (filtré sur events_synced_at is null) et grignoterait une place du budget
-      // MAX_EVENT_CALLS_PER_RUN à chaque run, pour toujours aboutir au même skip.
-      await supabase.from("matches").update({ events_synced_at: new Date().toISOString() }).eq("id", matchId);
-      return;
+    const lateScoredInfo = alreadyScoredInfoById.get(matchId);
+    // Un match déjà noté ne doit plus jamais voir match_goals RÉÉCRIT une fois rempli une première
+    // fois (sinon buteurs/passeurs affichés pourraient diverger de ce qui a été payé) — mais s'il
+    // est encore vide à ce stade (sinon events_synced_at aurait déjà été posé, l'excluant de
+    // pendingMatches), ce premier remplissage est sûr et sert justement de matière à
+    // awardLateScorerAssistPoints plus bas.
+    if (lateScoredInfo) {
+      const { count: existingGoalsCount } = await supabase
+        .from("match_goals")
+        .select("id", { count: "exact", head: true })
+        .eq("match_id", matchId);
+      if (existingGoalsCount) {
+        skippedAlreadyScored++;
+        await supabase.from("matches").update({ events_synced_at: new Date().toISOString() }).eq("id", matchId);
+        return;
+      }
     }
     await supabase.from("match_goals").delete().eq("match_id", matchId);
     if (goalRows.length > 0) {
@@ -548,6 +561,9 @@ async function syncGoalEvents(
     await supabase.from("match_cards").delete().eq("match_id", matchId);
     if (cardRows.length > 0) {
       await supabase.from("match_cards").insert(cardRows);
+    }
+    if (lateScoredInfo) {
+      await awardLateScorerAssistPoints(supabase, matchId, lateScoredInfo.leagueId, lateScoredInfo.seasonId, goalRows, subRows);
     }
     await supabase.from("matches").update({ events_synced_at: new Date().toISOString() }).eq("id", matchId);
   };

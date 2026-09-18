@@ -5,11 +5,9 @@ import {
   computeMatchResultPoints,
   computeExactScoreBonus,
   computeSeasonPositionPoints,
-  resolveScorerTierPoints,
-  resolveAssistTierPoints,
+  computeScorerAssistAward,
   predictedWinnerTeamId,
   applyResultOdds,
-  predictionCoveredByPlayer,
   FALLBACK_SCORER_TIER,
   type PointConfig,
   type OddsTier,
@@ -239,20 +237,21 @@ export async function processFinishedMatches(supabase: ServiceClient, config: Po
       );
       const scorePoints = resultPoints + exactScoreBonus;
 
-      const scorerPoints = predictionCoveredByPlayer(pred.predicted_scorer_player_id, actualScorers, substituteByPlayer)
-        ? resolveScorerTierPoints(scorerTierByPlayer.get(pred.predicted_scorer_player_id!), tierPointsMap)
-        : 0;
-      const assistPoints = predictionCoveredByPlayer(pred.predicted_assist_player_id, actualAssisters, substituteByPlayer)
-        ? resolveAssistTierPoints(assistTierByPlayer.get(pred.predicted_assist_player_id!), assistTierPointsMap)
-        : 0;
-
       // x2 : un seul par (utilisateur, championnat, journée), choisi par le pronostiqueur — voir
       // saveMatchPrediction pour la validation qui garantit qu'il n'y en a jamais deux actifs à la
       // fois pour la même journée. Double tout ce que ce match rapporte (score, buteur, passeur).
       const multiplier = pred.is_doubled ? 2 : 1;
       const finalScorePoints = scorePoints * multiplier;
-      const finalScorerPoints = scorerPoints * multiplier;
-      const finalAssistPoints = assistPoints * multiplier;
+      const { scorerPoints: finalScorerPoints, assistPoints: finalAssistPoints } = computeScorerAssistAward(
+        pred,
+        actualScorers,
+        actualAssisters,
+        substituteByPlayer,
+        scorerTierByPlayer,
+        assistTierByPlayer,
+        tierPointsMap,
+        assistTierPointsMap
+      );
 
       const toAward: Array<[PointsSourceType, number]> = [
         ["match_score", finalScorePoints],
@@ -321,6 +320,99 @@ export async function processFinishedMatches(supabase: ServiceClient, config: Po
   await postMatchdayRecaps(supabase, touchedMatchdayGroups);
 
   return { processed: matchesToProcess.length };
+}
+
+/**
+ * But/passe décisive arrivé après coup pour un match déjà noté (points_processed_at posé) —
+ * mémoire "P1 late event sync" : quand la synchro des événements n'a jamais abouti avant le délai
+ * de grâce de processFinishedMatches (ci-dessus), le match est scoré avec match_goals vide, puis
+ * exclu à vie de tout retraitement (.is("points_processed_at", null) plus haut). Appelée depuis
+ * sync-fixtures juste après le tout premier remplissage de match_goals pour un tel match (jamais
+ * réappelée ensuite : ce même premier remplissage pose events_synced_at, qui exclut le match de
+ * pendingMatches côté sync-fixtures pour les runs suivants).
+ *
+ * Ne touche JAMAIS match_score (déjà figé, ne dépend que de home_score/away_score — toujours
+ * connus dès "finished", jamais concernés par ce trou) : uniquement match_scorer/match_assist,
+ * absents de points_ledger puisque match_goals était vide au moment du traitement initial.
+ */
+export async function awardLateScorerAssistPoints(
+  supabase: ServiceClient,
+  matchId: number,
+  leagueId: number,
+  seasonId: number,
+  goalRows: Array<{ player_id: number | null; assist_player_id: number | null }>,
+  subRows: Array<{ player_out_id: number | null; player_in_id: number | null }>
+): Promise<{ awarded: number }> {
+  const { data: predictions } = await supabase
+    .from("match_predictions")
+    .select("id, user_id, predicted_scorer_player_id, predicted_assist_player_id, is_doubled, points_awarded")
+    .eq("match_id", matchId);
+  if (!predictions || predictions.length === 0) return { awarded: 0 };
+
+  const { data: existingLedger } = await supabase
+    .from("points_ledger")
+    .select("user_id, source_type")
+    .eq("source_id", matchId)
+    .in("source_type", ["match_scorer", "match_assist"]);
+  const alreadyAwarded = new Set((existingLedger ?? []).map((r) => `${r.user_id}:${r.source_type}`));
+
+  const [{ data: tierPoints }, { data: assistTierPoints }, { data: scorerTierRows }, { data: assistTierRows }] = await Promise.all([
+    supabase.from("match_scorer_tier_points").select("tier, points"),
+    supabase.from("match_assist_tier_points").select("tier, points"),
+    supabase.from("player_scoring_tier").select("player_id, tier").eq("season_id", seasonId),
+    supabase.from("player_assist_tier").select("player_id, tier").eq("season_id", seasonId),
+  ]);
+  const tierPointsMap = new Map((tierPoints ?? []).map((t) => [t.tier, t.points]));
+  const assistTierPointsMap = new Map((assistTierPoints ?? []).map((t) => [t.tier, t.points]));
+  const scorerTierByPlayer = new Map((scorerTierRows ?? []).map((r) => [r.player_id, r.tier]));
+  const assistTierByPlayer = new Map((assistTierRows ?? []).map((r) => [r.player_id, r.tier]));
+
+  const actualScorers = new Set(goalRows.flatMap((g) => (g.player_id != null ? [g.player_id] : [])));
+  const actualAssisters = new Set(goalRows.flatMap((g) => (g.assist_player_id != null ? [g.assist_player_id] : [])));
+  const substituteByPlayer = new Map(
+    subRows.flatMap((s) => (s.player_out_id != null && s.player_in_id != null ? ([[s.player_out_id, s.player_in_id]] as const) : []))
+  );
+
+  const ledgerInserts: Array<{ user_id: string; league_id: number; source_type: PointsSourceType; source_id: number; points: number }> = [];
+  const predictionUpdates: Array<{ id: number; points_awarded: number }> = [];
+
+  for (const pred of predictions) {
+    const { scorerPoints, assistPoints } = computeScorerAssistAward(
+      pred,
+      actualScorers,
+      actualAssisters,
+      substituteByPlayer,
+      scorerTierByPlayer,
+      assistTierByPlayer,
+      tierPointsMap,
+      assistTierPointsMap
+    );
+    let delta = 0;
+    if (scorerPoints > 0 && !alreadyAwarded.has(`${pred.user_id}:match_scorer`)) {
+      ledgerInserts.push({ user_id: pred.user_id, league_id: leagueId, source_type: "match_scorer", source_id: matchId, points: scorerPoints });
+      delta += scorerPoints;
+    }
+    if (assistPoints > 0 && !alreadyAwarded.has(`${pred.user_id}:match_assist`)) {
+      ledgerInserts.push({ user_id: pred.user_id, league_id: leagueId, source_type: "match_assist", source_id: matchId, points: assistPoints });
+      delta += assistPoints;
+    }
+    if (delta > 0) predictionUpdates.push({ id: pred.id, points_awarded: (pred.points_awarded ?? 0) + delta });
+  }
+
+  if (ledgerInserts.length === 0) return { awarded: 0 };
+
+  // upsert + ignoreDuplicates (même contrainte unique qu'en traitement normal, migration 0024) :
+  // filet de sécurité si sync-fixtures retraitait deux fois ce même match par erreur, jamais censé
+  // arriver puisque events_synced_at (posé juste après cet appel côté sync-fixtures) l'exclut de
+  // pendingMatches pour tout run futur.
+  const { error: ledgerError } = await supabase
+    .from("points_ledger")
+    .upsert(ledgerInserts, { onConflict: "user_id,source_type,source_id", ignoreDuplicates: true });
+  if (ledgerError) return { awarded: 0 };
+
+  await Promise.all(predictionUpdates.map((u) => supabase.from("match_predictions").update({ points_awarded: u.points_awarded }).eq("id", u.id)));
+
+  return { awarded: ledgerInserts.length };
 }
 
 async function processFinishedSeasons(supabase: ServiceClient, config: PointConfig) {

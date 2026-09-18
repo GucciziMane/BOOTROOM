@@ -90,6 +90,33 @@ export function predictionCoveredByPlayer(
   return substitute != null && actualPlayers.has(substitute);
 }
 
+/**
+ * Points buteur+passeur d'un pronostic donné (jamais le score, qui ne dépend que de
+ * home_score/away_score, toujours connus dès qu'un match est "finished"). Extrait de
+ * process-scoring pour être réutilisé tel quel par la réconciliation tardive de sync-fixtures
+ * (voir awardLateScorerAssistPoints) — sans ce partage, les deux chemins auraient fini par
+ * diverger silencieusement (ex: l'un oubliant la garantie remplaçant ou le multiplicateur x2).
+ */
+export function computeScorerAssistAward(
+  prediction: { predicted_scorer_player_id: number | null; predicted_assist_player_id: number | null; is_doubled: boolean },
+  actualScorers: ReadonlySet<number>,
+  actualAssisters: ReadonlySet<number>,
+  substituteByPlayer: ReadonlyMap<number, number>,
+  scorerTierByPlayer: ReadonlyMap<number, number>,
+  assistTierByPlayer: ReadonlyMap<number, number>,
+  scorerTierPointsMap: Map<number, number>,
+  assistTierPointsMap: Map<number, number>
+): { scorerPoints: number; assistPoints: number } {
+  const scorerPoints = predictionCoveredByPlayer(prediction.predicted_scorer_player_id, actualScorers, substituteByPlayer)
+    ? resolveScorerTierPoints(scorerTierByPlayer.get(prediction.predicted_scorer_player_id!), scorerTierPointsMap)
+    : 0;
+  const assistPoints = predictionCoveredByPlayer(prediction.predicted_assist_player_id, actualAssisters, substituteByPlayer)
+    ? resolveAssistTierPoints(assistTierByPlayer.get(prediction.predicted_assist_player_id!), assistTierPointsMap)
+    : 0;
+  const multiplier = prediction.is_doubled ? 2 : 1;
+  return { scorerPoints: scorerPoints * multiplier, assistPoints: assistPoints * multiplier };
+}
+
 /** 1 = équipes proches au classement, 5 = écart de niveau important. */
 export type OddsTier = 1 | 2 | 3 | 4 | 5;
 
