@@ -114,16 +114,36 @@ export async function GET(request: NextRequest) {
   const windowStart = new Date(now.getTime() - LIVE_WINDOW_MS).toISOString();
   const windowEnd = new Date(now.getTime() + LIVE_TICK_LOOKAHEAD_MS).toISOString();
 
-  const { data: inWindowMatches } = await supabase
+  const { data: candidateMatches } = await supabase
     .from("matches")
     .select("id, league_id, season_id, home_team_id, away_team_id, status, home_score, away_score, kickoff_at, favorite_team_id, odds_tier")
     .in("status", ["scheduled", "live"])
     .lte("kickoff_at", windowEnd)
     .gt("kickoff_at", windowStart);
 
+  // Ne suit en direct (ESPN, jusqu'à un tick/20s) que les matchs réellement pronostiqués par au
+  // moins un joueur : la charge QStash de ce tick est proportionnelle à la durée totale de suivi,
+  // pas au nombre de matchs suivis dans le même tick — sur les 24h qui ont précédé cette
+  // vérification, 720 des 1000 messages/jour gratuits venaient de ce seul tick (voir incident du
+  // 10/09, revenu depuis que le correctif ESPN a rendu la cadence rapide réellement active). Un
+  // match jamais pronostiqué reste malgré tout synchronisé — juste par le filet de repli
+  // (sync-fixtures, toutes les 30 min, sans ce filtre), pas en direct minute par minute.
+  let inWindowMatches = candidateMatches ?? [];
+  if (inWindowMatches.length > 0) {
+    const { data: predictedRows } = await supabase
+      .from("match_predictions")
+      .select("match_id")
+      .in(
+        "match_id",
+        inWindowMatches.map((m) => m.id)
+      );
+    const predictedIds = new Set((predictedRows ?? []).map((r) => r.match_id));
+    inWindowMatches = inWindowMatches.filter((m) => predictedIds.has(m.id));
+  }
+
   // Rien à faire (et rien à re-planifier, voir scheduleNextTick plus bas) : sortir avant le moindre
   // appel ESPN.
-  if (!inWindowMatches || inWindowMatches.length === 0) {
+  if (inWindowMatches.length === 0) {
     return NextResponse.json({ inWindow: 0, pending: 0 });
   }
 
