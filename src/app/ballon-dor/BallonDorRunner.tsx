@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { saveBallonDorPrediction } from "./actions";
-import { buttonPrimary } from "@/lib/ui";
 
 export interface NomineeOption {
   id: number;
@@ -229,7 +228,16 @@ export function BallonDorRunner({ nominees, username, avatarUrl }: Props) {
 
       <div className="pt-2">
         {error && <p className="mb-2 text-center text-sm text-bad">{error}</p>}
-        <button type="button" onClick={handleSave} disabled={saving} className={`w-full ${buttonPrimary}`}>
+        {/* Doré plutôt que buttonPrimary (indigo générique) : seul bouton d'action de cette page,
+            doit suivre son thème plutôt que la couleur d'accent du reste de l'appli. Mêmes classes
+            structurelles que buttonPrimary (retour tactile, disabled...), juste la couleur remplacée. */}
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving}
+          className="inline-flex w-full items-center justify-center rounded-xl px-5 py-2.5 font-bold text-[#2a1c02] transition-[filter,transform] hover:brightness-110 active:scale-[0.97] disabled:opacity-50 disabled:active:scale-100"
+          style={{ backgroundColor: "var(--color-reward)" }}
+        >
           {saving ? "Enregistrement..." : "Valider mon pronostic (définitif)"}
         </button>
       </div>
