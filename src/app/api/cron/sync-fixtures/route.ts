@@ -470,7 +470,7 @@ async function syncGoalEvents(
 
   const { data: pendingMatches, error } = await supabase
     .from("matches")
-    .select("id, league_id, home_team_id, away_team_id, kickoff_at")
+    .select("id, league_id, home_team_id, away_team_id, kickoff_at, points_processed_at")
     .eq("status", "finished")
     .is("events_synced_at", null)
     .limit(MAX_EVENT_CALLS_PER_RUN);
@@ -503,6 +503,15 @@ async function syncGoalEvents(
   let unmatched = 0;
   let outOfWindow = 0;
   let stoppedOnBudget = 0;
+  let skippedAlreadyScored = 0;
+
+  // Un match déjà noté (points_processed_at posé, presque toujours via le délai de grâce de
+  // process-scoring quand events_synced_at n'a jamais pu être posé à temps — voir la mémoire "P1
+  // late event sync") ne doit plus jamais voir son match_goals réécrit ici : sans ce garde-fou,
+  // buteurs/passeurs affichés pouvaient diverger silencieusement de ce qui a réellement été payé,
+  // sans aucun mécanisme pour recalculer points_ledger en conséquence — même principe que le
+  // "un match finished ne redevient jamais autre chose" déjà appliqué plus haut à matches.status.
+  const alreadyScoredIds = new Set(pendingMatches.filter((m) => m.points_processed_at != null).map((m) => m.id));
 
   const saveMatchEvents = async (
     matchId: number,
@@ -520,6 +529,14 @@ async function syncGoalEvents(
     subRows: Array<{ match_id: number; team_id: number; player_out_id: number | null; player_in_id: number | null; minute: number | null }> = [],
     cardRows: Array<{ match_id: number; team_id: number; player_id: number | null; card_type: "yellow" | "red"; minute: number | null }> = []
   ) => {
+    if (alreadyScoredIds.has(matchId)) {
+      skippedAlreadyScored++;
+      // On pose quand même events_synced_at : sans ça, ce match resterait indéfiniment dans
+      // pendingMatches (filtré sur events_synced_at is null) et grignoterait une place du budget
+      // MAX_EVENT_CALLS_PER_RUN à chaque run, pour toujours aboutir au même skip.
+      await supabase.from("matches").update({ events_synced_at: new Date().toISOString() }).eq("id", matchId);
+      return;
+    }
     await supabase.from("match_goals").delete().eq("match_id", matchId);
     if (goalRows.length > 0) {
       await supabase.from("match_goals").insert(goalRows);
@@ -731,5 +748,5 @@ async function syncGoalEvents(
     }
   }
 
-  return { processed: pendingMatches.length, matched, matchedViaEspn, unmatched, outOfWindow, stoppedOnBudget };
+  return { processed: pendingMatches.length, matched, matchedViaEspn, unmatched, outOfWindow, stoppedOnBudget, skippedAlreadyScored };
 }
