@@ -4,7 +4,7 @@ import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { getEspnScoreboard, getEspnMatchEvents, ESPN_LEAGUE_SLUG } from "@/lib/espn/client";
 import { teamNamesMatch, matchPlayerByName, goalKey } from "@/lib/sync/name-match";
-import { sendPushBroadcastWithOverrides, sendPushToUserIdsWithOverrides } from "@/lib/push/server";
+import { sendPushBroadcastWithOverrides, sendPushToUserIdsWithOverrides, sendPushToUserIds } from "@/lib/push/server";
 import { SYSTEM_SENDER_NAME } from "@/lib/system-sender";
 import { loadPointConfig, processFinishedMatches, type ServiceClient } from "@/app/api/cron/process-scoring/route";
 import { LIVE_TICK_LOOKAHEAD_MS } from "@/lib/live-tick-window";
@@ -30,6 +30,66 @@ const APP_URL = "https://bootroom.online";
 // aussitôt née jusqu'au passage sync-fixtures suivant, 25-30 min plus tard.
 const LIVE_TICK_DELAY_SECONDS = 20;
 const WARMUP_TICK_DELAY_SECONDS = 60;
+
+// Alerte "ESPN en panne" (voir checkEspnHealthAndAlert) : incident du 16/09/2026 où l'endpoint
+// ESPN a silencieusement cessé d'accepter son paramètre de plage de dates (400 sur CHAQUE appel,
+// corrigé depuis dans src/lib/espn/client.ts) — ce tick continuait de tourner sans erreur visible
+// (jamais de statut HTTP en échec, jamais de log), donc rien ne remontait avant qu'un joueur ne
+// remarque le score figé. Seuil de 10 min (pas au premier échec, un blip réseau isolé arrive) et
+// cooldown de 2h (pas une alerte à CHAQUE tick tant que la panne dure).
+const ESPN_FAILURE_ALERT_THRESHOLD_MS = 10 * 60 * 1000;
+const ESPN_FAILURE_ALERT_COOLDOWN_MS = 2 * 60 * 60 * 1000;
+
+/**
+ * `attempted`/`failed` : nombre d'appels ESPN scoreboard RÉELLEMENT tentés ce tick (pas les hits
+ * de cache) et combien ont échoué. Alerte seulement si CE tick tentait quelque chose (sinon rien
+ * à suivre, aucun signal) et que TOUS les appels ont échoué, ET que ça dure depuis plus de
+ * ESPN_FAILURE_ALERT_THRESHOLD_MS — un seul appel raté ne déclenche rien, seule une panne
+ * soutenue le fait.
+ */
+export async function checkEspnHealthAndAlert(supabase: ServiceClient, attempted: number, failed: number): Promise<void> {
+  if (attempted === 0) return;
+
+  if (failed < attempted) {
+    // Au moins un appel a réussi ce tick : la panne (s'il y en avait une) est terminée.
+    await supabase.from("app_settings").delete().eq("key", "live_tick_espn_failing_since");
+    return;
+  }
+
+  const { data: failingSinceRow } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("key", "live_tick_espn_failing_since")
+    .maybeSingle();
+
+  if (!failingSinceRow) {
+    // Premier tick en échec total observé : on marque le début, pas encore assez long pour alerter.
+    await supabase.from("app_settings").upsert({ key: "live_tick_espn_failing_since", value: new Date().toISOString() });
+    return;
+  }
+
+  const failingSinceMs = new Date(failingSinceRow.value).getTime();
+  if (Date.now() - failingSinceMs < ESPN_FAILURE_ALERT_THRESHOLD_MS) return;
+
+  const { data: lastAlertRow } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("key", "live_tick_last_espn_alert_at")
+    .maybeSingle();
+  if (lastAlertRow && Date.now() - new Date(lastAlertRow.value).getTime() < ESPN_FAILURE_ALERT_COOLDOWN_MS) return;
+
+  const { data: admins } = await supabase.from("profiles").select("id").eq("is_admin", true);
+  const adminIds = (admins ?? []).map((a) => a.id);
+  if (adminIds.length > 0) {
+    const downMinutes = Math.round((Date.now() - failingSinceMs) / 60_000);
+    await sendPushToUserIds(adminIds, {
+      title: "⚠️ Boot Room — Live en panne",
+      body: `ESPN ne répond plus depuis ${downMinutes} min alors qu'un match devrait être suivi en direct — score/buts probablement figés.`,
+      url: "/calendar",
+    });
+  }
+  await supabase.from("app_settings").upsert({ key: "live_tick_last_espn_alert_at", value: new Date().toISOString() });
+}
 
 async function scheduleNextTick(delaySeconds: number): Promise<void> {
   const token = process.env.QSTASH_TOKEN;
@@ -98,6 +158,12 @@ export async function GET(request: NextRequest) {
   // ESPN pas encore à jour ce tick-ci (retenter au prochain). Reste à 0 (donc chaîne arrêtée) si
   // tous les matchs suivis sont soit terminés, soit d'un championnat désactivé.
   let pendingCount = 0;
+  // Pour checkEspnHealthAndAlert : compte les appels ESPN scoreboard RÉELLEMENT tentés ce tick
+  // (pas les lectures depuis scoreboardCache) et ceux qui ont échoué — signal indépendant de
+  // pendingCount, qui mélange "ESPN a répondu mais le match n'a pas encore commencé" et "ESPN n'a
+  // pas répondu du tout", deux situations très différentes à distinguer pour alerter juste.
+  let espnFetchAttempted = 0;
+  let espnFetchFailed = 0;
 
   for (const match of inWindowMatches) {
     const slug = slugByLeague.get(match.league_id);
@@ -109,10 +175,12 @@ export async function GET(request: NextRequest) {
     const cacheKey = `${slug}|${ymd}`;
     let dayEvents = scoreboardCache.get(cacheKey);
     if (dayEvents === undefined) {
+      espnFetchAttempted++;
       try {
         dayEvents = await getEspnScoreboard(slug, ymd, ymd);
       } catch {
         dayEvents = null;
+        espnFetchFailed++;
       }
       scoreboardCache.set(cacheKey, dayEvents);
     }
@@ -378,6 +446,12 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  try {
+    await checkEspnHealthAndAlert(supabase, espnFetchAttempted, espnFetchFailed);
+  } catch {
+    // L'alerte elle-même ne doit jamais faire échouer le tick (dont dépend le score/les buts).
+  }
+
   return NextResponse.json({
     inWindow: inWindowMatches.length,
     pending: pendingCount,
@@ -386,6 +460,8 @@ export async function GET(request: NextRequest) {
     goalsNotified: goalPushJobs.length,
     newlyFinished: newlyFinishedMatchIds.length,
     scoredMatches,
+    espnFetchAttempted,
+    espnFetchFailed,
   });
 }
 
