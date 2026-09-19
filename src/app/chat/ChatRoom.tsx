@@ -1312,13 +1312,13 @@ export function ChatRoom({
                   value={gifQuery}
                   onChange={(e) => setGifQuery(e.target.value)}
                   placeholder="Chercher un GIF..."
-                  className="w-full rounded-full border border-line bg-cream px-4 py-2.5 text-ink shadow-sm placeholder:text-mute focus:border-accent focus:outline-none"
+                  className="w-full rounded-full border border-line bg-surface px-4 py-2.5 text-ink shadow-sm placeholder:text-mute focus:border-accent focus:outline-none"
                 />
                 <button
                   type="button"
                   onClick={() => setGifPickerOpen(false)}
                   aria-label="Fermer"
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-cream text-mute hover:text-ink"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface text-mute hover:text-ink"
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                     <path d="M6 6l12 12M18 6L6 18" />
