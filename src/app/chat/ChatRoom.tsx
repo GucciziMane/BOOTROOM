@@ -16,7 +16,7 @@ import { FavoriteTeamBadge } from "@/app/profile/FavoriteTeamBadge";
 import { formatParisDateTime } from "@/lib/format-date";
 import { splitContentByMentions } from "@/lib/chat/mentions";
 import { SYSTEM_SENDER_NAME } from "@/lib/system-sender";
-import type { TenorGif } from "@/lib/tenor/client";
+import type { GiphyGif } from "@/lib/giphy/client";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
 
@@ -45,7 +45,7 @@ interface ChatMessage {
   // stockage se retrouverait dans la page avant même que l'utilisateur ait tapé dessus.
   hasImage: boolean;
   imageUrl: string | null;
-  // URL Tenor publique, affichée telle quelle (pas de résolution à la demande comme imageUrl) —
+  // URL Giphy publique, affichée telle quelle (pas de résolution à la demande comme imageUrl) —
   // jamais éphémère, jamais issue de notre propre stockage.
   gifUrl: string | null;
   isEphemeral: boolean;
@@ -139,10 +139,10 @@ export function ChatRoom({
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
   const [isEphemeralPick, setIsEphemeralPick] = useState(false);
-  const [selectedGif, setSelectedGif] = useState<TenorGif | null>(null);
+  const [selectedGif, setSelectedGif] = useState<GiphyGif | null>(null);
   const [gifPickerOpen, setGifPickerOpen] = useState(false);
   const [gifQuery, setGifQuery] = useState("");
-  const [gifResults, setGifResults] = useState<TenorGif[]>([]);
+  const [gifResults, setGifResults] = useState<GiphyGif[]>([]);
   const [gifLoading, setGifLoading] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
@@ -317,7 +317,7 @@ export function ChatRoom({
     setGifPickerOpen(true);
   }
 
-  function selectGif(gif: TenorGif) {
+  function selectGif(gif: GiphyGif) {
     setSelectedGif(gif);
     setGifPickerOpen(false);
   }
@@ -331,9 +331,9 @@ export function ChatRoom({
     setGifLoading(true);
     const timer = setTimeout(
       () => {
-        fetch(`/api/tenor/search?q=${encodeURIComponent(gifQuery)}`, { signal: controller.signal })
+        fetch(`/api/giphy/search?q=${encodeURIComponent(gifQuery)}`, { signal: controller.signal })
           .then((r) => r.json())
-          .then((data: { gifs?: TenorGif[] }) => setGifResults(data.gifs ?? []))
+          .then((data: { gifs?: GiphyGif[] }) => setGifResults(data.gifs ?? []))
           .catch(() => {})
           .finally(() => setGifLoading(false));
       },
@@ -1351,6 +1351,8 @@ export function ChatRoom({
                   </div>
                 )}
               </div>
+              {/* Attribution requise par les conditions d'utilisation de l'API Giphy. */}
+              <p className="pt-2 text-center text-[10px] text-mute">Powered by GIPHY</p>
             </div>
           </div>,
           document.body

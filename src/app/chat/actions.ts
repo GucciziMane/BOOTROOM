@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { sendPushToOthers, sendPushToUserIds } from "@/lib/push/server";
 import { extractMentionedUserIds } from "@/lib/chat/mentions";
-import { isTenorMediaUrl } from "@/lib/tenor/client";
+import { isGiphyMediaUrl } from "@/lib/giphy/client";
 
 export interface SendChatMessageState {
   error: string | null;
@@ -20,11 +20,11 @@ export async function sendChatMessage(
   const content = String(formData.get("content") ?? "").trim();
   const image = formData.get("image");
   const hasImage = image instanceof File && image.size > 0;
-  // Choisi dans le picker Tenor, jamais tapé/collé par l'utilisateur : validé quand même contre
-  // isTenorMediaUrl, un FormData reste manipulable côté client avant l'appel de cette action.
+  // Choisi dans le picker Giphy, jamais tapé/collé par l'utilisateur : validé quand même contre
+  // isGiphyMediaUrl, un FormData reste manipulable côté client avant l'appel de cette action.
   const rawGifUrl = formData.get("gifUrl");
   const gifUrl = typeof rawGifUrl === "string" && rawGifUrl.trim() !== "" ? rawGifUrl.trim() : null;
-  if (gifUrl && !isTenorMediaUrl(gifUrl)) return { error: "GIF invalide." };
+  if (gifUrl && !isGiphyMediaUrl(gifUrl)) return { error: "GIF invalide." };
   if (!content && !hasImage && !gifUrl) return { error: null };
   if (content.length > 2000) return { error: "Message trop long (2000 caractères max)." };
 
