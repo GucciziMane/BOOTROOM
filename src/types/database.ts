@@ -438,6 +438,7 @@ export interface Database {
           user_id: string | null;
           content: string;
           image_url: string | null;
+          gif_url: string | null;
           is_ephemeral: boolean;
           is_system: boolean;
           created_at: string;

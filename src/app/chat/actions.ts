@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { sendPushToOthers, sendPushToUserIds } from "@/lib/push/server";
 import { extractMentionedUserIds } from "@/lib/chat/mentions";
+import { isTenorMediaUrl } from "@/lib/tenor/client";
 
 export interface SendChatMessageState {
   error: string | null;
@@ -19,7 +20,12 @@ export async function sendChatMessage(
   const content = String(formData.get("content") ?? "").trim();
   const image = formData.get("image");
   const hasImage = image instanceof File && image.size > 0;
-  if (!content && !hasImage) return { error: null };
+  // Choisi dans le picker Tenor, jamais tapé/collé par l'utilisateur : validé quand même contre
+  // isTenorMediaUrl, un FormData reste manipulable côté client avant l'appel de cette action.
+  const rawGifUrl = formData.get("gifUrl");
+  const gifUrl = typeof rawGifUrl === "string" && rawGifUrl.trim() !== "" ? rawGifUrl.trim() : null;
+  if (gifUrl && !isTenorMediaUrl(gifUrl)) return { error: "GIF invalide." };
+  if (!content && !hasImage && !gifUrl) return { error: null };
   if (content.length > 2000) return { error: "Message trop long (2000 caractères max)." };
 
   const supabase = await createClient();
@@ -66,6 +72,7 @@ export async function sendChatMessage(
     user_id: user.id,
     content,
     image_url: imageUrl,
+    gif_url: gifUrl,
     is_ephemeral: isEphemeral,
     reply_to_id: hasValidReplyToId ? replyToId : null,
   });
@@ -74,7 +81,7 @@ export async function sendChatMessage(
   const { data: profiles } = await supabase.from("profiles").select("id, username");
   const senderName = profiles?.find((p) => p.id === user.id)?.username ?? "Quelqu'un";
   const mentionedUserIds = extractMentionedUserIds(content, profiles ?? []).filter((id) => id !== user.id);
-  const pushBody = isEphemeral ? "📸 Photo à voir une fois" : content || "📷 Photo";
+  const pushBody = isEphemeral ? "📸 Photo à voir une fois" : content || (gifUrl ? "🎞️ GIF" : "📷 Photo");
 
   // Auteur du message cité, prévenu spécifiquement (comme une mention) — sauf s'il s'est déjà
   // mentionné lui-même ou répond à son propre message, pour ne jamais se notifier soi-même.

@@ -16,6 +16,7 @@ import { FavoriteTeamBadge } from "@/app/profile/FavoriteTeamBadge";
 import { formatParisDateTime } from "@/lib/format-date";
 import { splitContentByMentions } from "@/lib/chat/mentions";
 import { SYSTEM_SENDER_NAME } from "@/lib/system-sender";
+import type { TenorGif } from "@/lib/tenor/client";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
 
@@ -44,6 +45,9 @@ interface ChatMessage {
   // stockage se retrouverait dans la page avant même que l'utilisateur ait tapé dessus.
   hasImage: boolean;
   imageUrl: string | null;
+  // URL Tenor publique, affichée telle quelle (pas de résolution à la demande comme imageUrl) —
+  // jamais éphémère, jamais issue de notre propre stockage.
+  gifUrl: string | null;
   isEphemeral: boolean;
   // Récap de journée posté par le cron (voir postMatchdayRecaps) : pas d'auteur humain, affiché
   // en bandeau centré plutôt qu'en bulle avatar+pseudo.
@@ -87,6 +91,7 @@ interface PendingMessage {
   content: string;
   hasImage: boolean;
   imageUrl: string | null;
+  gifUrl: string | null;
   isEphemeral: boolean;
   createdAt: string;
   replyTo: { id: number; username: string; preview: string } | null;
@@ -134,6 +139,11 @@ export function ChatRoom({
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
   const [isEphemeralPick, setIsEphemeralPick] = useState(false);
+  const [selectedGif, setSelectedGif] = useState<TenorGif | null>(null);
+  const [gifPickerOpen, setGifPickerOpen] = useState(false);
+  const [gifQuery, setGifQuery] = useState("");
+  const [gifResults, setGifResults] = useState<TenorGif[]>([]);
+  const [gifLoading, setGifLoading] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
   const [torchSupported, setTorchSupported] = useState(false);
@@ -257,6 +267,7 @@ export function ChatRoom({
   useEffect(() => stopCameraStream, []);
 
   function processSelectedFile(file: File, ephemeral: boolean) {
+    setSelectedGif(null); // une image et un GIF ne se combinent pas dans le même message
     if (file.size > MAX_IMAGE_BYTES) {
       setImageError("Image trop lourde (5 Mo max).");
       return;
@@ -299,6 +310,40 @@ export function ChatRoom({
     setImageError(null);
     if (formImageInputRef.current) formImageInputRef.current.value = "";
   }
+
+  function openGifPicker() {
+    clearImage(); // une image et un GIF ne se combinent pas dans le même message
+    setGifQuery("");
+    setGifPickerOpen(true);
+  }
+
+  function selectGif(gif: TenorGif) {
+    setSelectedGif(gif);
+    setGifPickerOpen(false);
+  }
+
+  // Featured au premier ouverture (requête vide) puis recherche debouncée à chaque frappe — pas de
+  // délai pour la toute première charge (featured), l'utilisateur ne devrait jamais voir un panneau
+  // vide le temps qu'un debounce s'écoule alors qu'il vient tout juste de l'ouvrir.
+  useEffect(() => {
+    if (!gifPickerOpen) return;
+    const controller = new AbortController();
+    setGifLoading(true);
+    const timer = setTimeout(
+      () => {
+        fetch(`/api/tenor/search?q=${encodeURIComponent(gifQuery)}`, { signal: controller.signal })
+          .then((r) => r.json())
+          .then((data: { gifs?: TenorGif[] }) => setGifResults(data.gifs ?? []))
+          .catch(() => {})
+          .finally(() => setGifLoading(false));
+      },
+      gifQuery ? 350 : 0
+    );
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [gifPickerOpen, gifQuery]);
 
   async function openEphemeralPhoto(m: ChatMessage) {
     // Marquée vue dès le tap (pas seulement après résolution) : un deuxième tap pendant la
@@ -449,6 +494,7 @@ export function ChatRoom({
             user_id: string | null;
             content: string;
             image_url: string | null;
+            gif_url: string | null;
             is_ephemeral: boolean;
             is_system: boolean;
             created_at: string;
@@ -471,6 +517,7 @@ export function ChatRoom({
                     content: row.content,
                     hasImage: row.image_url != null,
                     imageUrl: null,
+                    gifUrl: row.gif_url,
                     isEphemeral: row.is_ephemeral,
                     isSystem: row.is_system,
                     createdAt: row.created_at,
@@ -484,7 +531,10 @@ export function ChatRoom({
           if (row.user_id === currentUserId) {
             setPendingMessages((prev) => {
               const index = prev.findIndex(
-                (p) => p.content === row.content && p.hasImage === (row.image_url != null)
+                (p) =>
+                  p.content === row.content &&
+                  p.hasImage === (row.image_url != null) &&
+                  (p.gifUrl != null) === (row.gif_url != null)
               );
               if (index === -1) return prev;
               if (prev[index].imageUrl) URL.revokeObjectURL(prev[index].imageUrl);
@@ -581,7 +631,7 @@ export function ChatRoom({
     sendingLock.current = true;
 
     const content = String(formData.get("content") ?? "").trim();
-    if (!content && !imageFile) {
+    if (!content && !imageFile && !selectedGif) {
       sendingLock.current = false;
       return;
     }
@@ -591,6 +641,7 @@ export function ChatRoom({
       content,
       hasImage: !!imageFile,
       imageUrl: imageFile ? URL.createObjectURL(imageFile) : null,
+      gifUrl: selectedGif?.url ?? null,
       isEphemeral: isEphemeralPick,
       createdAt: new Date().toISOString(),
       replyTo: replyingTo,
@@ -624,6 +675,7 @@ export function ChatRoom({
       formRef.current?.reset();
       setMessageText("");
       clearImage();
+      setSelectedGif(null);
       setReplyingTo(null);
     }
   }
@@ -869,6 +921,19 @@ export function ChatRoom({
                         )}
                       </a>
                     )}
+                    {m.gifUrl && (
+                      // <img> plutôt que next/image : le loader d'optimisation d'images ne préserve
+                      // pas l'animation des GIF (converti en image statique), et une URL Tenor
+                      // publique/permanente n'a de toute façon rien à gagner à repasser par notre
+                      // quota d'optimisation.
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={m.gifUrl}
+                        alt=""
+                        loading="lazy"
+                        className={`h-auto max-h-72 w-full max-w-[240px] rounded-2xl object-cover ${m.content ? "mb-1" : ""} ${isOwn ? "rounded-br-md" : "rounded-bl-md"}`}
+                      />
+                    )}
                     {m.content && (
                       <div
                         className={`px-3.5 py-2 text-[15px] leading-snug ${
@@ -963,6 +1028,14 @@ export function ChatRoom({
                   )}
                 </div>
               )}
+              {p.gifUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={p.gifUrl}
+                  alt=""
+                  className={`h-auto max-h-72 w-full max-w-[240px] rounded-2xl rounded-br-md object-cover ${p.content ? "mb-1" : ""}`}
+                />
+              )}
               {p.content && (
                 <div className="rounded-2xl rounded-br-md bg-accent px-3.5 py-2 text-[15px] leading-snug text-paper">
                   {p.content}
@@ -999,6 +1072,24 @@ export function ChatRoom({
           </div>
         </div>
       )}
+      {selectedGif && (
+        <div className="px-4 pb-2">
+          <div className="relative inline-block">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={selectedGif.previewUrl} alt="" className="h-20 w-20 rounded-xl object-cover shadow-sm" />
+            <button
+              type="button"
+              onClick={() => setSelectedGif(null)}
+              aria-label="Retirer le GIF"
+              className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-surface-inverse text-paper shadow-sm"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
       {replyingTo && (
         <div className="mx-4 flex items-center gap-2 rounded-xl border-l-2 border-accent bg-surface/70 px-3 py-2 text-xs">
           <div className="min-w-0 flex-1">
@@ -1021,6 +1112,7 @@ export function ChatRoom({
         <input ref={formImageInputRef} type="file" name="image" className="hidden" />
         <input type="hidden" name="ephemeral" value={isEphemeralPick ? "1" : "0"} />
         <input type="hidden" name="replyToId" value={replyingTo?.id ?? ""} />
+        <input type="hidden" name="gifUrl" value={selectedGif?.url ?? ""} />
         <input
           ref={cameraInputRef}
           type="file"
@@ -1059,6 +1151,20 @@ export function ChatRoom({
             <path d="M3 17l5-5 3.5 3.5L16 11l5 5" />
           </svg>
         </button>
+        <button
+          type="button"
+          onClick={openGifPicker}
+          aria-label="Envoyer un GIF"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface text-mute shadow-sm transition-colors hover:text-ink"
+        >
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="6" width="18" height="12" rx="2.5" />
+            <path d="M7 9.5v5" />
+            <path d="M10.5 14.5v-5h2M10.5 12h1.5" />
+            <path d="M15 14.5v-5h2.2" />
+            <path d="M15 12h1.6" />
+          </svg>
+        </button>
         <div className="relative flex-1">
           {mentionQuery && matchingUsers.length > 0 && (
             <div className="absolute bottom-full left-0 z-10 mb-1 max-h-40 w-48 overflow-y-auto rounded-xl border border-line bg-surface shadow-md">
@@ -1088,7 +1194,7 @@ export function ChatRoom({
         </div>
         <button
           type="submit"
-          disabled={isSending || (!messageText.trim() && !imageFile)}
+          disabled={isSending || (!messageText.trim() && !imageFile && !selectedGif)}
           aria-label="Envoyer"
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-paper transition-colors hover:bg-accent-hover disabled:opacity-40"
         >
@@ -1188,6 +1294,63 @@ export function ChatRoom({
                   <path d="M9 9H7.5" />
                 </svg>
               </button>
+            </div>
+          </div>,
+          document.body
+        )}
+      {gifPickerOpen &&
+        createPortal(
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setGifPickerOpen(false)}>
+            <div
+              className="flex h-[70vh] w-full max-w-2xl flex-col rounded-t-[28px] bg-surface p-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-3 flex items-center gap-2">
+                <input
+                  type="text"
+                  autoFocus
+                  value={gifQuery}
+                  onChange={(e) => setGifQuery(e.target.value)}
+                  placeholder="Chercher un GIF..."
+                  className="w-full rounded-full border border-line bg-cream px-4 py-2.5 text-ink shadow-sm placeholder:text-mute focus:border-accent focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setGifPickerOpen(false)}
+                  aria-label="Fermer"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-cream text-mute hover:text-ink"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                    <path d="M6 6l12 12M18 6L6 18" />
+                  </svg>
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {gifLoading ? (
+                  <p className="py-8 text-center text-sm text-mute">Chargement…</p>
+                ) : gifResults.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-mute">Aucun résultat.</p>
+                ) : (
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {gifResults.map((gif) => (
+                      <button
+                        key={gif.id}
+                        type="button"
+                        onClick={() => selectGif(gif)}
+                        className="overflow-hidden rounded-lg transition-transform active:scale-95"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={gif.previewUrl}
+                          alt={gif.description}
+                          loading="lazy"
+                          className="aspect-square w-full object-cover"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>,
           document.body
