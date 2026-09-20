@@ -10,6 +10,7 @@ import { computeStandings } from "@/lib/scoring/standings";
 import { computeMatchOdds } from "@/lib/scoring/match-odds";
 import { LIVE_TICK_LOOKAHEAD_MS, LIVE_TICK_HEARTBEAT_STALE_MS } from "@/lib/live-tick-window";
 import { awardLateScorerAssistPoints } from "@/app/api/cron/process-scoring/route";
+import { pingDeadMansSwitch } from "@/lib/monitoring/dead-mans-switch";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const MAX_EVENT_CALLS_PER_RUN = 40; // reste sous le quota de 100 req/jour de Highlightly (1 call/date+championnat + 1 call/match)
@@ -31,10 +32,13 @@ const APP_URL = "https://bootroom.online";
 // relance pas la chaîne, qui meurt alors jusqu'au passage suivant, 25-30 min plus tard.
 const LIVE_TICK_WAKEUP_TRAILING_MS = 150 * 60 * 1000; // même fenêtre que LIVE_WINDOW_MS côté live-tick
 
-async function wakeLiveTickIfNeeded(supabase: ReturnType<typeof createServiceRoleClient>): Promise<void> {
+/** `false` : le réveil a été tenté et a échoué — voir l'appelant, qui ping alors le dead man's
+ * switch en échec immédiatement plutôt que d'attendre (et d'écraser ce signal avec) le ping de
+ * succès générique en fin de run. */
+async function wakeLiveTickIfNeeded(supabase: ReturnType<typeof createServiceRoleClient>): Promise<boolean> {
   const token = process.env.QSTASH_TOKEN;
   const cronSecret = process.env.CRON_SECRET;
-  if (!token || !cronSecret) return;
+  if (!token || !cronSecret) return true;
 
   const now = Date.now();
   const { count } = await supabase
@@ -43,7 +47,7 @@ async function wakeLiveTickIfNeeded(supabase: ReturnType<typeof createServiceRol
     .in("status", ["scheduled", "live"])
     .gt("kickoff_at", new Date(now - LIVE_TICK_WAKEUP_TRAILING_MS).toISOString())
     .lte("kickoff_at", new Date(now + LIVE_TICK_LOOKAHEAD_MS).toISOString());
-  if (!count || count === 0) return;
+  if (!count || count === 0) return true;
 
   // Ne réveille que si aucune chaîne d'auto-réveil ne tourne déjà (voir LIVE_TICK_HEARTBEAT_STALE_MS
   // pour l'incident que ça corrige) : sans ce garde-fou, ce réveil partait à chaque passage de ce
@@ -54,7 +58,7 @@ async function wakeLiveTickIfNeeded(supabase: ReturnType<typeof createServiceRol
     .select("value")
     .eq("key", "live_tick_last_heartbeat")
     .maybeSingle();
-  if (heartbeat && now - new Date(heartbeat.value).getTime() < LIVE_TICK_HEARTBEAT_STALE_MS) return;
+  if (heartbeat && now - new Date(heartbeat.value).getTime() < LIVE_TICK_HEARTBEAT_STALE_MS) return true;
 
   try {
     const client = new QStashClient({ token });
@@ -63,9 +67,13 @@ async function wakeLiveTickIfNeeded(supabase: ReturnType<typeof createServiceRol
       method: "GET",
       headers: { Authorization: `Bearer ${cronSecret}` },
     });
+    return true;
   } catch {
-    // Pas grave : le prochain passage de ce cron (30 min) retentera — un coup d'envoi imminent
-    // reste de toute façon couvert par la marge de 35 min ci-dessus.
+    // Pas grave pour CE match précis : le prochain passage de ce cron (30 min) retentera — un
+    // coup d'envoi imminent reste de toute façon couvert par la marge de 35 min ci-dessus. Mais
+    // c'est exactement la panne de l'incident du 19/09/2026, donc l'appelant en fait un échec du
+    // dead man's switch plutôt que de le laisser passer pour un run normal.
+    return false;
   }
 }
 
@@ -314,7 +322,13 @@ export async function GET(request: NextRequest) {
   }
 
   const eventsSummary = await syncGoalEvents(supabase, leagues, startedAt);
-  await wakeLiveTickIfNeeded(supabase);
+  const liveTickWakeOk = await wakeLiveTickIfNeeded(supabase);
+
+  // Signal de vie envoyé à chaque run — c'est justement ce ping régulier (toutes les 30 min, voir
+  // le schedule QStash) qui manquait pour détecter que QStash lui-même a cessé de délivrer nos
+  // crons, ou que le réveil de live-tick a échoué (voir dead-mans-switch.ts et l'incident du
+  // 19/09/2026 qui a motivé ce mécanisme).
+  await pingDeadMansSwitch(liveTickWakeOk ? "success" : "fail");
 
   return NextResponse.json({ matches: matchesSummary, events: eventsSummary });
 }
