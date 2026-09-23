@@ -56,10 +56,15 @@ export async function updateSession(request: NextRequest) {
   ) {
     const today = parisDateString();
     if (request.cookies.get(SEASON_PRED_REMINDER_COOKIE)?.value !== today) {
+      // Ligue des Nations exclue : pas de pronostic de saison pour cette compétition (voir
+      // src/app/leagues/page.tsx) — sans ce filtre, faute d'y avoir jamais de pronostic
+      // enregistré, elle "gagnait" ce choix pour tout le monde et redirigeait chaque joueur vers
+      // un formulaire de saison qui n'a pas de sens pour cette compétition.
       const { data: leagues } = await supabase
         .from("leagues")
         .select("id, football_data_code")
-        .eq("active", true);
+        .eq("active", true)
+        .neq("football_data_code", "NL");
       const leagueIds = (leagues ?? []).map((l) => l.id);
 
       const { data: seasons } = await supabase

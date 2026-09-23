@@ -136,6 +136,17 @@ export function MatchPredictionCard({
   const [assistId, setAssistId] = useState(
     initial.predictedAssistPlayerId != null ? String(initial.predictedAssistPlayerId) : ""
   );
+  // Les deux <select> buteur/passeur contiennent tout l'effectif des deux équipes (jusqu'à ~50
+  // joueurs pour un match de sélections nationales) : sur une page qui affiche des dizaines de
+  // matchs à la fois (ex: "Prochaine journée" pendant une trêve internationale, Ligue des Nations),
+  // générer ces <option> pour CHAQUE carte dès le premier rendu alourdit l'hydratation de toute la
+  // page pour un bénéfice quasi nul (l'utilisateur n'ouvre qu'une poignée de ces menus à la fois).
+  // Chargées à la demande (au premier focus), sauf si un choix est déjà enregistré : la valeur
+  // sélectionnée doit alors être présente dans les <option> dès l'affichage, pas seulement après
+  // un focus que l'utilisateur ne déclenchera peut-être jamais.
+  const [playerOptionsLoaded, setPlayerOptionsLoaded] = useState(
+    initial.predictedScorerPlayerId != null || initial.predictedAssistPlayerId != null
+  );
   // 0-0 : aucun but marqué, donc aucun buteur/passeur possible (revalidé aussi côté serveur, voir
   // saveMatchPrediction) — sélecteurs désactivés plutôt que de laisser un choix qui sera refusé.
   const isZeroZero = homeScore === "0" && awayScore === "0";
@@ -328,38 +339,42 @@ export function MatchPredictionCard({
         name="predicted_scorer_player_id"
         value={scorerId}
         onChange={(e) => setScorerId(e.target.value)}
+        onFocus={() => setPlayerOptionsLoaded(true)}
         disabled={isZeroZero}
         className={`relative mt-3 text-sm ${input} ${isZeroZero ? "opacity-50" : ""}`}
       >
         <option value="">Buteur (optionnel)</option>
-        {playerGroups.map((group) => (
-          <optgroup key={group.label} label={group.label}>
-            {group.options.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.label}
-              </option>
-            ))}
-          </optgroup>
-        ))}
+        {playerOptionsLoaded &&
+          playerGroups.map((group) => (
+            <optgroup key={group.label} label={group.label}>
+              {group.options.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </optgroup>
+          ))}
       </select>
 
       <select
         name="predicted_assist_player_id"
         value={assistId}
         onChange={(e) => setAssistId(e.target.value)}
+        onFocus={() => setPlayerOptionsLoaded(true)}
         disabled={isZeroZero}
         className={`relative mt-2 text-sm ${input} ${isZeroZero ? "opacity-50" : ""}`}
       >
         <option value="">Passeur décisif (optionnel)</option>
-        {playerGroups.map((group) => (
-          <optgroup key={group.label} label={group.label}>
-            {group.options.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.label}
-              </option>
-            ))}
-          </optgroup>
-        ))}
+        {playerOptionsLoaded &&
+          playerGroups.map((group) => (
+            <optgroup key={group.label} label={group.label}>
+              {group.options.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </optgroup>
+          ))}
       </select>
       {isZeroZero && (
         <p className={`relative mt-1 text-center text-xs ${textFaint}`}>0-0 : pas de buteur ni de passeur possible.</p>
