@@ -63,6 +63,15 @@ export default async function CalendarPage() {
   // championnat, donc le filtrage "seulement la plus proche" peut se faire ici, en mémoire.
   const matchesPerSeason = await Promise.all(
     seasonIds.map(async (seasonId) => {
+      // Ligue des Nations : trêves internationales espacées de plusieurs semaines (contrairement
+      // aux championnats de club, une journée par semaine) — n'ouvrir que la toute prochaine
+      // journée laisserait l'onglet sans aucun match de cette compétition pendant des semaines
+      // entre deux trêves. Les 4 premières journées à venir (les 2 trêves les plus proches, vu
+      // qu'une trêve en comporte 2) restent donc ouvertes au pronostic en même temps.
+      const leagueId = leagueIdBySeasonId.get(seasonId);
+      const isNationsLeague = leagueId != null && leagueById.get(leagueId)?.football_data_code === "NL";
+      const matchdayWindow = isNationsLeague ? 4 : 1;
+
       const { data } = await supabase
         .from("matches")
         .select(
@@ -72,7 +81,7 @@ export default async function CalendarPage() {
         .in("status", ["scheduled", "live"])
         .order("matchday", { ascending: true, nullsFirst: false })
         .order("kickoff_at", { ascending: true })
-        .limit(30);
+        .limit(isNationsLeague ? 80 : 30);
       const rows = data ?? [];
       // La plus PETITE journée qui n'est pas un reliquat, pas juste la plus petite tout court : un
       // match reporté (souvent un seul, déplacé à une autre date) laisse la journée en cours
@@ -100,7 +109,11 @@ export default async function CalendarPage() {
       // prochaine journée complète. Un match bien réel et à pronostiquer ne doit jamais disparaître
       // purement et simplement de l'onglet (vu en prod : le match du jour même avait disparu après
       // la première version de ce fix).
-      const matchdaysToShow = new Set(sortedMatchdays.filter(([matchday]) => nextMatchday == null || matchday <= nextMatchday).map(([matchday]) => matchday));
+      const matchdaysToShow = new Set(
+        sortedMatchdays
+          .filter(([matchday]) => nextMatchday == null || matchday <= nextMatchday + (matchdayWindow - 1))
+          .map(([matchday]) => matchday)
+      );
       return nextMatchday != null ? rows.filter((m) => m.matchday != null && matchdaysToShow.has(m.matchday)) : rows.slice(0, 20);
     })
   );
