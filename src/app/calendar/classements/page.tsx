@@ -52,7 +52,10 @@ export default async function CalendarStandingsPage() {
       <ul className={listCard}>
         {(leagues ?? []).map((league) => {
           const season = currentSeasonByLeague.get(league.id);
-          const predictionPending = season && !predictedSeasonIds.has(season.id);
+          // Ligue des Nations : pas de pronostic de saison pour l'instant (meilleur buteur/top3
+          // supposent des effectifs et un classement à une seule poule, ni l'un ni l'autre encore
+          // disponibles pour cette compétition — voir scripts/sync-nations-league.mjs).
+          const predictionPending = league.football_data_code !== "NL" && season && !predictedSeasonIds.has(season.id);
 
           return (
             <li key={league.id}>

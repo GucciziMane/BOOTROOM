@@ -15,10 +15,14 @@ export default async function LeaguesPage() {
   const user = session?.user ?? null;
 
   const [{ data: leagues }, { data: seasons }, { data: predictions }] = await Promise.all([
+    // Ligue des Nations exclue : pas de pronostic de saison pour l'instant (meilleur buteur/top3
+    // supposent des effectifs et un classement à une seule poule, ni l'un ni l'autre encore
+    // disponibles pour cette compétition — voir scripts/sync-nations-league.mjs).
     supabase
       .from("leagues")
       .select("id, name, country, football_data_code, logo_url")
       .eq("active", true)
+      .neq("football_data_code", "NL")
       .order("name"),
     supabase.from("seasons").select("id, league_id, status"),
     supabase.from("season_predictions").select("season_id").eq("user_id", user!.id),

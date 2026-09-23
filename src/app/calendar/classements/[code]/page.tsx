@@ -144,7 +144,10 @@ export default async function StandingsPage({ params }: PageProps<"/calendar/cla
         <BackLink href="/calendar/classements" />
       </div>
 
-      {!predicted && (
+      {/* Ligue des Nations : pas de pronostic de saison pour l'instant (meilleur buteur/top3
+          supposent des effectifs et un classement à une seule poule, ni l'un ni l'autre encore
+          disponibles pour cette compétition — voir scripts/sync-nations-league.mjs). */}
+      {!predicted && code !== "NL" && (
         <div className={`mb-6 flex flex-wrap items-center justify-between gap-3 ${bannerWarn}`}>
           <span>🔮 Pronostics de saison pas encore faits pour ce championnat.</span>
           <Link href={`/leagues/${code}`} className="shrink-0 font-bold underline">
