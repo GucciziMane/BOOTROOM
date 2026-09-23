@@ -148,7 +148,14 @@ export async function subscribeToPush(subscription: {
 
 export async function unsubscribeFromPush(endpoint: string): Promise<void> {
   const supabase = await createClient();
-  await supabase.from("push_subscriptions").delete().eq("endpoint", endpoint);
+  // La policy RLS ("auth.uid() = user_id", migration 0013) empêchait déjà de fait toute
+  // suppression croisée, mais ce filtre applicatif explicite documente l'intention et ne dépend
+  // plus uniquement de la base pour rester correct.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+  await supabase.from("push_subscriptions").delete().eq("endpoint", endpoint).eq("user_id", user.id);
 }
 
 /** Une seule réaction par utilisateur et par message : en choisir une nouvelle remplace la
@@ -230,5 +237,13 @@ export async function getChatImageUrl(messageId: number): Promise<string | null>
  * besoin d'un aller-retour getUser() de plus rien que pour le redemander ici. */
 export async function markChatAsRead(userId: string): Promise<void> {
   const supabase = await createClient();
+  // Vérifié contre la session plutôt que fait confiance à userId tel quel : cette fonction est
+  // exportée depuis un fichier "use server", donc potentiellement appelable directement de
+  // l'extérieur avec un id arbitraire — aujourd'hui seulement invoquée avec l'id de l'appelant
+  // (page.tsx), mais rien ne garantit que ça reste vrai après un futur refactor.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user || user.id !== userId) return;
   await supabase.from("profiles").update({ chat_last_read_at: new Date().toISOString() }).eq("id", userId);
 }
