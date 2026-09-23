@@ -26,6 +26,9 @@ const nextConfig: NextConfig = {
       // Photos de joueurs, résolues depuis l'image d'infobox Wikipédia de chaque joueur
       // (scripts/fetch-wikipedia-squads.mjs) — servies par Wikimedia, pas par Wikipédia lui-même.
       { protocol: "https", hostname: "upload.wikimedia.org" },
+      // Drapeaux des sélections nationales + logo de la Ligue des Nations (scripts/sync-nations-
+      // league.mjs, seule source disponible pour cette compétition — voir son en-tête).
+      { protocol: "https", hostname: "a.espncdn.com" },
     ],
   },
 };
