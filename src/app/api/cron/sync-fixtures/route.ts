@@ -151,6 +151,12 @@ export async function GET(request: NextRequest) {
   }> = [];
 
   for (const league of leagues) {
+    // Ligue des Nations : aucune présence côté football-data.org (absente de GET /v4/competitions
+    // sur notre plan), donc rien à appeler ici — son calendrier est peuplé/complété séparément
+    // (scripts/sync-nations-league.mjs, source ESPN). Le reste de ce cron (syncGoalEvents,
+    // wakeLiveTickIfNeeded juste en dessous) reste générique par slug ESPN et continue de la
+    // couvrir normalement pour les matchs déjà prédits par au moins un joueur.
+    if (league.football_data_code === "NL") continue;
     try {
       const { data: seasons } = await supabase
         .from("seasons")
@@ -321,6 +327,15 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Ligue des Nations : filet de secours pour un match qu'aucun joueur n'a pronostiqué — live-tick
+  // ne suit que les matchs prédits (voir son propre filtre), donc sans ceci un match sans aucun
+  // pronostic resterait bloqué "scheduled" à vie, jamais touché par rien d'autre (elle est exclue
+  // de la boucle football-data.org plus haut). Même classe de bug que les 2 matchs Bundesliga/
+  // Primeira Liga trouvés bloqués "live" lors de l'audit du 23/09 — corrigée ici avant qu'elle ne
+  // se reproduise sur cette nouvelle ligue.
+  const nlLeague = leagues.find((l) => l.football_data_code === "NL");
+  if (nlLeague) await refreshNationsLeagueScoresFromEspn(supabase, nlLeague.id);
+
   const eventsSummary = await syncGoalEvents(supabase, leagues, startedAt);
   const liveTickWakeOk = await wakeLiveTickIfNeeded(supabase);
 
@@ -403,6 +418,52 @@ async function updateMatchOdds(supabase: ReturnType<typeof createServiceRoleClie
       )
     );
   }
+}
+
+/**
+ * Variante Ligue des Nations de refreshRecentScoresFromEspn ci-dessous : son appel à
+ * getEspnScoreboard(slug, from, to) sur une PLAGE échoue systématiquement pour "uefa.nations"
+ * (400 "Failed to get events endpoint", vérifié y compris sur 2 jours) — seule une requête par
+ * JOUR EXACT fonctionne côté ESPN pour cette compétition, contrairement aux championnats de club.
+ * Matché par football_data_id (id ESPN réel posé à l'insertion, voir
+ * scripts/sync-nations-league.mjs) plutôt que par nom d'équipe : plus fiable, et cette ligue n'a
+ * de toute façon aucune donnée football-data.org à recouper.
+ */
+async function refreshNationsLeagueScoresFromEspn(supabase: ReturnType<typeof createServiceRoleClient>, leagueId: number): Promise<number> {
+  const slug = ESPN_LEAGUE_SLUG.NL;
+  const now = Date.now();
+  const { data: pending } = await supabase
+    .from("matches")
+    .select("id, football_data_id, kickoff_at")
+    .eq("league_id", leagueId)
+    .in("status", ["scheduled", "live"])
+    .gte("kickoff_at", new Date(now - 3 * 86_400_000).toISOString())
+    .lte("kickoff_at", new Date(now + 86_400_000).toISOString());
+  if (!pending || pending.length === 0) return 0;
+
+  const dateKeys = [...new Set(pending.map((m) => m.kickoff_at.slice(0, 10).replace(/-/g, "")))];
+  const eventsByEspnId = new Map<number, Awaited<ReturnType<typeof getEspnScoreboard>>[number]>();
+  for (const ymd of dateKeys) {
+    try {
+      const events = await getEspnScoreboard(slug, ymd, ymd);
+      for (const e of events) eventsByEspnId.set(Number(e.id), e);
+    } catch {
+      // Jour sans réponse exploitable : celui-ci sera retenté au run suivant, comme pour
+      // refreshRecentScoresFromEspn — jamais une raison de faire échouer tout le cron.
+    }
+  }
+
+  let refreshed = 0;
+  for (const m of pending) {
+    const espnMatch = eventsByEspnId.get(m.football_data_id);
+    if (!espnMatch || espnMatch.status === "scheduled") continue;
+    const { error } = await supabase
+      .from("matches")
+      .update({ status: espnMatch.status, home_score: espnMatch.homeScore, away_score: espnMatch.awayScore })
+      .eq("id", m.id);
+    if (!error) refreshed++;
+  }
+  return refreshed;
 }
 
 const ESPN_REFRESH_WINDOW_DAYS = 5;

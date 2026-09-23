@@ -6,6 +6,7 @@ export const LEAGUE_FLAG: Record<string, string> = {
   BL1: "🇩🇪",
   PPL: "🇵🇹",
   CL: "⭐",
+  NL: "🇪🇺",
 };
 
 /** Couleur d'accent de chaque championnat (bordure des cartes match sur la vue multi-championnats
@@ -18,4 +19,5 @@ export const LEAGUE_COLOR: Record<string, string> = {
   BL1: "#111827", // Bundesliga — noir/anthracite
   PPL: "#16a34a", // Primeira Liga — vert
   CL: "#0b1e5b", // Ligue des Champions — bleu nuit UEFA
+  NL: "#003399", // Ligue des Nations — bleu UEFA/étoiles européennes
 };

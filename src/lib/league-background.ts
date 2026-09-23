@@ -18,4 +18,5 @@ export const LEAGUE_BACKGROUND: Record<string, LeagueBackground> = {
   PD: { image: "/league-bg-pd.jpg", light: true, button: "#e2231a", buttonHover: "#b81b14" },
   BL1: { image: "/league-bg-bl1.webp" },
   PPL: { image: "/league-bg-ppl.jpg" },
+  NL: { image: "/league-bg-nl.jpg", light: true },
 };
