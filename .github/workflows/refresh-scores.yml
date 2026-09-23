@@ -1,10 +1,15 @@
 name: Refresh match scores
 on:
-  # Le déclenchement planifié GitHub Actions a été retiré : sur 85 runs observés, l'écart réel
-  # entre deux exécutions programmées toutes les 30 min était en moyenne de 3h35 (jusqu'à 14h dans
-  # le pire cas) — GitHub ne garantit pas l'heure des cron fréquents, ce n'est pas réglable côté
-  # config. QStash (scripts/setup-qstash-schedules.mjs) appelle maintenant ces mêmes endpoints de
-  # façon fiable toutes les 30 min. Ce workflow reste disponible en secours manuel uniquement.
+  # Re-réactivé le 23/09/2026 en SECOURS (pas en remplacement de QStash) : deux pannes silencieuses
+  # confirmées du schedule QStash lui-même (scripts/setup-qstash-schedules.mjs), pas de nos crons —
+  # le 19/09 (~2h de trou), et le 20/09 18h30-00h00 UTC, cette fois vérifié directement via l'API
+  # QStash (GET /v2/events) : zéro évènement "CREATED" sur toute la fenêtre, donc le planificateur
+  # QStash n'a même pas tenté de livrer, ce n'est pas un échec réseau/retry de notre côté. On ne
+  # contrôle pas la fiabilité de leur planificateur, donc ce filet indépendant reprend le relais si
+  # ça se reproduit — son imprécision documentée ci-dessous (3h35 en moyenne) n'est plus un problème
+  # ici puisqu'il ne sert plus de seule source, juste à borner une panne QStash prolongée.
+  schedule:
+    - cron: "*/15 * * * *"
   workflow_dispatch: {}
 jobs:
   refresh:
