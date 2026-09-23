@@ -334,7 +334,23 @@ export async function GET(request: NextRequest) {
   // Primeira Liga trouvés bloqués "live" lors de l'audit du 23/09 — corrigée ici avant qu'elle ne
   // se reproduise sur cette nouvelle ligue.
   const nlLeague = leagues.find((l) => l.football_data_code === "NL");
-  if (nlLeague) await refreshNationsLeagueScoresFromEspn(supabase, nlLeague.id);
+  if (nlLeague) {
+    await refreshNationsLeagueScoresFromEspn(supabase, nlLeague.id);
+    // updateMatchOdds ne dépend que des résultats déjà en base (aucun appel football-data.org) —
+    // générique par saison, donc réutilisable tel quel ici. Sans prior_ppg pour des sélections
+    // nationales (pas de saison précédente à reporter, jamais inventé une valeur), computeMatchOdds
+    // renvoie favori/tier null tant qu'aucun match du groupe n'est terminé — la toute première
+    // journée n'aura donc pas de cote, les suivantes s'activeront automatiquement dès qu'il y aura
+    // un vrai classement (points/matchs joués) à comparer.
+    const { data: nlSeason } = await supabase
+      .from("seasons")
+      .select("id")
+      .eq("league_id", nlLeague.id)
+      .order("year", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (nlSeason) await updateMatchOdds(supabase, nlSeason.id, lockHours);
+  }
 
   const eventsSummary = await syncGoalEvents(supabase, leagues, startedAt);
   const liveTickWakeOk = await wakeLiveTickIfNeeded(supabase);
