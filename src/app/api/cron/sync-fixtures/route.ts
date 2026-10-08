@@ -637,6 +637,30 @@ async function syncGoalEvents(
         .eq("match_id", matchId);
       if (existingGoalsCount) {
         skippedAlreadyScored++;
+        // Les buts restent intouchés (jamais réécrits une fois remplis, voir plus haut), mais la
+        // réconciliation buteur/passeur, elle, doit quand même être retentée : live-tick peut avoir
+        // rempli match_goals pour l'affichage en direct SANS jamais appeler
+        // awardLateScorerAssistPoints lui-même (il ne le fait que pour un match qui vient tout
+        // juste de terminer DANS le même passage, jamais pour un match déjà fini et déjà noté dont
+        // les buts/remplacements arrivent par la suite) — bug réel trouvé en audit le 2026-10-08 :
+        // match_goals/match_substitutions finissaient par être corrects, mais la garantie
+        // remplaçant sur un but marqué par le remplaçant d'un joueur pronostiqué buteur/passeur
+        // n'était jamais re-vérifiée après coup. Relu depuis la base (pas les lignes reçues de CET
+        // appel-ci, potentiellement partielles) : source de vérité unique, qu'elles viennent de
+        // live-tick ou d'un sync précédent. Idempotent (alreadyAwarded + ignoreDuplicates côté
+        // ledger) — un rappel sans rien de nouveau à payer ne fait rien.
+        const [{ data: currentGoals }, { data: currentSubs }] = await Promise.all([
+          supabase.from("match_goals").select("player_id, assist_player_id").eq("match_id", matchId),
+          supabase.from("match_substitutions").select("player_out_id, player_in_id").eq("match_id", matchId),
+        ]);
+        await awardLateScorerAssistPoints(
+          supabase,
+          matchId,
+          lateScoredInfo.leagueId,
+          lateScoredInfo.seasonId,
+          currentGoals ?? [],
+          currentSubs ?? []
+        );
         await supabase.from("matches").update({ events_synced_at: new Date().toISOString() }).eq("id", matchId);
         return;
       }
