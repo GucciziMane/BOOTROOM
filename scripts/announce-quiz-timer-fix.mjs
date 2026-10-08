@@ -18,11 +18,11 @@ const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.
 const SYSTEM_SENDER_NAME = "Gianni Infantino";
 
 const content = [
-  "🔒 PSA aux stratèges du verrouillage d'écran pendant le quiz du jour",
+  "🔒 Petite mise à jour sur le quiz du jour",
   "",
-  "On a remarqué le petit manège : une question un peu dure, hop, téléphone verrouillé le temps de chercher la réponse, et le chrono vous attendait bien sagement à votre retour. Fini.",
+  "Le minuteur de 20s se cale désormais sur l'horloge plutôt que sur l'appli ouverte — verrouiller l'écran ne met plus le chrono en pause, il continue de tourner tranquillement pendant ce temps-là.",
   "",
-  "Le minuteur se cale maintenant sur l'horloge, pas sur une appli qui tourne — verrouiller l'écran ne gèle plus rien, il continue de tourner pendant votre absence. Bonne chance 😏",
+  "Prévenus, pas surpris 😄",
 ].join("\n");
 
 async function main() {
@@ -40,7 +40,7 @@ async function main() {
 
   const payload = JSON.stringify({
     title: SYSTEM_SENDER_NAME,
-    body: "🔒 Le chrono du quiz ne se laisse plus berner par un écran verrouillé...",
+    body: "🔒 Petite mise à jour sur le minuteur du quiz du jour",
     url: "/chat",
   });
 
