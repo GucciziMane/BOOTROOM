@@ -566,6 +566,55 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["quiz_results"]["Row"]>;
         Relationships: [];
       };
+      special_quizzes: {
+        Row: {
+          id: number;
+          user_id: string;
+          token: string;
+          title: string;
+          intro_message: string;
+          outro_message: string;
+          questions: Array<{
+            category: "score" | "player_career" | "trivia" | "vintage_jersey";
+            difficulty: "easy" | "medium" | "hard";
+            question: string;
+            choices: string[];
+            correct_index: number;
+            explanation: string | null;
+          }>;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["special_quizzes"]["Row"]> & {
+          user_id: string;
+          token: string;
+          title: string;
+          intro_message: string;
+          outro_message: string;
+          questions: Database["public"]["Tables"]["special_quizzes"]["Row"]["questions"];
+        };
+        Update: Partial<Database["public"]["Tables"]["special_quizzes"]["Row"]>;
+        Relationships: [];
+      };
+      special_quiz_answers: {
+        Row: {
+          id: number;
+          special_quiz_id: number;
+          position: number;
+          choice_index: number | null;
+          is_correct: boolean;
+          points: number;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["special_quiz_answers"]["Row"]> & {
+          special_quiz_id: number;
+          position: number;
+          choice_index: number | null;
+          is_correct: boolean;
+          points: number;
+        };
+        Update: Partial<Database["public"]["Tables"]["special_quiz_answers"]["Row"]>;
+        Relationships: [];
+      };
       reminder_log: {
         Row: {
           id: number;
