@@ -380,18 +380,6 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
         <Image src={nextLogoUrl} alt="" width={48} height={48} priority className="hidden" />
       )}
 
-      {/* Un seul petit mot, affiché seulement avant la toute première réponse du jour (jamais
-          répété ensuite à chaque question, encore moins à chaque jour une fois lu) : le minuteur
-          se recale désormais sur l'horloge murale plutôt qu'un compte à rebours qu'il suffisait de
-          mettre en pause en passant l'appli en arrière-plan ou en verrouillant l'écran (voir
-          deadlineRef plus haut) — verrouiller son téléphone ne fait plus gagner de temps. */}
-      {position === 0 && selected === null && (
-        <p className="shrink-0 pb-2 text-center text-xs font-bold text-mute">
-          🔒 PS aux petits malins qui verrouillaient leur écran pour gagner du temps : le chrono
-          continue de tourner même appli fermée, désormais. Bonne chance 😏
-        </p>
-      )}
-
       {/* justify-center sur ce conteneur qui, lui, occupe l'espace restant (min-h-0 + flex-1) :
           la carte en dessous n'a plus de hauteur imposée (elle s'ajuste à son contenu), donc sans
           ça elle s'étirait quand même pour remplir tout cet espace, avec beaucoup de vide en haut
