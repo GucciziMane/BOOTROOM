@@ -45,6 +45,12 @@ const SIDE_COLORS: Record<Side, { jersey: string; jerseyDark: string; shorts: st
   right: { jersey: "#ef4444", jerseyDark: "#b91c1c", shorts: "#3a1212" },
 };
 
+// Contour sombre appliqué à CHAQUE forme du personnage (tête, torse, bras, jambes, ballon) — c'est
+// ce liseré systématique façon "sticker" qui fait lire un dessin vectoriel comme un vrai personnage
+// de jeu plutôt que des aplats de couleur juxtaposés (retour utilisateur : le premier jet sans
+// contours cohérents faisait "fait maison").
+const OUTLINE = "#241408";
+
 function hexToRgba(hex: string, alpha: number): string {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
@@ -87,29 +93,51 @@ function TriangleButton({ dir, handlers }: { dir: "left" | "right"; handlers: Ho
       {...handlers}
       aria-label={dir === "left" ? "Aller à gauche" : "Aller à droite"}
       className="relative flex h-14 w-14 touch-none items-center justify-center transition-transform active:scale-95 active:translate-y-0.5"
-      style={{
-        clipPath: outerClip,
-        background: "linear-gradient(180deg, #ffe08a 0%, #f6b83f 55%, #e8982a 100%)",
-        boxShadow: "inset 0 2px 0 rgba(255,255,255,0.6), inset 0 -3px 4px rgba(120,60,0,0.25)",
-      }}
+      style={{ clipPath: outerClip, background: "#7a3f0a" }}
     >
+      {/* Liseré foncé visible tout autour (forme pleine légèrement plus grande, visible en bordure
+          de la forme intérieure insettée) — même esprit que le contour systématique des personnages. */}
       <span
-        className="absolute inset-0"
-        style={{ clipPath: innerClip, background: "#c0392b", margin: 2 }}
+        className="absolute"
+        style={{
+          inset: 3,
+          clipPath: outerClip,
+          background: "linear-gradient(180deg, #ffe08a 0%, #f6b83f 55%, #e8982a 100%)",
+          boxShadow: "inset 0 2px 0 rgba(255,255,255,0.6), inset 0 -3px 4px rgba(120,60,0,0.25)",
+        }}
       />
+      <span className="absolute inset-0" style={{ clipPath: innerClip, background: "#c0392b", margin: 2 }} />
     </button>
   );
 }
 
-function loadAvatarImage(url: string | null): Promise<HTMLImageElement | null> {
-  if (!url) return Promise.resolve(null);
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
-    img.onerror = () => resolve(null);
-    img.src = url;
-  });
+// Teints de peau et couleurs de cheveux pour les visages dessinés (voir drawHead) — une vraie
+// photo de profil ronde jurait avec le reste du personnage dessiné à la main (retour utilisateur
+// explicite) ; un visage cartoon s'intègre au style, l'identité du joueur restant lisible via son
+// pseudo déjà affiché au-dessus du terrain. Choisi par hash du pseudo pour rester stable d'une
+// partie à l'autre sans dépendre d'une photo.
+const SKIN_TONES = ["#f2c18c", "#e8a46d", "#c9834f", "#8a5a34"];
+const HAIR_COLORS = ["#2b1708", "#4a2d12", "#171310", "#6b3d1a", "#000000"];
+
+function hashString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+interface CharacterStyle {
+  skin: string;
+  hair: string;
+  number: string;
+}
+
+function characterStyleFor(label: string): CharacterStyle {
+  const h = hashString(label);
+  return {
+    skin: SKIN_TONES[h % SKIN_TONES.length],
+    hair: HAIR_COLORS[Math.floor(h / SKIN_TONES.length) % HAIR_COLORS.length],
+    number: label.slice(0, 1).toUpperCase(),
+  };
 }
 
 /** Composant de jeu local (pas de serveur temps réel, voir l'échange avec l'utilisateur : 1v1 sur
@@ -125,9 +153,9 @@ export function SoccerHeadsGame({ currentUser, otherProfiles }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const matchRef = useRef<MatchState>(createMatchState());
   const modeRef = useRef<Mode>(mode);
-  const avatarsRef = useRef<Record<Side, { img: HTMLImageElement | null; initial: string }>>({
-    left: { img: null, initial: "?" },
-    right: { img: null, initial: "?" },
+  const avatarsRef = useRef<Record<Side, CharacterStyle>>({
+    left: characterStyleFor(currentUser.username),
+    right: characterStyleFor("IA"),
   });
   // Phase de course par camp, accumulée proportionnellement à la vitesse (immobile = jambes
   // posées, en mouvement = balancier) — purement cosmétique, jamais lu par la physique (voir
@@ -146,26 +174,13 @@ export function SoccerHeadsGame({ currentUser, otherProfiles }: Props) {
     modeRef.current = mode;
   }, [mode]);
 
-  // Chargement des avatars (joueur courant à gauche, adversaire/IA à droite) à chaque lancement de
-  // partie — pas au montage du composant, puisque l'adversaire en 2 joueurs locaux peut changer
-  // d'un lancement à l'autre.
-  async function loadAvatars() {
-    const leftProfile = currentUser;
+  // Style de personnage (teint/cheveux/numéro) à chaque lancement de partie — pas au montage du
+  // composant, puisque l'adversaire en 2 joueurs locaux peut changer d'un lancement à l'autre.
+  function rollCharacterStyles() {
     const rightProfile: GameProfile | null = modeRef.current === "local2p" ? opponent : null;
-
-    const [leftImg, rightImg] = await Promise.all([
-      loadAvatarImage(leftProfile.avatarUrl),
-      loadAvatarImage(rightProfile?.avatarUrl ?? null),
-    ]);
     avatarsRef.current = {
-      left: { img: leftImg, initial: leftProfile.username.slice(0, 1).toUpperCase() },
-      right: {
-        img: rightImg,
-        // "IA", pas un slice(0,1) sur l'emoji robot : un emoji tient sur 2 unités UTF-16 (paire
-        // de substitution), le couper au milieu affiche un glyphe de remplacement cassé plutôt
-        // que la moitié d'un robot.
-        initial: rightProfile ? rightProfile.username.slice(0, 1).toUpperCase() : "IA",
-      },
+      left: characterStyleFor(currentUser.username),
+      right: characterStyleFor(rightProfile?.username ?? "IA"),
     };
   }
 
@@ -175,7 +190,8 @@ export function SoccerHeadsGame({ currentUser, otherProfiles }: Props) {
     setWinner(null);
     setGoalBanner(false);
     pausedUntilRef.current = 0;
-    loadAvatars().then(() => setScreen("playing"));
+    rollCharacterStyles();
+    setScreen("playing");
   }
 
   function backToMenu() {
@@ -465,8 +481,8 @@ export function SoccerHeadsGame({ currentUser, otherProfiles }: Props) {
       ctx.restore();
       ctx.beginPath();
       ctx.arc(x, y, BALL_RADIUS, 0, Math.PI * 2);
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = "#211c14";
+      ctx.lineWidth = 2.2;
+      ctx.strokeStyle = OUTLINE;
       ctx.stroke();
     }
 
@@ -498,9 +514,10 @@ export function SoccerHeadsGame({ currentUser, otherProfiles }: Props) {
       ctx.fill();
 
       // Jambes (deux capsules basculées en ciseaux, ou repliées en l'air) + chaussette blanche +
-      // crampon, pour un maillot complet plutôt qu'un simple aplat de couleur.
+      // crampon, chacune avec son propre contour — pas un aplat de couleur juxtaposé.
       const swing = p.grounded ? Math.sin(phase) * (speed > 10 ? 0.55 : 0.08) : 0;
       const airTuck = p.grounded ? 0 : -0.45;
+      ctx.lineJoin = "round";
       for (const [side2, baseAngle] of [
         [1, swing + airTuck],
         [-1, -swing + airTuck],
@@ -509,9 +526,12 @@ export function SoccerHeadsGame({ currentUser, otherProfiles }: Props) {
         ctx.translate(side2 * 6, BODY_H / 2 - 4);
         ctx.rotate(baseAngle);
         ctx.fillStyle = colors.shorts;
+        ctx.strokeStyle = OUTLINE;
+        ctx.lineWidth = 2.5;
         ctx.beginPath();
         ctx.roundRect(-LEG_W / 2, 0, LEG_W, LEG_LEN, 4);
         ctx.fill();
+        ctx.stroke();
         ctx.fillStyle = "#fff";
         ctx.beginPath();
         ctx.roundRect(-LEG_W / 2, LEG_LEN - 10, LEG_W, 4, 2);
@@ -520,6 +540,8 @@ export function SoccerHeadsGame({ currentUser, otherProfiles }: Props) {
         ctx.beginPath();
         ctx.roundRect(-LEG_W / 2 - 1, LEG_LEN - 6, LEG_W + 2, 8, 3);
         ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.stroke();
         ctx.restore();
       }
 
@@ -529,9 +551,12 @@ export function SoccerHeadsGame({ currentUser, otherProfiles }: Props) {
         ctx.translate(side2 * (BODY_W / 2 - 2), -BODY_H / 2 + 8);
         ctx.rotate(-side2 * swing * 0.6);
         ctx.fillStyle = colors.jersey;
+        ctx.strokeStyle = OUTLINE;
+        ctx.lineWidth = 2.5;
         ctx.beginPath();
         ctx.roundRect(-4, 0, 8, 17, 4);
         ctx.fill();
+        ctx.stroke();
         ctx.fillStyle = "#fff";
         ctx.beginPath();
         ctx.roundRect(-4, 12, 8, 4, 2);
@@ -539,7 +564,8 @@ export function SoccerHeadsGame({ currentUser, otherProfiles }: Props) {
         ctx.restore();
       }
 
-      // Torse (maillot deux tons + col) + short avec liseré blanc.
+      // Torse (maillot deux tons + col) + short avec liseré blanc — un contour unique autour du
+      // torse entier (dessiné après les deux teintes, pour ne pas le couper par la bande sombre).
       ctx.fillStyle = colors.jersey;
       ctx.beginPath();
       ctx.roundRect(-BODY_W / 2, -BODY_H, BODY_W, BODY_H, 8);
@@ -548,6 +574,17 @@ export function SoccerHeadsGame({ currentUser, otherProfiles }: Props) {
       ctx.beginPath();
       ctx.roundRect(-BODY_W / 2, -BODY_H, BODY_W, BODY_H * 0.4, 8);
       ctx.fill();
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.roundRect(-BODY_W / 2, -BODY_H, BODY_W, BODY_H, 8);
+      ctx.stroke();
+      // Numéro/initiale sur le maillot — identifie le joueur sans recourir à une photo.
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 13px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(avatarsRef.current[side].number, 0, -BODY_H * 0.62);
       ctx.fillStyle = "#fff";
       ctx.beginPath();
       ctx.roundRect(-6, -BODY_H - 1, 12, 5, 2);
@@ -558,48 +595,104 @@ export function SoccerHeadsGame({ currentUser, otherProfiles }: Props) {
       ctx.fill();
       ctx.fillStyle = "rgba(255,255,255,0.9)";
       ctx.fillRect(-2, -BODY_H * 0.18, 4, BODY_H * 0.3);
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.roundRect(-BODY_W / 2 + 2, -BODY_H * 0.18, BODY_W - 4, BODY_H * 0.3, 4);
+      ctx.stroke();
 
       ctx.restore();
 
-      // Tête (proportion "chibi" : nettement plus grosse que le corps), avatar clippé dedans.
+      // Tête (proportion "chibi" : nettement plus grosse que le corps), visage dessiné.
       drawHead(side, x, y - BODY_H - PLAYER_RADIUS * 0.75);
     }
 
+    // Visage cartoon (teint + cheveux + sourcils/yeux + bandeau couleur d'équipe) plutôt qu'une
+    // photo de profil importée : lit comme un vrai personnage dessiné, cohérent avec le reste du
+    // corps — l'identité du joueur reste visible via son pseudo au-dessus du terrain.
     function drawHead(side: Side, x: number, y: number) {
       if (!ctx) return;
-      const avatar = avatarsRef.current[side];
+      const style = avatarsRef.current[side];
       const colors = SIDE_COLORS[side];
+      const r = PLAYER_RADIUS;
+
+      ctx.save();
+
+      // Peau.
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = style.skin;
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = OUTLINE;
+      ctx.stroke();
+
+      // Cheveux : calotte couvrant le haut du crâne + quelques mèches en pointes sur le devant.
       ctx.save();
       ctx.beginPath();
-      ctx.arc(x, y, PLAYER_RADIUS, 0, Math.PI * 2);
-      ctx.closePath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.clip();
-      if (avatar.img) {
-        ctx.drawImage(avatar.img, x - PLAYER_RADIUS, y - PLAYER_RADIUS, PLAYER_RADIUS * 2, PLAYER_RADIUS * 2);
-      } else {
-        ctx.fillStyle = colors.jersey;
-        ctx.fillRect(x - PLAYER_RADIUS, y - PLAYER_RADIUS, PLAYER_RADIUS * 2, PLAYER_RADIUS * 2);
-        ctx.fillStyle = "#fff";
-        // Taille réduite pour "IA" (2 lettres) afin qu'il tienne dans le cercle comme une seule
-        // initiale plus grande — même logique que le repli des pastilles sans avatar ailleurs
-        // dans l'appli (voir LeaderboardFilter.tsx), juste adaptée à un éventuel libellé de 2 lettres.
-        const fontSize = avatar.initial.length > 1 ? PLAYER_RADIUS * 0.62 : PLAYER_RADIUS;
-        ctx.font = `bold ${fontSize}px system-ui, sans-serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(avatar.initial, x, y + 2);
+      ctx.fillStyle = style.hair;
+      ctx.beginPath();
+      ctx.ellipse(x, y - r * 0.28, r * 1.05, r * 0.82, 0, 0, Math.PI * 2);
+      ctx.fill();
+      for (const dx of [-0.42, -0.14, 0.14, 0.42]) {
+        ctx.beginPath();
+        ctx.moveTo(x + dx * r * 2 - 5, y - r * 0.5);
+        ctx.lineTo(x + dx * r * 2 + 5, y - r * 0.5);
+        ctx.lineTo(x + dx * r * 2, y - r * 1.15);
+        ctx.closePath();
+        ctx.fill();
       }
       ctx.restore();
+      // Contour du bord des cheveux (sur le pourtour visible de la tête uniquement).
       ctx.beginPath();
-      ctx.arc(x, y, PLAYER_RADIUS, 0, Math.PI * 2);
-      ctx.strokeStyle = "#fff";
+      ctx.arc(x, y, r, Math.PI * 1.08, Math.PI * 1.92);
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // Bandeau couleur d'équipe sur le front — identifie le camp sans recourir à une photo.
+      ctx.beginPath();
+      ctx.arc(x, y - r * 0.04, r * 0.98, Math.PI * 1.12, Math.PI * 1.88);
+      ctx.strokeStyle = colors.jersey;
+      ctx.lineWidth = 6;
+      ctx.lineCap = "round";
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, y - r * 0.04, r * 0.98, Math.PI * 1.12, Math.PI * 1.88);
+      ctx.strokeStyle = OUTLINE;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+
+      // Sourcils (regard déterminé, légèrement froncé) + yeux + bouche.
+      ctx.strokeStyle = OUTLINE;
       ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      const browY = y - r * 0.08;
+      ctx.beginPath();
+      ctx.moveTo(x - r * 0.46, browY - 3);
+      ctx.lineTo(x - r * 0.1, browY + 4);
       ctx.stroke();
       ctx.beginPath();
-      ctx.arc(x, y, PLAYER_RADIUS, 0, Math.PI * 2);
-      ctx.strokeStyle = colors.jerseyDark;
-      ctx.lineWidth = 1.5;
+      ctx.moveTo(x + r * 0.1, browY + 4);
+      ctx.lineTo(x + r * 0.46, browY - 3);
       ctx.stroke();
+
+      ctx.fillStyle = "#1a1410";
+      for (const dx of [-0.26, 0.26]) {
+        ctx.beginPath();
+        ctx.arc(x + dx * r, y + r * 0.14, 2.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(x - r * 0.2, y + r * 0.46);
+      ctx.lineTo(x + r * 0.2, y + r * 0.46);
+      ctx.stroke();
+
+      ctx.restore();
     }
 
     function draw() {
