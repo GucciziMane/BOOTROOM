@@ -671,7 +671,21 @@ async function syncGoalEvents(
     }
     await supabase.from("match_substitutions").delete().eq("match_id", matchId);
     if (subRows.length > 0) {
-      await supabase.from("match_substitutions").insert(subRows);
+      // Dédoublonné ici, au point d'écriture unique (ESPN et Highlightly alimentent tous les deux
+      // subRows plus haut) : ESPN a déjà été observé à renvoyer la même entrée plusieurs fois dans
+      // une seule réponse côté buts (live-tick s'en protège déjà) et côté remplacements aussi, vu
+      // en audit le 2026-10-08 (jusqu'à 9 lignes identiques pour un seul vrai remplacement). Sans
+      // impact sur les points (la garantie remplaçant lit via une Map, naturellement dédupliquée),
+      // juste du bruit en base — mais `match_substitutions` n'a, contrairement à match_goals,
+      // aucune contrainte unique pour s'en protéger structurellement.
+      const seenSubKeys = new Set<string>();
+      const dedupedSubRows = subRows.filter((s) => {
+        const key = `${s.player_out_id}:${s.player_in_id}`;
+        if (seenSubKeys.has(key)) return false;
+        seenSubKeys.add(key);
+        return true;
+      });
+      await supabase.from("match_substitutions").insert(dedupedSubRows);
     }
     await supabase.from("match_cards").delete().eq("match_id", matchId);
     if (cardRows.length > 0) {
