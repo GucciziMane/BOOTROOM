@@ -55,12 +55,51 @@ function hexToRgba(hex: string, alpha: number): string {
 // canvas lui-même (voir drawScoreboard/drawGoal) plutôt que les boutons plats utilisés ailleurs
 // dans l'appli : cet écran a son identité visuelle propre.
 const gameButtonClass =
-  "flex h-14 w-14 touch-none items-center justify-center rounded-2xl border-2 text-2xl font-black text-[#5a3410] transition-transform active:scale-95 active:translate-y-0.5";
+  "flex h-14 w-14 touch-none items-center justify-center rounded-2xl border-2 text-2xl font-black text-[#c0392b] transition-transform active:scale-95 active:translate-y-0.5";
 const gameButtonStyle: React.CSSProperties = {
   background: "linear-gradient(180deg, #ffe08a 0%, #f6b83f 55%, #e8982a 100%)",
   borderColor: "#a85f14",
   boxShadow: "inset 0 2px 0 rgba(255,255,255,0.7), inset 0 -3px 4px rgba(120,60,0,0.25), 0 3px 0 #a85f14",
 };
+
+// Panneau de contrôle : bande indigo à motif "tuilé" (plusieurs background-image empilés) derrière
+// les boutons, façon pupitre d'arcade — plutôt que les boutons posés à nu sur le fond de la carte.
+const controlBarStyle: React.CSSProperties = {
+  backgroundImage:
+    "linear-gradient(180deg, #3e4d93 0%, #2c3870 100%), repeating-linear-gradient(0deg, rgba(255,255,255,0.06) 0 1px, transparent 1px 26px), repeating-linear-gradient(90deg, rgba(255,255,255,0.06) 0 1px, transparent 1px 26px)",
+};
+
+interface HoldHandlers {
+  onPointerDown: (e: React.PointerEvent) => void;
+  onPointerUp: () => void;
+  onPointerLeave: () => void;
+  onPointerCancel: () => void;
+}
+
+// Bouton directionnel en triangle (découpé au clip-path) avec une pointe intérieure rouge, plutôt
+// qu'un bouton carré avec un glyphe ◀/▶ — gagne beaucoup en ressemblance avec le jeu de référence
+// pour un coût de code minime (pure CSS, aucun asset).
+function TriangleButton({ dir, handlers }: { dir: "left" | "right"; handlers: HoldHandlers }) {
+  const outerClip = dir === "left" ? "polygon(100% 0%, 100% 100%, 0% 50%)" : "polygon(0% 0%, 0% 100%, 100% 50%)";
+  const innerClip = dir === "left" ? "polygon(100% 15%, 100% 85%, 25% 50%)" : "polygon(0% 15%, 0% 85%, 75% 50%)";
+  return (
+    <button
+      {...handlers}
+      aria-label={dir === "left" ? "Aller à gauche" : "Aller à droite"}
+      className="relative flex h-14 w-14 touch-none items-center justify-center transition-transform active:scale-95 active:translate-y-0.5"
+      style={{
+        clipPath: outerClip,
+        background: "linear-gradient(180deg, #ffe08a 0%, #f6b83f 55%, #e8982a 100%)",
+        boxShadow: "inset 0 2px 0 rgba(255,255,255,0.6), inset 0 -3px 4px rgba(120,60,0,0.25)",
+      }}
+    >
+      <span
+        className="absolute inset-0"
+        style={{ clipPath: innerClip, background: "#c0392b", margin: 2 }}
+      />
+    </button>
+  );
+}
 
 function loadAvatarImage(url: string | null): Promise<HTMLImageElement | null> {
   if (!url) return Promise.resolve(null);
@@ -192,7 +231,10 @@ export function SoccerHeadsGame({ currentUser, otherProfiles }: Props) {
       // moins de dessin.
       ctx.fillStyle = "#1b2240";
       ctx.fillRect(0, SKY_BOTTOM, WORLD_WIDTH, STAND_BOTTOM - SKY_BOTTOM);
-      const standColors = ["#f6c945", "#f28c45", "#e8565f", "#f6c945", "#f28c45", "#e8565f"];
+      // Palette "bonbon" (teal/lavande/jaune/corail) plutôt que doré/orangé uni — plus proche de
+      // l'ambiance vive et colorée du jeu de référence, sans reprendre sa scène précise (manège +
+      // toboggans) qui est une composition de niveau trop spécifique pour être redessinée ici.
+      const standColors = ["#4fd1c5", "#b48ce0", "#ffd166", "#ff6f91", "#4fd1c5", "#b48ce0"];
       const blockW = WORLD_WIDTH / standColors.length;
       const rowH = 15;
       const rows = Math.floor((STAND_BOTTOM - SKY_BOTTOM - 6) / rowH);
@@ -225,34 +267,53 @@ export function SoccerHeadsGame({ currentUser, otherProfiles }: Props) {
       }
     }
 
+    // Terrain rose façon "plateau" avec une bordure plus foncée en bas (suggère une légère
+    // épaisseur/profondeur 3D, comme un plateau vu légèrement de dessus) plutôt qu'une simple
+    // pelouse verte à plat — coloris "bonbon" demandé pour coller à l'esprit du jeu de référence,
+    // entièrement reconstruit en formes/dégradés (aucun asset importé).
+    const PITCH_EDGE_H = 14;
+
     function drawPitch() {
       if (!ctx) return;
-      const turf = ctx.createLinearGradient(0, STAND_BOTTOM, 0, WORLD_HEIGHT);
-      turf.addColorStop(0, "#36c27a");
-      turf.addColorStop(1, "#1f9d5f");
+      const top = STAND_BOTTOM;
+      const h = WORLD_HEIGHT - top;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(0, top, WORLD_WIDTH, h, [18, 18, 0, 0]);
+      ctx.clip();
+
+      const turf = ctx.createLinearGradient(0, top, 0, WORLD_HEIGHT);
+      turf.addColorStop(0, "#ff9fd6");
+      turf.addColorStop(1, "#f45fae");
       ctx.fillStyle = turf;
-      ctx.fillRect(0, STAND_BOTTOM, WORLD_WIDTH, WORLD_HEIGHT - STAND_BOTTOM);
+      ctx.fillRect(0, top, WORLD_WIDTH, h);
 
       // Bandes de tonte alternées — déco pure, aucun effet sur le jeu.
-      ctx.fillStyle = "rgba(255,255,255,0.05)";
+      ctx.fillStyle = "rgba(255,255,255,0.08)";
       for (let i = 0; i < 8; i += 2) {
-        ctx.fillRect((WORLD_WIDTH / 8) * i, STAND_BOTTOM, WORLD_WIDTH / 8, WORLD_HEIGHT - STAND_BOTTOM);
+        ctx.fillRect((WORLD_WIDTH / 8) * i, top, WORLD_WIDTH / 8, h);
       }
 
-      // Bordure + marquage (rond central, ligne médiane, surfaces de réparation).
+      // Bordure inférieure plus foncée : lit comme le "chant" du plateau, pas comme la pelouse.
+      ctx.fillStyle = "#d1298a";
+      ctx.fillRect(0, WORLD_HEIGHT - PITCH_EDGE_H, WORLD_WIDTH, PITCH_EDGE_H);
+
+      // Marquage (rond central, ligne médiane, surfaces de réparation).
       ctx.strokeStyle = "rgba(255,255,255,0.9)";
       ctx.lineWidth = 4;
-      ctx.strokeRect(6, STAND_BOTTOM + 4, WORLD_WIDTH - 12, WORLD_HEIGHT - STAND_BOTTOM - 10);
+      ctx.strokeRect(6, top + 4, WORLD_WIDTH - 12, h - PITCH_EDGE_H - 8);
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.moveTo(WORLD_WIDTH / 2, STAND_BOTTOM);
-      ctx.lineTo(WORLD_WIDTH / 2, WORLD_HEIGHT);
+      ctx.moveTo(WORLD_WIDTH / 2, top);
+      ctx.lineTo(WORLD_WIDTH / 2, WORLD_HEIGHT - PITCH_EDGE_H);
       ctx.stroke();
       ctx.beginPath();
       ctx.arc(WORLD_WIDTH / 2, GROUND_Y, 48, Math.PI, Math.PI * 2);
       ctx.stroke();
       ctx.strokeRect(6, GROUND_Y - 60, 90, 60);
       ctx.strokeRect(WORLD_WIDTH - 96, GROUND_Y - 60, 90, 60);
+      ctx.restore();
     }
 
     // But : montants + filet à motif nid d'abeille (dessiné comme une grille d'hexagones plutôt
@@ -311,52 +372,69 @@ export function SoccerHeadsGame({ currentUser, otherProfiles }: Props) {
       ctx.stroke();
     }
 
-    // Petit cadran à LED façon tableau d'affichage rétro — un chiffre fixe tient dans une police
-    // monospace standard, pas besoin de dessiner de vrais segments pour que ça se lise comme un
-    // compteur de score.
+    // Cadran à chiffres blancs sur fond marine (plutôt qu'un LCD vert) — plus proche du tableau
+    // d'affichage du jeu de référence, toujours dessiné en formes pures (aucun asset importé).
     function drawScorePanel(cx: number, value: number) {
       if (!ctx) return;
-      const w = 58;
-      const h = 44;
-      ctx.fillStyle = "#15202e";
+      const w = 56;
+      const h = 42;
+      ctx.fillStyle = "#1b2338";
       ctx.beginPath();
-      ctx.roundRect(cx - w / 2, 4, w, h, 8);
+      ctx.roundRect(cx - w / 2, 7, w, h, 7);
       ctx.fill();
-      ctx.strokeStyle = "#0a0f17";
+      ctx.strokeStyle = "#0a0f1c";
       ctx.lineWidth = 2;
       ctx.stroke();
-      ctx.fillStyle = "#4df07a";
-      ctx.font = "bold 28px 'Courier New', monospace";
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 26px system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(String(value).padStart(2, "0"), cx, 4 + h / 2 + 1);
+      ctx.fillText(String(value).padStart(2, "0"), cx, 7 + h / 2 + 1);
     }
 
     function drawScoreboard(state: MatchState) {
       if (!ctx) return;
-      const boardW = 170;
+      const boardW = 184;
+      const boardH = 58;
       const boardX = WORLD_WIDTH / 2 - boardW / 2;
-      ctx.fillStyle = "#ebb33a";
+
+      const plaque = ctx.createLinearGradient(0, 0, 0, boardH);
+      plaque.addColorStop(0, "#f7c856");
+      plaque.addColorStop(1, "#d6930f");
+      ctx.fillStyle = plaque;
       ctx.beginPath();
-      ctx.roundRect(boardX, 0, boardW, 56, 10);
+      ctx.roundRect(boardX, 0, boardW, boardH, 10);
       ctx.fill();
       ctx.strokeStyle = "#8a5c15";
       ctx.lineWidth = 3;
       ctx.stroke();
-      // Petits feux ronds aux coins, clin d'œil "panneau lumineux".
-      for (const dx of [14, boardW - 14]) {
-        ctx.fillStyle = "#e14b4b";
+
+      // Piliers ambrés de part et d'autre (façon montants de panneau lumineux).
+      ctx.fillStyle = "#b9711a";
+      for (const bx of [boardX + 4, boardX + boardW - 14]) {
         ctx.beginPath();
-        ctx.arc(boardX + dx, 12, 5, 0, Math.PI * 2);
+        ctx.roundRect(bx, 5, 10, boardH - 10, 3);
         ctx.fill();
       }
-      drawScorePanel(boardX + 44, state.score.left);
-      ctx.fillStyle = "#3a2a10";
-      ctx.font = "bold 18px system-ui, sans-serif";
+
+      // Petits feux ronds aux coins, clin d'œil "panneau lumineux".
+      for (const dx of [16, boardW - 16]) {
+        ctx.fillStyle = "#e14b4b";
+        ctx.beginPath();
+        ctx.arc(boardX + dx, 11, 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#7a1f1f";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
+      drawScorePanel(boardX + 50, state.score.left);
+      ctx.fillStyle = "#5a3410";
+      ctx.font = "bold 20px system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText("–", WORLD_WIDTH / 2, 27);
-      drawScorePanel(boardX + boardW - 44, state.score.right);
+      ctx.fillText("–", WORLD_WIDTH / 2, 30);
+      drawScorePanel(boardX + boardW - 50, state.score.right);
     }
 
     function drawBall(x: number, y: number) {
@@ -419,7 +497,8 @@ export function SoccerHeadsGame({ currentUser, otherProfiles }: Props) {
       ctx.ellipse(0, GROUND_Y - y + 4, 16 * groundShadowScale, 5 * groundShadowScale, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      // Jambes (deux capsules basculées en ciseaux, ou repliées en l'air).
+      // Jambes (deux capsules basculées en ciseaux, ou repliées en l'air) + chaussette blanche +
+      // crampon, pour un maillot complet plutôt qu'un simple aplat de couleur.
       const swing = p.grounded ? Math.sin(phase) * (speed > 10 ? 0.55 : 0.08) : 0;
       const airTuck = p.grounded ? 0 : -0.45;
       for (const [side2, baseAngle] of [
@@ -433,6 +512,10 @@ export function SoccerHeadsGame({ currentUser, otherProfiles }: Props) {
         ctx.beginPath();
         ctx.roundRect(-LEG_W / 2, 0, LEG_W, LEG_LEN, 4);
         ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.roundRect(-LEG_W / 2, LEG_LEN - 10, LEG_W, 4, 2);
+        ctx.fill();
         ctx.fillStyle = "#1b1b1f";
         ctx.beginPath();
         ctx.roundRect(-LEG_W / 2 - 1, LEG_LEN - 6, LEG_W + 2, 8, 3);
@@ -440,7 +523,7 @@ export function SoccerHeadsGame({ currentUser, otherProfiles }: Props) {
         ctx.restore();
       }
 
-      // Bras (simples, un léger balancier opposé aux jambes pour la vie du perso).
+      // Bras (simples, un léger balancier opposé aux jambes pour la vie du perso) + manchette.
       for (const side2 of [1, -1] as const) {
         ctx.save();
         ctx.translate(side2 * (BODY_W / 2 - 2), -BODY_H / 2 + 8);
@@ -449,10 +532,14 @@ export function SoccerHeadsGame({ currentUser, otherProfiles }: Props) {
         ctx.beginPath();
         ctx.roundRect(-4, 0, 8, 17, 4);
         ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.roundRect(-4, 12, 8, 4, 2);
+        ctx.fill();
         ctx.restore();
       }
 
-      // Torse (maillot deux tons + short).
+      // Torse (maillot deux tons + col) + short avec liseré blanc.
       ctx.fillStyle = colors.jersey;
       ctx.beginPath();
       ctx.roundRect(-BODY_W / 2, -BODY_H, BODY_W, BODY_H, 8);
@@ -461,10 +548,16 @@ export function SoccerHeadsGame({ currentUser, otherProfiles }: Props) {
       ctx.beginPath();
       ctx.roundRect(-BODY_W / 2, -BODY_H, BODY_W, BODY_H * 0.4, 8);
       ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.roundRect(-6, -BODY_H - 1, 12, 5, 2);
+      ctx.fill();
       ctx.fillStyle = colors.shorts;
       ctx.beginPath();
       ctx.roundRect(-BODY_W / 2 + 2, -BODY_H * 0.18, BODY_W - 4, BODY_H * 0.3, 4);
       ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      ctx.fillRect(-2, -BODY_H * 0.18, 4, BODY_H * 0.3);
 
       ctx.restore();
 
@@ -677,42 +770,45 @@ export function SoccerHeadsGame({ currentUser, otherProfiles }: Props) {
         />
         {goalBanner && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <span className="rounded-2xl bg-ink/80 px-6 py-3 text-3xl font-black text-paper">BUT ! ⚽</span>
+            {/* Lettrage "bulle" doré à contour épais façon banderole d'arcade, plutôt qu'un badge
+                plat — convention très générique du genre (texte de célébration bombé + contour
+                foncé), pas une reprise d'un visuel précis. */}
+            <span
+              className="animate-bounce text-5xl font-black uppercase tracking-wide"
+              style={{
+                color: "#fff3c4",
+                WebkitTextStroke: "3px #8a3b0a",
+                textShadow: "0 5px 0 #c9780f, 0 8px 14px rgba(0,0,0,0.4)",
+              }}
+            >
+              But !
+            </span>
           </div>
         )}
       </div>
 
-      {/* Deux zones de contrôle (gauche/droite), chacune ◀ ▶ + saut — select-none/touch-none pour
-          éviter la sélection de texte ou le défilement de la page pendant qu'on joue au doigt.
-          Boutons dorés biseautés (dégradé + liseré + reflet) plutôt que les boutons plats du reste
-          de l'appli : l'écran de jeu a son identité propre, comme le tableau de score sur le
-          canvas. */}
-      <div className="grid grid-cols-2 gap-3 select-none">
+      {/* Deux zones de contrôle (gauche/droite), chacune triangle gauche/droite + saut —
+          select-none/touch-none pour éviter la sélection de texte ou le défilement de la page
+          pendant qu'on joue au doigt. Bande indigo tuilée + boutons dorés biseautés : l'écran de
+          jeu a son identité propre, comme le tableau de score sur le canvas. */}
+      <div className="grid grid-cols-2 gap-3 select-none rounded-2xl p-3" style={controlBarStyle}>
         <div className="flex items-center justify-center gap-2">
-          <button {...holdButton("left", "left")} style={gameButtonStyle} className={gameButtonClass}>
-            ◀
-          </button>
+          <TriangleButton dir="left" handlers={holdButton("left", "left")} />
           <button {...holdButton("left", "jumpPressed")} style={gameButtonStyle} className={gameButtonClass}>
-            ⬆
+            ▲
           </button>
-          <button {...holdButton("left", "right")} style={gameButtonStyle} className={gameButtonClass}>
-            ▶
-          </button>
+          <TriangleButton dir="right" handlers={holdButton("left", "right")} />
         </div>
         {mode === "local2p" ? (
           <div className="flex items-center justify-center gap-2">
-            <button {...holdButton("right", "left")} style={gameButtonStyle} className={gameButtonClass}>
-              ◀
-            </button>
+            <TriangleButton dir="left" handlers={holdButton("right", "left")} />
             <button {...holdButton("right", "jumpPressed")} style={gameButtonStyle} className={gameButtonClass}>
-              ⬆
+              ▲
             </button>
-            <button {...holdButton("right", "right")} style={gameButtonStyle} className={gameButtonClass}>
-              ▶
-            </button>
+            <TriangleButton dir="right" handlers={holdButton("right", "right")} />
           </div>
         ) : (
-          <div className="flex items-center justify-center text-sm text-mute">L&apos;IA se débrouille seule 🤖</div>
+          <div className="flex items-center justify-center text-sm text-white/70">L&apos;IA se débrouille seule 🤖</div>
         )}
       </div>
 
