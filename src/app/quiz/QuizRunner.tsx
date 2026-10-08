@@ -99,6 +99,13 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
   // Empêche un double déclenchement du timeout (le décompte peut re-render plusieurs fois à 0
   // avant que handleAnswer n'ait eu le temps de poser son propre verrou synchrone).
   const timeoutFired = useRef(false);
+  // Horodatage de fin (horloge murale), pas un compteur de ticks : passer l'appli en arrière-plan
+  // ou verrouiller le téléphone suspend les setTimeout/setInterval JS (triche possible sinon — le
+  // décompte se figeait et reprenait pile où il en était au retour, offrant un temps de réflexion
+  // illimité). Le temps restant est recalculé depuis cet horodatage fixe à chaque tick ET, surtout,
+  // au retour au premier plan (évènement "visibilitychange", fiable même si les timers ont été
+  // suspendus) — pas de triche possible en mettant l'appli en pause pendant une question.
+  const deadlineRef = useRef(Date.now() + TIMER_SECONDS * 1000);
   // Verrou synchrone : contrairement à `submitting` (state React, appliqué après un re-render),
   // ce ref est lu/écrit immédiatement. Sur mobile, un double-tap déclenche deux `handleAnswer`
   // avant que le re-render qui désactive les boutons n'ait eu lieu, envoyant deux réponses pour la
@@ -144,6 +151,7 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
   const lastTimerPosition = useRef(position);
   if (lastTimerPosition.current !== position) {
     lastTimerPosition.current = position;
+    deadlineRef.current = Date.now() + TIMER_SECONDS * 1000;
     setTimeLeft(TIMER_SECONDS);
     timeoutFired.current = false;
   }
@@ -152,19 +160,35 @@ export function QuizRunner({ questions, initialAnswers, initialFinalScore, showP
   // cours (`selected === null`) — s'arrête de lui-même dès qu'un choix, réel ou par timeout, est
   // enregistré (voir handleAnswer), donc jamais pendant l'écran de résultat (hold/flying) ni une
   // fois le quiz terminé.
+  //
+  // `tick` recalcule toujours depuis deadlineRef (horloge murale), jamais en décrémentant un
+  // compteur : un setInterval, lui aussi, peut être fortement throttle en arrière-plan, mais
+  // "visibilitychange"/"focus" se déclenchent de façon fiable au retour au premier plan et
+  // déclenchent un recalcul immédiat — si la deadline est déjà dépassée, le timeout (et donc la
+  // soumission serveur d'une non-réponse) part aussitôt, sans attendre le prochain tick d'1s.
   useEffect(() => {
     if (selected !== null || finalScore != null) return;
-    if (timeLeft <= 0) {
-      if (!timeoutFired.current) {
+
+    function tick() {
+      const remainingMs = deadlineRef.current - Date.now();
+      setTimeLeft(Math.max(0, Math.ceil(remainingMs / 1000)));
+      if (remainingMs <= 0 && !timeoutFired.current) {
         timeoutFired.current = true;
         handleAnswer(TIMEOUT_SENTINEL);
       }
-      return;
     }
-    const t = setTimeout(() => setTimeLeft((s) => s - 1), 1000);
-    return () => clearTimeout(t);
+
+    tick();
+    const interval = setInterval(tick, 1000);
+    document.addEventListener("visibilitychange", tick);
+    window.addEventListener("focus", tick);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", tick);
+      window.removeEventListener("focus", tick);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeLeft, selected, finalScore]);
+  }, [position, selected, finalScore]);
 
   async function handleAnswer(choiceIndex: number) {
     if (answeringLock.current || submitting || selected !== null) return;
