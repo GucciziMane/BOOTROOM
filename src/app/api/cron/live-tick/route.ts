@@ -21,15 +21,21 @@ const APP_URL = "https://bootroom.online";
 // messages/jour en pleine soirée de Ligue des Champions — plus aucun cron n'a tourné du tout,
 // scores/temps de jeu figés toute la soirée). Ce tick s'auto-réveille désormais lui-même : chaque
 // exécution qui trouve encore un match à suivre (pas encore terminé) programme la suivante via un
-// message QStash à retardement, court (20s) tant qu'un match est réellement en direct, plus large
-// (60s) sinon (avant coup d'envoi, ou ESPN pas encore à jour) — et s'arrête d'elle-même dès qu'il
-// n'y a plus rien à suivre. Le réveil initial (avant tout coup d'envoi) est délégué à sync-fixtures
-// (toutes les 30 min) : LIVE_TICK_LOOKAHEAD_MS (partagée, voir live-tick-window.ts) garantit que ce
-// réveil anticipé tombe bien DANS la fenêtre que ce tick traite lui-même, sans quoi (incident du
+// message QStash à retardement, court tant qu'un match est réellement en direct, plus large sinon
+// (avant coup d'envoi, ou ESPN pas encore à jour) — et s'arrête d'elle-même dès qu'il n'y a plus
+// rien à suivre. Le réveil initial (avant tout coup d'envoi) est délégué à sync-fixtures (toutes
+// les 30 min) : LIVE_TICK_LOOKAHEAD_MS (partagée, voir live-tick-window.ts) garantit que ce réveil
+// anticipé tombe bien DANS la fenêtre que ce tick traite lui-même, sans quoi (incident du
 // 11/09/2026) le réveil ne trouvait rien à faire, ne se re-planifiait pas, et la chaîne mourait
 // aussitôt née jusqu'au passage sync-fixtures suivant, 25-30 min plus tard.
-const LIVE_TICK_DELAY_SECONDS = 20;
-const WARMUP_TICK_DELAY_SECONDS = 60;
+//
+// Délais relevés à 35s/120s (depuis 20s/60s) après l'incident du 11/10/2026 : plusieurs soirées à
+// matchs multiples (5 championnats + C1 + Ligue des Nations) poussent le volume cumulé de ce seul
+// tick au-delà du quota QStash 1000/jour à elles seules, avant même sync-fixtures/process-scoring
+// (96/jour). 35s reste largement assez réactif pour un score/une minute de jeu affichés à l'écran,
+// tout en coupant ~43% du volume de messages de ce tick.
+const LIVE_TICK_DELAY_SECONDS = 35;
+const WARMUP_TICK_DELAY_SECONDS = 120;
 
 // Alerte "ESPN en panne" (voir checkEspnHealthAndAlert) : incident du 16/09/2026 où l'endpoint
 // ESPN a silencieusement cessé d'accepter son paramètre de plage de dates (400 sur CHAQUE appel,

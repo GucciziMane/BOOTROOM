@@ -16,7 +16,7 @@ export const LIVE_TICK_LOOKAHEAD_MS = 35 * 60 * 1000;
 // insérant les mêmes buts et envoyant les mêmes notifications de fin de match. live-tick pose
 // maintenant un "battement" (app_settings.live_tick_last_heartbeat) à chaque tick ; sync-fixtures
 // ne réveille que si ce battement est absent ou plus vieux que ce seuil — nettement au-dessus du
-// délai de tick le plus long (WARMUP_TICK_DELAY_SECONDS = 60s) pour ne jamais réveiller une
-// chaîne saine en plein battement, mais assez court pour repartir vite si la chaîne est vraiment
-// morte (erreur, crash, quota QStash épuisé).
-export const LIVE_TICK_HEARTBEAT_STALE_MS = 3 * 60 * 1000;
+// délai de tick le plus long (WARMUP_TICK_DELAY_SECONDS = 120s, voir live-tick/route.ts) pour ne
+// jamais réveiller une chaîne saine en plein battement, mais assez court pour repartir vite si la
+// chaîne est vraiment morte (erreur, crash, quota QStash épuisé).
+export const LIVE_TICK_HEARTBEAT_STALE_MS = 5 * 60 * 1000;
