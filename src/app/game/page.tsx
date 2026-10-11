@@ -1,9 +1,16 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import { BackLink } from "@/app/BackLink";
-import { SoccerHeadsGame } from "./SoccerHeadsGame";
+// import { createClient } from "@/lib/supabase/server";
+// import { BackLink } from "@/app/BackLink";
+// import { SoccerHeadsGame } from "./SoccerHeadsGame";
 
 export default async function GamePage() {
+  // Masqué à la demande de l'utilisateur : pas encore prêt pour les utilisateurs. Redirection même
+  // en accès direct par URL (le lien de nav est déjà retiré, voir BottomNav.tsx). Logique d'origine
+  // commentée ci-dessous (pas supprimée) pour pouvoir la remontrer facilement — du code dead-code
+  // actif après ce redirect() cassait par ailleurs le narrowing TS sur `user`.
+  redirect("/");
+
+  /*
   const supabase = await createClient();
   // getSession() : le proxy a déjà validé la session pour cette requête (voir layout.tsx), pas
   // besoin de repayer un aller-retour réseau à Supabase Auth ici.
@@ -36,4 +43,5 @@ export default async function GamePage() {
       />
     </main>
   );
+  */
 }

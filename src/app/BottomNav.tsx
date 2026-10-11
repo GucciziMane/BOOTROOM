@@ -20,7 +20,9 @@ const TABS = [
   { href: "/quiz", label: "Quiz", emoji: "🧠", isActive: (p: string) => p.startsWith("/quiz") },
   { href: "/leaderboard", label: "Podium", emoji: "🏅", isActive: (p: string) => p.startsWith("/leaderboard") },
   { href: "/ballon-dor", label: "Ballon", emoji: null, isActive: (p: string) => p.startsWith("/ballon-dor") },
-  { href: "/game", label: "Jeu", emoji: "⚽", isActive: (p: string) => p.startsWith("/game") },
+  // "Jeu" (/game, Têtes & Ballon) : masqué à la demande de l'utilisateur, pas encore prêt pour les
+  // utilisateurs. Code conservé (pas supprimé), simple exclusion du tableau pour le remontrer
+  // facilement — même raisonnement que HIDDEN_EXACT ci-dessous pour le dashboard.
   { href: "/chat", label: "Chat", emoji: "🍻", isActive: (p: string) => p.startsWith("/chat") },
 ];
 
