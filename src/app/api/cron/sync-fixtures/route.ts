@@ -3,7 +3,7 @@ import { Client as QStashClient } from "@upstash/qstash";
 import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { footballData, normalizeMatchStatus, type FdMatch } from "@/lib/football-data/client";
-import { highlightly, type HlMatch } from "@/lib/highlightly/client";
+import { highlightly, HighlightlyQuotaExceededError, type HlMatch } from "@/lib/highlightly/client";
 import { getEspnScoreboard, getEspnMatchEvents, ESPN_LEAGUE_SLUG } from "@/lib/espn/client";
 import { teamNamesMatch, matchPlayerByName } from "@/lib/sync/name-match";
 import { computeStandings } from "@/lib/scoring/standings";
@@ -11,6 +11,7 @@ import { computeMatchOdds } from "@/lib/scoring/match-odds";
 import { LIVE_TICK_LOOKAHEAD_MS, LIVE_TICK_HEARTBEAT_STALE_MS } from "@/lib/live-tick-window";
 import { awardLateScorerAssistPoints } from "@/app/api/cron/process-scoring/route";
 import { pingDeadMansSwitch } from "@/lib/monitoring/dead-mans-switch";
+import { sendPushToUserIds } from "@/lib/push/server";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const MAX_EVENT_CALLS_PER_RUN = 40; // reste sous le quota de 100 req/jour de Highlightly (1 call/date+championnat + 1 call/match)
@@ -596,6 +597,11 @@ async function syncGoalEvents(
   let outOfWindow = 0;
   let stoppedOnBudget = 0;
   let skippedAlreadyScored = 0;
+  // Distinct de outOfWindow/unmatched (voir HighlightlyQuotaExceededError) : un 429 est un signal
+  // définitif pour la journée, jamais un simple "ce match n'est pas dans ce plan gratuit" — voir
+  // alertHighlightlyQuotaExceeded plus bas, ajoutée après avoir constaté qu'un quota épuisé restait
+  // totalement silencieux (contrairement à une panne ESPN, qui a sa propre alerte).
+  let highlightlyQuotaExceeded = 0;
 
   // Un match déjà noté (points_processed_at posé, presque toujours via le délai de grâce de
   // process-scoring quand events_synced_at n'a jamais pu être posé à temps — voir la mémoire "P1
@@ -798,8 +804,9 @@ async function syncGoalEvents(
       if (dayMatches === undefined) {
         try {
           dayMatches = await highlightly.getMatchesByDate(dateKey, highlightlyLeagueId);
-        } catch {
-          // Match trop ancien ou hors couverture du plan gratuit.
+        } catch (err) {
+          if (err instanceof HighlightlyQuotaExceededError) highlightlyQuotaExceeded++;
+          // Match trop ancien ou hors couverture du plan gratuit (ou quota épuisé, compté ci-dessus).
           dayMatches = null;
         }
         matchesByDateAndLeagueCache.set(cacheKey, dayMatches);
@@ -888,10 +895,39 @@ async function syncGoalEvents(
 
       await saveMatchEvents(match.id, goalRows, subRows, cardRows);
       matched++;
-    } catch {
-      unmatched++;
+    } catch (err) {
+      if (err instanceof HighlightlyQuotaExceededError) highlightlyQuotaExceeded++;
+      else unmatched++;
     }
   }
 
-  return { processed: pendingMatches.length, matched, matchedViaEspn, unmatched, outOfWindow, stoppedOnBudget, skippedAlreadyScored };
+  if (highlightlyQuotaExceeded > 0) await alertHighlightlyQuotaExceeded(supabase);
+
+  return { processed: pendingMatches.length, matched, matchedViaEspn, unmatched, outOfWindow, stoppedOnBudget, skippedAlreadyScored, highlightlyQuotaExceeded };
+}
+
+// Cooldown : même raisonnement que ESPN_FAILURE_ALERT_COOLDOWN_MS côté live-tick — un seul run
+// touché suffit à alerter (contrairement à ESPN, un 429 Highlightly est un signal définitif pour
+// la journée, jamais un blip réseau isolé qui justifierait d'attendre une panne soutenue), mais
+// pas une alerte à CHAQUE passage de ce cron (30 min) tant que le quota reste épuisé.
+const HIGHLIGHTLY_QUOTA_ALERT_COOLDOWN_MS = 2 * 60 * 60 * 1000;
+
+async function alertHighlightlyQuotaExceeded(supabase: ReturnType<typeof createServiceRoleClient>): Promise<void> {
+  const { data: lastAlertRow } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("key", "sync_fixtures_last_highlightly_quota_alert_at")
+    .maybeSingle();
+  if (lastAlertRow && Date.now() - new Date(lastAlertRow.value).getTime() < HIGHLIGHTLY_QUOTA_ALERT_COOLDOWN_MS) return;
+
+  const { data: admins } = await supabase.from("profiles").select("id").eq("is_admin", true);
+  const adminIds = (admins ?? []).map((a) => a.id);
+  if (adminIds.length > 0) {
+    await sendPushToUserIds(adminIds, {
+      title: "⚠️ Boot Room — Quota Highlightly dépassé",
+      body: "Plus aucun buteur/passeur synchronisé jusqu'au reset du quota (100/jour) — les points buteur/passeur des matchs en attente resteront à 0 en attendant.",
+      url: "/admin",
+    });
+  }
+  await supabase.from("app_settings").upsert({ key: "sync_fixtures_last_highlightly_quota_alert_at", value: new Date().toISOString() });
 }

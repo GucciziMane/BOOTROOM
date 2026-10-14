@@ -1,6 +1,20 @@
 const BASE_URL = "https://soccer.highlightly.net";
 
 /**
+ * Distingue "quota journalier épuisé" (429 — signal fiable et définitif pour la journée, jamais
+ * un blip réseau) de toute autre erreur (match hors couverture du plan gratuit, panne ponctuelle,
+ * timeout...), que l'appelant traitait jusqu'ici de façon identique — voir syncGoalEvents dans
+ * sync-fixtures/route.ts et son alerte dédiée, ajoutées après avoir constaté qu'un épuisement de
+ * quota restait totalement silencieux (contrairement à une panne ESPN, qui a sa propre alerte).
+ */
+export class HighlightlyQuotaExceededError extends Error {
+  constructor(path: string) {
+    super(`Highlightly ${path}: quota journalier (429) dépassé`);
+    this.name = "HighlightlyQuotaExceededError";
+  }
+}
+
+/**
  * Highlightly — utilisé uniquement pour récupérer les events but/passe de chaque match
  * (football-data.org ne les fournit pas). Plan gratuit 100 requêtes/jour, sans carte bancaire.
  * /matches?date= liste tous les matchs mondiaux d'un jour donné, paginés par 100 : on filtre
@@ -22,6 +36,9 @@ async function highlightlyFetch<T>(path: string, params: Record<string, string |
     signal: AbortSignal.timeout(15_000),
   });
 
+  if (response.status === 429) {
+    throw new HighlightlyQuotaExceededError(path);
+  }
   if (!response.ok) {
     throw new Error(`Highlightly ${path} a échoué: ${response.status} ${await response.text()}`);
   }
