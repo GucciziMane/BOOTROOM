@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
+import { randomUUID } from "node:crypto";
 import { Client as QStashClient } from "@upstash/qstash";
 import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
@@ -97,18 +98,115 @@ export async function checkEspnHealthAndAlert(supabase: ServiceClient, attempted
   await supabase.from("app_settings").upsert({ key: "live_tick_last_espn_alert_at", value: new Date().toISOString() });
 }
 
-async function scheduleNextTick(delaySeconds: number): Promise<void> {
+// Volet "un message QStash par tranche, pas par tick" (17/10/2026) : jusqu'ici CHAQUE tick (toutes
+// les 35s en direct) coûtait un message QStash, soit ~100 messages par heure de direct — un samedi
+// à matchs de 13h à 23h dépassait à lui seul le quota gratuit de 1000/jour, quels que soient les
+// délais choisis (incidents du 10/09 et du 11/10). Désormais, une invocation enchaîne elle-même
+// les ticks (en arrière-plan via after(), réponse immédiate à QStash qui ne peut donc jamais
+// l'interrompre sur délai) pendant au plus CHAIN_SLICE_BUDGET_MS, puis ne programme qu'UN message
+// pour la tranche suivante : ~13 messages par heure de direct au lieu de ~100.
+export const maxDuration = 300;
+const CHAIN_SLICE_BUDGET_MS = 270_000;
+// Marge réservée à un tick lui-même (ESPN, écritures, notation d'un match qui se termine).
+const TICK_MARGIN_MS = 25_000;
+
+// Verrou anti-chaînes multiples : avant, rien n'empêchait deux chaînes de tourner en parallèle (un
+// réveil de sync-fixtures pendant qu'une chaîne vivait encore, un retry QStash...) — chacune se
+// re-planifiait pour toujours, doublant silencieusement le volume de messages. Une seule
+// invocation détient le bail (app_settings.live_tick_lease = "<échéance ISO>|<jeton>") ; la
+// suivante de la même chaîne reçoit le jeton dans son URL, toute autre (chaîne parallèle, retry,
+// réveil superflu) trouve le bail pris et s'arrête sans rien re-planifier.
+const LEASE_KEY = "live_tick_lease";
+// Le bail survit à un passage de relais (délai du message + démarrage), mais expire assez vite pour
+// qu'une chaîne morte soit reprise au réveil suivant de sync-fixtures.
+const LEASE_GRACE_MS = 90_000;
+
+async function claimLease(supabase: ServiceClient, handoffToken: string | null): Promise<string | null> {
+  await supabase
+    .from("app_settings")
+    .upsert({ key: LEASE_KEY, value: `1970-01-01T00:00:00.000Z|none` }, { onConflict: "key", ignoreDuplicates: true });
+  const myToken = randomUUID();
+  const value = `${new Date(Date.now() + CHAIN_SLICE_BUDGET_MS + LEASE_GRACE_MS).toISOString()}|${myToken}`;
+  // Relais de la même chaîne : le jeton transmis n'est valable qu'une fois (remplacé aussitôt par
+  // le nôtre), donc un retry QStash du même message ne peut pas lancer une seconde boucle.
+  if (handoffToken) {
+    const { data } = await supabase
+      .from("app_settings")
+      .update({ value })
+      .eq("key", LEASE_KEY)
+      .like("value", `%|${handoffToken}`)
+      .select("key");
+    if (data && data.length > 0) return myToken;
+  }
+  const { data } = await supabase
+    .from("app_settings")
+    .update({ value })
+    .eq("key", LEASE_KEY)
+    .lt("value", new Date().toISOString())
+    .select("key");
+  return data && data.length > 0 ? myToken : null;
+}
+
+async function setLease(supabase: ServiceClient, untilMs: number, token: string): Promise<void> {
+  await supabase.from("app_settings").update({ value: `${new Date(untilMs).toISOString()}|${token}` }).eq("key", LEASE_KEY);
+}
+
+async function scheduleNextTick(delaySeconds: number, handoffToken: string): Promise<void> {
   const token = process.env.QSTASH_TOKEN;
   const cronSecret = process.env.CRON_SECRET;
   if (!token || !cronSecret) return;
 
   const client = new QStashClient({ token });
   await client.publish({
-    url: `${APP_URL}/api/cron/live-tick`,
+    url: `${APP_URL}/api/cron/live-tick?lease=${handoffToken}`,
     method: "GET",
     headers: { Authorization: `Bearer ${cronSecret}` },
     delay: delaySeconds,
+    // Réponse immédiate (voir after() plus bas) : un échec ici est réel, un retry relancerait au
+    // mieux une invocation qui trouvera son jeton déjà consommé.
+    retries: 1,
   });
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Enchaîne les ticks jusqu'à ce qu'il n'y ait plus rien à suivre ou que la tranche soit écoulée. */
+async function runChainSlice(supabase: ServiceClient, leaseToken: string): Promise<void> {
+  const sliceStart = Date.now();
+  for (;;) {
+    let pendingCount = 0;
+    let liveCount = 0;
+    try {
+      ({ pendingCount, liveCount } = await runTick(supabase));
+    } catch (err) {
+      // Un tick en échec ne doit pas tuer la chaîne : on retente au prochain, comme avant.
+      console.error("[live-tick] tick en échec", err);
+      pendingCount = 1;
+    }
+    if (pendingCount === 0) {
+      // Plus rien à suivre : la chaîne s'arrête et libère le bail (seulement s'il est encore le
+      // sien) pour que le prochain réveil de sync-fixtures puisse repartir aussitôt.
+      await supabase
+        .from("app_settings")
+        .update({ value: `1970-01-01T00:00:00.000Z|none` })
+        .eq("key", LEASE_KEY)
+        .like("value", `%|${leaseToken}`);
+      return;
+    }
+    const delayMs = (liveCount > 0 ? LIVE_TICK_DELAY_SECONDS : WARMUP_TICK_DELAY_SECONDS) * 1000;
+    if (Date.now() - sliceStart + delayMs + TICK_MARGIN_MS > CHAIN_SLICE_BUDGET_MS) {
+      const handoffToken = randomUUID();
+      await setLease(supabase, Date.now() + delayMs + LEASE_GRACE_MS, handoffToken);
+      try {
+        await scheduleNextTick(delayMs / 1000, handoffToken);
+      } catch {
+        // Pas grave : le bail expire et le prochain réveil de sync-fixtures (au plus 30 min,
+        // déclenché par le battement périmé) reprendra la main.
+      }
+      return;
+    }
+    await sleep(delayMs);
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -116,6 +214,16 @@ export async function GET(request: NextRequest) {
   if (unauthorized) return unauthorized;
 
   const supabase = createServiceRoleClient();
+  const leaseToken = await claimLease(supabase, request.nextUrl.searchParams.get("lease"));
+  if (!leaseToken) {
+    // Une autre chaîne tient le bail : on s'arrête sans rien re-planifier (fusion des chaînes).
+    return NextResponse.json({ skipped: "chaîne déjà active" });
+  }
+  after(() => runChainSlice(supabase, leaseToken));
+  return NextResponse.json({ started: true });
+}
+
+async function runTick(supabase: ServiceClient): Promise<{ pendingCount: number; liveCount: number }> {
   const now = new Date();
   const windowStart = new Date(now.getTime() - LIVE_WINDOW_MS).toISOString();
   const windowEnd = new Date(now.getTime() + LIVE_TICK_LOOKAHEAD_MS).toISOString();
@@ -150,7 +258,7 @@ export async function GET(request: NextRequest) {
   // Rien à faire (et rien à re-planifier, voir scheduleNextTick plus bas) : sortir avant le moindre
   // appel ESPN.
   if (inWindowMatches.length === 0) {
-    return NextResponse.json({ inWindow: 0, pending: 0 });
+    return { pendingCount: 0, liveCount: 0 };
   }
 
   // Battement de la chaîne d'auto-réveil (voir LIVE_TICK_HEARTBEAT_STALE_MS) : seulement quand il
@@ -478,21 +586,13 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  if (pendingCount > 0) {
-    try {
-      await scheduleNextTick(liveCount > 0 ? LIVE_TICK_DELAY_SECONDS : WARMUP_TICK_DELAY_SECONDS);
-    } catch {
-      // Pas grave : le prochain réveil de sync-fixtures (au plus 30 min) reprendra la main.
-    }
-  }
-
   try {
     await checkEspnHealthAndAlert(supabase, espnFetchAttempted, espnFetchFailed);
   } catch {
     // L'alerte elle-même ne doit jamais faire échouer le tick (dont dépend le score/les buts).
   }
 
-  return NextResponse.json({
+  console.log("[live-tick]", JSON.stringify({
     inWindow: inWindowMatches.length,
     pending: pendingCount,
     live: liveCount,
@@ -502,7 +602,8 @@ export async function GET(request: NextRequest) {
     scoredMatches,
     espnFetchAttempted,
     espnFetchFailed,
-  });
+  }));
+  return { pendingCount, liveCount };
 }
 
 interface NewGoal {
