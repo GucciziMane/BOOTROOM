@@ -618,11 +618,11 @@ async function syncGoalEvents(
   // active) rendaient matchPlayerByName ambigu et le but repartait avec player_id=null, jamais
   // compté pour un pronostic buteur. live-tick filtrait déjà ainsi ; ce chemin de sync (Highlightly,
   // filet de secours) ne le faisait pas.
-  const { data: players } = await supabase.from("players").select("id, name, team_id").in("team_id", teamIds).is("left_at", null);
-  const playersByTeamId = new Map<number, Array<{ id: number; name: string }>>();
+  const { data: players } = await supabase.from("players").select("id, name, team_id, position").in("team_id", teamIds).is("left_at", null);
+  const playersByTeamId = new Map<number, Array<{ id: number; name: string; position: string | null }>>();
   for (const p of players ?? []) {
     if (!playersByTeamId.has(p.team_id)) playersByTeamId.set(p.team_id, []);
-    playersByTeamId.get(p.team_id)!.push({ id: p.id, name: p.name });
+    playersByTeamId.get(p.team_id)!.push({ id: p.id, name: p.name, position: p.position });
   }
 
   const matchesByDateAndLeagueCache = new Map<string, HlMatch[] | null>();
@@ -783,8 +783,8 @@ async function syncGoalEvents(
           const { goals, substitutions, cards } = await getEspnMatchEvents(espnSlug, espnMatch.id);
           const goalRows = goals.map((g) => {
             const teamId = teamIdOf(g.teamName);
-            const scorer = matchPlayerByName(g.scorerName, playersByTeamId.get(teamId) ?? []);
-            const assist = g.assistName ? matchPlayerByName(g.assistName, playersByTeamId.get(teamId) ?? []) : null;
+            const scorer = matchPlayerByName(g.scorerName, playersByTeamId.get(teamId) ?? [], g.scorerRole);
+            const assist = g.assistName ? matchPlayerByName(g.assistName, playersByTeamId.get(teamId) ?? [], g.assistRole) : null;
             return {
               match_id: match.id,
               team_id: teamId,

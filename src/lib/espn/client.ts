@@ -141,7 +141,10 @@ export async function getEspnScoreboard(leagueSlug: string, fromYmd: string, toY
 export interface EspnGoal {
   teamName: string;
   scorerName: string;
+  /** Rôle du buteur sur la feuille de match ESPN, pour départager deux homonymes (voir matchPlayerByName). */
+  scorerRole?: PlayerRole | null;
   assistName: string | null;
+  assistRole?: PlayerRole | null;
   minute: number | null;
 }
 
@@ -171,8 +174,17 @@ interface EspnSummaryResponse {
     scoringPlay?: boolean;
     team?: { displayName: string };
     clock?: { displayValue: string };
-    participants?: Array<{ athlete: { displayName: string } }>;
+    participants?: Array<{ athlete: { id?: string; displayName: string } }>;
   }>;
+  rosters?: Array<{ roster?: Array<{ athlete?: { id?: string }; position?: { name?: string } }> }>;
+}
+
+/** Rôle défensif (gardien, défenseur) ou offensif d'un joueur, selon le poste ESPN du match. */
+export type PlayerRole = "defensive" | "offensive";
+
+function roleFromEspnPosition(position: string | undefined): PlayerRole | null {
+  if (!position) return null;
+  return /goalkeeper|back|defender|sweeper/i.test(position) ? "defensive" : "offensive";
 }
 
 /** Buts + remplacements + cartons d'un match précis, via son id d'événement ESPN — une seule
@@ -183,6 +195,17 @@ export async function getEspnMatchEvents(
 ): Promise<{ goals: EspnGoal[]; substitutions: EspnSubstitution[]; cards: EspnCard[] }> {
   const data = await espnFetch<EspnSummaryResponse>(`/${leagueSlug}/summary?event=${eventId}`);
   const events = data.keyEvents ?? [];
+  // Poste de chaque joueur de la feuille de match, par id ESPN (le nom seul ne suffit pas : deux
+  // "Pedrinho" au Shakhtar, un arrière gauche et un milieu offensif — vu le 14/10/2026). Sert à
+  // départager deux homonymes d'un même effectif, voir matchPlayerByName.
+  const roleByAthleteId = new Map<string, PlayerRole>();
+  for (const team of data.rosters ?? []) {
+    for (const entry of team.roster ?? []) {
+      const role = roleFromEspnPosition(entry.position?.name);
+      if (entry.athlete?.id && role) roleByAthleteId.set(entry.athlete.id, role);
+    }
+  }
+  const roleOf = (athlete: { id?: string } | undefined) => (athlete?.id ? (roleByAthleteId.get(athlete.id) ?? null) : null);
 
   const goals = events.flatMap((e) => {
     // ESPN distingue le TYPE de but ("goal", "goal---header", "goal---volley", "own-goal",
@@ -198,7 +221,9 @@ export async function getEspnMatchEvents(
       {
         teamName: e.team.displayName,
         scorerName: e.participants[0].athlete.displayName,
+        scorerRole: roleOf(e.participants[0].athlete),
         assistName: e.participants[1]?.athlete.displayName ?? null,
+        assistRole: roleOf(e.participants[1]?.athlete),
         minute: minuteMatch ? Number(minuteMatch[0]) : null,
       },
     ];

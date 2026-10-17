@@ -281,8 +281,8 @@ export async function GET(request: NextRequest) {
         // passage (dans la minute) réessaiera — pas la peine de faire échouer tout le cron pour ça.
       }
 
-      const homePlayers = (await supabase.from("players").select("id, name").eq("team_id", match.home_team_id).is("left_at", null)).data ?? [];
-      const awayPlayers = (await supabase.from("players").select("id, name").eq("team_id", match.away_team_id).is("left_at", null)).data ?? [];
+      const homePlayers = (await supabase.from("players").select("id, name, position").eq("team_id", match.home_team_id).is("left_at", null)).data ?? [];
+      const awayPlayers = (await supabase.from("players").select("id, name, position").eq("team_id", match.away_team_id).is("left_at", null)).data ?? [];
 
       // Set mutable (pas juste existingSubKeys, figé avant la boucle) : ESPN renvoie parfois la
       // même entrée plusieurs fois dans une seule réponse (observé aussi côté buts, voir plus bas)
@@ -312,7 +312,7 @@ export async function GET(request: NextRequest) {
       const newGoalRows = goals.flatMap((g) => {
         const teamId = (teamSideOf(g.teamName, { home: espnMatch.homeTeam, away: espnMatch.awayTeam }, false) === "home" ? match.home_team_id : match.away_team_id);
         const candidates = teamId === match.home_team_id ? homePlayers : awayPlayers;
-        const scorer = matchPlayerByName(g.scorerName, candidates);
+        const scorer = matchPlayerByName(g.scorerName, candidates, g.scorerRole);
         const key = goalKey(scorer?.id ?? null, g.scorerName, g.minute);
         if (seenGoalKeysThisTick.has(key)) return [];
         seenGoalKeysThisTick.add(key);
@@ -321,7 +321,7 @@ export async function GET(request: NextRequest) {
         // qu'football-data.org n'a pas encore synchronisé finissaient tous les deux par échouer
         // cette recherche : on garde le but quand même (player_id null, nom brut conservé) plutôt
         // que de le perdre silencieusement — voir migration 0039.
-        const assist = g.assistName ? matchPlayerByName(g.assistName, candidates) : null;
+        const assist = g.assistName ? matchPlayerByName(g.assistName, candidates, g.assistRole) : null;
         return [
           {
             match_id: match.id,
@@ -399,11 +399,11 @@ export async function GET(request: NextRequest) {
         if (!g.assistName) return [];
         const teamId = (teamSideOf(g.teamName, { home: espnMatch.homeTeam, away: espnMatch.awayTeam }, false) === "home" ? match.home_team_id : match.away_team_id);
         const candidates = teamId === match.home_team_id ? homePlayers : awayPlayers;
-        const scorer = matchPlayerByName(g.scorerName, candidates);
+        const scorer = matchPlayerByName(g.scorerName, candidates, g.scorerRole);
         const key = goalKey(scorer?.id ?? null, g.scorerName, g.minute);
         const existing = existingGoalByKey.get(key);
         if (!existing || existing.assist_player_id != null || existing.assist_name != null) return [];
-        const assist = matchPlayerByName(g.assistName, candidates);
+        const assist = matchPlayerByName(g.assistName, candidates, g.assistRole);
         return [{ id: existing.id, assist_player_id: assist?.id ?? null, assist_name: g.assistName }];
       });
       if (assistBackfills.length > 0) {
@@ -424,7 +424,7 @@ export async function GET(request: NextRequest) {
           goals.map((g) => {
             const teamId = (teamSideOf(g.teamName, { home: espnMatch.homeTeam, away: espnMatch.awayTeam }, false) === "home" ? match.home_team_id : match.away_team_id);
             const candidates = teamId === match.home_team_id ? homePlayers : awayPlayers;
-            const scorer = matchPlayerByName(g.scorerName, candidates);
+            const scorer = matchPlayerByName(g.scorerName, candidates, g.scorerRole);
             return goalKey(scorer?.id ?? null, g.scorerName, g.minute);
           })
         );

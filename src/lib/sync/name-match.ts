@@ -155,9 +155,12 @@ const FULL_NAME_NICKNAME_ALIASES: Record<string, string> = {
  * AUSSI "Pedro Neto" (prénom "Pedro"), rendait la recherche ambiguë entre les deux, et le but de
  * João Pedro finissait avec player_id=null — jamais compté pour un pronostic buteur.
  */
-export function matchPlayerByName<P extends { id: number; name: string }>(
+export function matchPlayerByName<P extends { id: number; name: string; position?: string | null }>(
   targetName: string,
-  candidates: P[]
+  candidates: P[],
+  /** Rôle du joueur côté source (ESPN). Ne sert qu'à départager plusieurs candidats homonymes
+   * (deux "Pedrinho" au Shakhtar : un défenseur, un attaquant) — jamais à écarter un candidat unique. */
+  roleHint?: "defensive" | "offensive" | null
 ): P | null {
   const normalizedTarget = normalizeName(targetName);
   const tokens = (FULL_NAME_NICKNAME_ALIASES[normalizedTarget] ?? normalizedTarget).split(" ").filter(Boolean);
@@ -174,6 +177,12 @@ export function matchPlayerByName<P extends { id: number; name: string }>(
   // liaison ("de", "la"...) ne matchera simplement jamais aucun candidat.
   if (matches.length !== 1 && tokens.length >= 3) {
     matches = byLastToken(tokens[tokens.length - 2]);
+  }
+
+  if (matches.length > 1 && roleHint) {
+    const isDefensive = (c: P) => c.position === "Goalkeeper" || c.position === "Defender";
+    const byRole = matches.filter((c) => c.position != null && isDefensive(c) === (roleHint === "defensive"));
+    if (byRole.length === 1) return byRole[0];
   }
 
   return matches.length === 1 ? matches[0] : null;

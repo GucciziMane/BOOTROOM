@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { footballData, normalizePosition, type FdSquadPlayer } from "@/lib/football-data/client";
+import { normalizeName } from "@/lib/sync/name-match";
 
 // Sans ce plafond explicite, une invocation s'est fait couper (constaté en préparant l'arrivée de
 // la Ligue des Champions) avant la fin des ~13 appels espacés de FOOTBALL_DATA_RATE_LIMIT_DELAY_MS
@@ -231,6 +232,8 @@ export async function GET(request: NextRequest) {
       const rowsWithFdId = playerRows.filter((p) => p.football_data_id != null);
       const rowsWithoutFdId = playerRows.filter((p) => p.football_data_id == null);
 
+      await adoptNameOnlyDuplicates(supabase, rowsWithFdId);
+
       const { error: playersError } = await supabase
         .from("players")
         .upsert(rowsWithFdId, { onConflict: "team_id,football_data_id" });
@@ -334,4 +337,43 @@ export async function GET(request: NextRequest) {
   }
 
   return NextResponse.json({ summary });
+}
+
+/**
+ * Un club dont l'effectif a d'abord été importé sans id football-data.org (Wikipédia, quand
+ * football-data renvoyait un effectif vide/tronqué) puis enfin fourni par football-data voyait
+ * chaque joueur INSÉRÉ une deuxième fois (contrainte (team_id, football_data_id), la ligne
+ * existante ayant un id null) — vu en prod le 17/10/2026 : 47 doublons actifs sur Sabah FK et SK
+ * Slavia Praha, rendant buteurs/passeurs ambigus (jamais reliés à un joueur, donc jamais payés) et
+ * pronostics éparpillés entre les deux lignes. Pire, le garde-fou anti-effectif-tronqué plus bas
+ * compare au nombre de joueurs actifs, gonflé ×2 par les doublons, et bloquait donc lui-même leur
+ * nettoyage. On adopte plutôt la ligne existante (même équipe, même nom normalisé, sans ambiguïté)
+ * en lui posant l'id football-data : l'upsert qui suit la met alors à jour au lieu d'en créer une
+ * autre, et tout ce qui la référence déjà (pronostics, buts, paliers) reste valide.
+ */
+async function adoptNameOnlyDuplicates(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  rowsWithFdId: Array<{ team_id: number; name: string; football_data_id: number | null }>
+): Promise<void> {
+  const teamIds = [...new Set(rowsWithFdId.map((p) => p.team_id))];
+  if (teamIds.length === 0) return;
+  const { data: existing } = await supabase
+    .from("players")
+    .select("id, team_id, name, football_data_id, left_at")
+    .in("team_id", teamIds);
+  const knownFdKeys = new Set((existing ?? []).filter((p) => p.football_data_id != null).map((p) => `${p.team_id}:${p.football_data_id}`));
+  const nameOnlyByKey = new Map<string, number[]>();
+  for (const p of existing ?? []) {
+    // Lignes parties incluses dans knownFdKeys (contrainte unique), exclues de l'adoption.
+    if (p.football_data_id != null || p.left_at != null) continue;
+    const key = `${p.team_id}:${normalizeName(p.name)}`;
+    nameOnlyByKey.set(key, [...(nameOnlyByKey.get(key) ?? []), p.id]);
+  }
+  for (const row of rowsWithFdId) {
+    if (knownFdKeys.has(`${row.team_id}:${row.football_data_id}`)) continue;
+    const ids = nameOnlyByKey.get(`${row.team_id}:${normalizeName(row.name)}`);
+    if (!ids || ids.length !== 1) continue;
+    await supabase.from("players").update({ football_data_id: row.football_data_id }).eq("id", ids[0]);
+    nameOnlyByKey.delete(`${row.team_id}:${normalizeName(row.name)}`);
+  }
 }
