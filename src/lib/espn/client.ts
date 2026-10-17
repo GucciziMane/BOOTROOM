@@ -216,7 +216,11 @@ export async function getEspnMatchEvents(
     // change le score, quel que soit son type exact — bien plus robuste qu'une liste de libellés
     // à maintenir à la main.
     if (!e.scoringPlay || !e.team || !e.participants || e.participants.length === 0) return [];
-    const minuteMatch = e.clock?.displayValue?.match(/\d+/);
+    // Temps additionnel compté ("90'+4'" -> 94) : avec la seule minute de base, un doublé dans les
+    // arrêts de jeu donnait deux buts à la même minute pour le même joueur, et la contrainte unique
+    // (player_id, match_id, minute) de match_goals faisait disparaître le second — vu en audit le
+    // 17/10/2026 (Boulaye Dia, Rennes–Auxerre, 90'+2' et 90'+4').
+    const minuteParts = e.clock?.displayValue?.match(/\d+/g)?.map(Number) ?? [];
     return [
       {
         teamName: e.team.displayName,
@@ -224,7 +228,7 @@ export async function getEspnMatchEvents(
         scorerRole: roleOf(e.participants[0].athlete),
         assistName: e.participants[1]?.athlete.displayName ?? null,
         assistRole: roleOf(e.participants[1]?.athlete),
-        minute: minuteMatch ? Number(minuteMatch[0]) : null,
+        minute: minuteParts.length > 0 ? minuteParts.reduce((sum, n) => sum + n, 0) : null,
       },
     ];
   });
