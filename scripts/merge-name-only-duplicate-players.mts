@@ -4,6 +4,7 @@
 // Redirige toutes les références vers la ligne football-data puis marque la ligne Wikipédia partie.
 // Ne touche jamais points_ledger. Dry-run par défaut ; `--apply` pour exécuter (une transaction).
 //   npx tsx scripts/merge-name-only-duplicate-players.mts [--apply]
+// @ts-expect-error -- pg n'a pas de types installés (@types/pg absent) ; script ponctuel, hors app.
 import { Client } from "pg";
 import { normalizeName } from "../src/lib/sync/name-match";
 
@@ -18,7 +19,8 @@ const c = new Client({
 });
 await c.connect();
 
-const players = (
+type PlayerRow = { id: number; team_id: number; name: string; football_data_id: number | null; photo_url: string | null };
+const players: PlayerRow[] = (
   await c.query(`select id, team_id, name, football_data_id, photo_url from players where left_at is null`)
 ).rows;
 const groups = new Map<string, typeof players>();
