@@ -3,7 +3,7 @@
 // adoptNameOnlyDuplicates dans sync-teams-players, qui empêche désormais d'en recréer.
 // Redirige toutes les références vers la ligne football-data puis marque la ligne Wikipédia partie.
 // Ne touche jamais points_ledger. Dry-run par défaut ; `--apply` pour exécuter (une transaction).
-//   npx tsx scripts/merge-name-only-duplicate-players.mts [--apply]
+//   npx tsx scripts/merge-name-only-duplicate-players.mts [--apply] [--pair 60783:100363 ...]
 // @ts-expect-error -- pg n'a pas de types installés (@types/pg absent) ; script ponctuel, hors app.
 import { Client } from "pg";
 import { normalizeName } from "../src/lib/sync/name-match";
@@ -28,12 +28,26 @@ for (const p of players) {
   const key = `${p.team_id}|${normalizeName(p.name)}`;
   groups.set(key, [...(groups.get(key) ?? []), p]);
 }
-const pairs = [...groups.values()].flatMap((g) => {
+// Variantes d'orthographe/translittération qu'aucune normalisation ne rapproche sans risque
+// ("Khaybulayev" / "Xaybulayev") : passées explicitement, `--pair <idSansFd>:<idFootballData>`,
+// après vérification manuelle (même club, même joueur).
+const byId = new Map(players.map((p) => [p.id, p]));
+const explicitPairs = process.argv.flatMap((arg, i) => {
+  if (process.argv[i - 1] !== "--pair") return [];
+  const [fromId, toId] = arg.split(":").map(Number);
+  const from = byId.get(fromId);
+  const to = byId.get(toId);
+  if (!from || !to || from.football_data_id != null || to.football_data_id == null || from.team_id !== to.team_id) {
+    throw new Error(`--pair ${arg} invalide (actifs, même club, ${fromId} sans id football-data, ${toId} avec)`);
+  }
+  return [{ from, to }];
+});
+const pairs = explicitPairs.length > 0 ? explicitPairs : [...groups.values()].flatMap((g) => {
   const nameOnly = g.filter((p) => p.football_data_id == null);
   const withFd = g.filter((p) => p.football_data_id != null);
   return nameOnly.length === 1 && withFd.length === 1 ? [{ from: nameOnly[0], to: withFd[0] }] : [];
 });
-console.log(`${pairs.length} paires à fusionner`);
+console.log(`${pairs.length} paires à fusionner :`, pairs.map((p) => `${p.from.name} -> ${p.to.name}`).join(", "));
 
 const REFS: Array<[string, string]> = [
   ["match_predictions", "predicted_scorer_player_id"],
