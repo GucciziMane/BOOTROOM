@@ -5,7 +5,7 @@ import { createServiceRoleClient } from "@/lib/supabase/server";
 import { footballData, normalizeMatchStatus, type FdMatch } from "@/lib/football-data/client";
 import { highlightly, HighlightlyQuotaExceededError, type HlMatch } from "@/lib/highlightly/client";
 import { getEspnScoreboard, getEspnMatchEvents, ESPN_LEAGUE_SLUG } from "@/lib/espn/client";
-import { teamNamesMatch, matchPlayerByName } from "@/lib/sync/name-match";
+import { matchPlayerByName, findFixture, teamSideOf } from "@/lib/sync/name-match";
 import { computeStandings } from "@/lib/scoring/standings";
 import { computeMatchOdds } from "@/lib/scoring/match-odds";
 import { LIVE_TICK_LOOKAHEAD_MS, LIVE_TICK_HEARTBEAT_STALE_MS } from "@/lib/live-tick-window";
@@ -14,7 +14,22 @@ import { pingDeadMansSwitch } from "@/lib/monitoring/dead-mans-switch";
 import { sendPushToUserIds } from "@/lib/push/server";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-const MAX_EVENT_CALLS_PER_RUN = 40; // reste sous le quota de 100 req/jour de Highlightly (1 call/date+championnat + 1 call/match)
+const MAX_EVENT_CALLS_PER_RUN = 40;
+// Highlightly (plan gratuit, 100 req/jour) n'est qu'un secours derrière ESPN, mais ce cron tourne
+// ~144 fois/jour (QStash toutes les 30 min + GitHub Actions toutes les 15 min) : un seul match
+// introuvable sur ESPN coûtait 1 à 2 appels Highlightly à CHAQUE passage, à vie — 3 matchs de Ligue
+// des Champions bloqués ainsi ont épuisé le quota chaque jour à partir du 15/10/2026 (alerte push
+// répétée). Trois garde-fous désormais, chacun suffisant à lui seul pour rester sous le quota :
+// - budget journalier global (UTC) bien sous les 100, même si le reset côté Highlightly n'est pas
+//   aligné sur minuit UTC (2 × 45 < 100 sur n'importe quelle fenêtre de 24h) ;
+// - au plus une tentative par match toutes les HIGHLIGHTLY_RETRY_INTERVAL_MS ;
+// - plus aucune tentative au-delà de HIGHLIGHTLY_MAX_MATCH_AGE_MS (hors couverture du plan gratuit).
+const HIGHLIGHTLY_DAILY_BUDGET = 45;
+const HIGHLIGHTLY_RETRY_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const HIGHLIGHTLY_MAX_MATCH_AGE_MS = 4 * 24 * 60 * 60 * 1000;
+// Un match terminé toujours sans buteurs/passeurs passé ce délai mérite une intervention humaine
+// (nom d'équipe inconnu des deux sources, match absent d'ESPN...) : une seule alerte par match.
+const EVENTS_STUCK_ALERT_AFTER_MS = 26 * 60 * 60 * 1000;
 // Le workflow GitHub Actions coupe la requête à 270s (curl --max-time) : on s'arrête avant, pour
 // répondre à temps même si Highlightly est lent ce jour-là, plutôt que de faire échouer tout le
 // run (et avec lui, sans "process scoring" en filet, la distribution des points de ce cycle).
@@ -532,12 +547,13 @@ async function refreshRecentScoresFromEspn(
     const awayName = leagueTeams.find((t) => t.id === dbMatch.away_team_id)?.name ?? "";
     const dbDate = dbMatch.kickoff_at.slice(0, 10);
 
-    const espnMatch = events.find(
-      (e) =>
-        e.date.slice(0, 10) === dbDate &&
-        teamNamesMatch(e.homeTeam, homeName) &&
-        teamNamesMatch(e.awayTeam, awayName)
+    const found = findFixture(
+      events.filter((e) => e.date.slice(0, 10) === dbDate),
+      { homeName, awayName, kickoffAt: dbMatch.kickoff_at },
+      (e) => ({ home: e.homeTeam, away: e.awayTeam, date: e.date })
     );
+    // Orientation inversée refusée : les scores seraient attribués à la mauvaise équipe.
+    const espnMatch = found && !found.flipped ? found.fixture : null;
     if (!espnMatch || espnMatch.status === "scheduled") continue;
     // dbMatch.status ne peut jamais valoir "finished" ici (cf. le `continue` plus haut), donc rien
     // à mettre à jour si les deux statuts sont déjà identiques.
@@ -563,14 +579,34 @@ async function syncGoalEvents(
 
   const { data: pendingMatches, error } = await supabase
     .from("matches")
-    .select("id, league_id, season_id, home_team_id, away_team_id, kickoff_at, points_processed_at")
+    .select("id, league_id, season_id, home_team_id, away_team_id, kickoff_at, home_score, away_score, points_processed_at, events_hl_attempted_at")
     .eq("status", "finished")
     .is("events_synced_at", null)
+    .order("kickoff_at", { ascending: false })
     .limit(MAX_EVENT_CALLS_PER_RUN);
 
   if (error || !pendingMatches || pendingMatches.length === 0) {
     return { processed: 0, matched: 0, unmatched: 0, error: error?.message };
   }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: usageRow } = await supabase.from("app_settings").select("value").eq("key", "highlightly_daily_usage").maybeSingle();
+  const [usageDay, usageCount] = (usageRow?.value ?? "").split(":");
+  let highlightlyCallsToday = usageDay === today ? Number(usageCount) || 0 : 0;
+  let highlightlyCallsThisRun = 0;
+  /** Seul point d'entrée vers Highlightly : compte chaque appel et refuse au-delà du budget. */
+  const callHighlightly = async <T,>(fn: () => Promise<T>): Promise<T> => {
+    if (highlightlyCallsToday >= HIGHLIGHTLY_DAILY_BUDGET) throw new HighlightlyQuotaExceededError("budget local");
+    highlightlyCallsToday++;
+    highlightlyCallsThisRun++;
+    try {
+      return await fn();
+    } catch (err) {
+      // Quota réellement épuisé côté Highlightly : inutile de réessayer avant demain.
+      if (err instanceof HighlightlyQuotaExceededError) highlightlyCallsToday = HIGHLIGHTLY_DAILY_BUDGET;
+      throw err;
+    }
+  };
 
   const teamIds = [...new Set(pendingMatches.flatMap((m) => [m.home_team_id, m.away_team_id]))];
   const { data: teams } = await supabase.from("teams").select("id, name").in("id", teamIds);
@@ -602,6 +638,7 @@ async function syncGoalEvents(
   // alertHighlightlyQuotaExceeded plus bas, ajoutée après avoir constaté qu'un quota épuisé restait
   // totalement silencieux (contrairement à une panne ESPN, qui a sa propre alerte).
   let highlightlyQuotaExceeded = 0;
+  let highlightlySkipped = 0;
 
   // Un match déjà noté (points_processed_at posé, presque toujours via le délai de grâce de
   // process-scoring quand events_synced_at n'a jamais pu être posé à temps — voir la mémoire "P1
@@ -732,14 +769,20 @@ async function syncGoalEvents(
           espnScoreboardCache.set(espnCacheKey, dayEvents);
         }
 
-        const espnMatch = (dayEvents ?? []).find(
-          (e) => teamNamesMatch(e.homeTeam, homeName) && teamNamesMatch(e.awayTeam, awayName)
+        const found = findFixture(
+          dayEvents ?? [],
+          { homeName, awayName, kickoffAt: match.kickoff_at, homeScore: match.home_score, awayScore: match.away_score },
+          (e) => ({ home: e.homeTeam, away: e.awayTeam, date: e.date, homeScore: e.homeScore, awayScore: e.awayScore })
         );
 
-        if (espnMatch) {
+        if (found) {
+          const espnMatch = found.fixture;
+          const espnSource = { home: espnMatch.homeTeam, away: espnMatch.awayTeam };
+          const teamIdOf = (teamName: string) =>
+            teamSideOf(teamName, espnSource, found.flipped) === "home" ? match.home_team_id : match.away_team_id;
           const { goals, substitutions, cards } = await getEspnMatchEvents(espnSlug, espnMatch.id);
           const goalRows = goals.map((g) => {
-            const teamId = teamNamesMatch(g.teamName, homeName) ? match.home_team_id : match.away_team_id;
+            const teamId = teamIdOf(g.teamName);
             const scorer = matchPlayerByName(g.scorerName, playersByTeamId.get(teamId) ?? []);
             const assist = g.assistName ? matchPlayerByName(g.assistName, playersByTeamId.get(teamId) ?? []) : null;
             return {
@@ -753,7 +796,7 @@ async function syncGoalEvents(
             };
           });
           const subRows = substitutions.flatMap((s) => {
-            const teamId = teamNamesMatch(s.teamName, homeName) ? match.home_team_id : match.away_team_id;
+            const teamId = teamIdOf(s.teamName);
             const candidates = playersByTeamId.get(teamId) ?? [];
             const playerOut = matchPlayerByName(s.playerOutName, candidates);
             const playerIn = matchPlayerByName(s.playerInName, candidates);
@@ -769,7 +812,7 @@ async function syncGoalEvents(
             ];
           });
           const cardRows = cards.flatMap((c) => {
-            const teamId = teamNamesMatch(c.teamName, homeName) ? match.home_team_id : match.away_team_id;
+            const teamId = teamIdOf(c.teamName);
             const player = matchPlayerByName(c.playerName, playersByTeamId.get(teamId) ?? []);
             return [
               {
@@ -798,12 +841,22 @@ async function syncGoalEvents(
         unmatched++;
         continue;
       }
+      const lastHlAttempt = match.events_hl_attempted_at ? new Date(match.events_hl_attempted_at).getTime() : 0;
+      if (
+        Date.now() - new Date(match.kickoff_at).getTime() > HIGHLIGHTLY_MAX_MATCH_AGE_MS ||
+        Date.now() - lastHlAttempt < HIGHLIGHTLY_RETRY_INTERVAL_MS ||
+        highlightlyCallsToday >= HIGHLIGHTLY_DAILY_BUDGET
+      ) {
+        highlightlySkipped++;
+        continue;
+      }
+      await supabase.from("matches").update({ events_hl_attempted_at: new Date().toISOString() }).eq("id", match.id);
 
       const cacheKey = `${dateKey}|${highlightlyLeagueId}`;
       let dayMatches = matchesByDateAndLeagueCache.get(cacheKey);
       if (dayMatches === undefined) {
         try {
-          dayMatches = await highlightly.getMatchesByDate(dateKey, highlightlyLeagueId);
+          dayMatches = await callHighlightly(() => highlightly.getMatchesByDate(dateKey, highlightlyLeagueId));
         } catch (err) {
           if (err instanceof HighlightlyQuotaExceededError) highlightlyQuotaExceeded++;
           // Match trop ancien ou hors couverture du plan gratuit (ou quota épuisé, compté ci-dessus).
@@ -819,27 +872,31 @@ async function syncGoalEvents(
       }
 
       // homeTeam/awayTeam peuvent être inversés entre football-data.org et Highlightly pour un
-      // même match : on accepte les deux orientations, l'assignation but/passe par événement
-      // (plus bas) ne dépend de toute façon pas de cet ordre.
-      const hlMatch = dayMatches.find(
-        (m) =>
-          (teamNamesMatch(m.homeTeam.name, homeName) && teamNamesMatch(m.awayTeam.name, awayName)) ||
-          (teamNamesMatch(m.homeTeam.name, awayName) && teamNamesMatch(m.awayTeam.name, homeName))
-      );
+      // même match : findFixture accepte les deux orientations et le signale via `flipped`.
+      const found = findFixture(dayMatches, { homeName, awayName, kickoffAt: match.kickoff_at }, (m) => ({
+        home: m.homeTeam.name,
+        away: m.awayTeam.name,
+      }));
 
-      if (!hlMatch) {
+      if (!found) {
         unmatched++;
         continue;
       }
+      const hlMatch = found.fixture;
+      // Par id d'équipe Highlightly (même source que l'évènement) plutôt que par nom : fiable même
+      // quand nos noms divergent des leurs.
+      const hlSource = { home: String(hlMatch.homeTeam.id), away: String(hlMatch.awayTeam.id) };
+      const teamIdOf = (teamId: number) =>
+        teamSideOf(String(teamId), hlSource, found.flipped) === "home" ? match.home_team_id : match.away_team_id;
 
-      const events = await highlightly.getMatchEvents(hlMatch.id);
+      const events = await callHighlightly(() => highlightly.getMatchEvents(hlMatch.id));
       await sleep(700);
 
       const goalRows = events
         .filter((e) => e.type === "Goal")
         .flatMap((e) => {
           if (!e.player) return [];
-          const teamId = teamNamesMatch(e.team.name, homeName) ? match.home_team_id : match.away_team_id;
+          const teamId = teamIdOf(e.team.id);
           const scorer = matchPlayerByName(e.player, playersByTeamId.get(teamId) ?? []);
           const assist = e.assist ? matchPlayerByName(e.assist, playersByTeamId.get(teamId) ?? []) : null;
           return [
@@ -860,7 +917,7 @@ async function syncGoalEvents(
       const subRows = events
         .filter((e) => e.type === "Substitution")
         .flatMap((e) => {
-          const teamId = teamNamesMatch(e.team.name, homeName) ? match.home_team_id : match.away_team_id;
+          const teamId = teamIdOf(e.team.id);
           const candidates = playersByTeamId.get(teamId) ?? [];
           const playerOut = e.player ? matchPlayerByName(e.player, candidates) : null;
           const playerIn = e.substituted ? matchPlayerByName(e.substituted, candidates) : null;
@@ -880,7 +937,7 @@ async function syncGoalEvents(
         .filter((e): e is typeof e & { type: "Yellow Card" | "Red Card" } => e.type === "Yellow Card" || e.type === "Red Card")
         .flatMap((e) => {
           if (!e.player) return [];
-          const teamId = teamNamesMatch(e.team.name, homeName) ? match.home_team_id : match.away_team_id;
+          const teamId = teamIdOf(e.team.id);
           const player = matchPlayerByName(e.player, playersByTeamId.get(teamId) ?? []);
           return [
             {
@@ -901,33 +958,67 @@ async function syncGoalEvents(
     }
   }
 
-  if (highlightlyQuotaExceeded > 0) await alertHighlightlyQuotaExceeded(supabase);
+  if (highlightlyCallsThisRun > 0 || highlightlyQuotaExceeded > 0) {
+    await supabase.from("app_settings").upsert({ key: "highlightly_daily_usage", value: `${today}:${highlightlyCallsToday}` });
+  }
+  const stuckAlerted = await alertStuckEventSyncs(supabase);
 
-  return { processed: pendingMatches.length, matched, matchedViaEspn, unmatched, outOfWindow, stoppedOnBudget, skippedAlreadyScored, highlightlyQuotaExceeded };
+  return {
+    processed: pendingMatches.length,
+    matched,
+    matchedViaEspn,
+    unmatched,
+    outOfWindow,
+    stoppedOnBudget,
+    skippedAlreadyScored,
+    highlightlyCalls: highlightlyCallsThisRun,
+    highlightlyCallsToday,
+    highlightlySkipped,
+    highlightlyQuotaExceeded,
+    stuckAlerted,
+  };
 }
 
-// Cooldown : même raisonnement que ESPN_FAILURE_ALERT_COOLDOWN_MS côté live-tick — un seul run
-// touché suffit à alerter (contrairement à ESPN, un 429 Highlightly est un signal définitif pour
-// la journée, jamais un blip réseau isolé qui justifierait d'attendre une panne soutenue), mais
-// pas une alerte à CHAQUE passage de ce cron (30 min) tant que le quota reste épuisé.
-const HIGHLIGHTLY_QUOTA_ALERT_COOLDOWN_MS = 2 * 60 * 60 * 1000;
+/**
+ * Remplace l'ancienne alerte "quota Highlightly dépassé" (envoyée toutes les 2h tant que le quota
+ * restait épuisé, sans dire quel match posait problème ni quoi faire). Le quota n'est plus censé
+ * pouvoir s'épuiser (voir HIGHLIGHTLY_DAILY_BUDGET) ; ce qui compte réellement pour l'admin, c'est
+ * un match terminé qui reste sans buteurs/passeurs — donc des points buteur/passeur non versés.
+ * Une seule alerte par match (events_sync_alerted_at), qui nomme les matchs concernés.
+ */
+async function alertStuckEventSyncs(supabase: ReturnType<typeof createServiceRoleClient>): Promise<number> {
+  const { data: stuck } = await supabase
+    .from("matches")
+    .select("id, home_team_id, away_team_id")
+    .eq("status", "finished")
+    .is("events_synced_at", null)
+    .is("events_sync_alerted_at", null)
+    .lt("kickoff_at", new Date(Date.now() - EVENTS_STUCK_ALERT_AFTER_MS).toISOString())
+    .limit(10);
+  if (!stuck || stuck.length === 0) return 0;
 
-async function alertHighlightlyQuotaExceeded(supabase: ReturnType<typeof createServiceRoleClient>): Promise<void> {
-  const { data: lastAlertRow } = await supabase
-    .from("app_settings")
-    .select("value")
-    .eq("key", "sync_fixtures_last_highlightly_quota_alert_at")
-    .maybeSingle();
-  if (lastAlertRow && Date.now() - new Date(lastAlertRow.value).getTime() < HIGHLIGHTLY_QUOTA_ALERT_COOLDOWN_MS) return;
+  const { data: teams } = await supabase
+    .from("teams")
+    .select("id, name")
+    .in("id", [...new Set(stuck.flatMap((m) => [m.home_team_id, m.away_team_id]))]);
+  const teamName = new Map((teams ?? []).map((t) => [t.id, t.name]));
+  const label = stuck.map((m) => `${teamName.get(m.home_team_id) ?? "?"} – ${teamName.get(m.away_team_id) ?? "?"}`).join(", ");
 
   const { data: admins } = await supabase.from("profiles").select("id").eq("is_admin", true);
   const adminIds = (admins ?? []).map((a) => a.id);
   if (adminIds.length > 0) {
     await sendPushToUserIds(adminIds, {
-      title: "⚠️ Boot Room — Quota Highlightly dépassé",
-      body: "Plus aucun buteur/passeur synchronisé jusqu'au reset du quota (100/jour) — les points buteur/passeur des matchs en attente resteront à 0 en attendant.",
+      title: "⚠️ Boot Room — Buteurs introuvables",
+      body: `Aucune source (ESPN, Highlightly) n'a les buteurs de : ${label}. Points buteur/passeur en attente pour ces matchs.`,
       url: "/admin",
     });
   }
-  await supabase.from("app_settings").upsert({ key: "sync_fixtures_last_highlightly_quota_alert_at", value: new Date().toISOString() });
+  await supabase
+    .from("matches")
+    .update({ events_sync_alerted_at: new Date().toISOString() })
+    .in(
+      "id",
+      stuck.map((m) => m.id)
+    );
+  return stuck.length;
 }

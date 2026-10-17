@@ -3,7 +3,7 @@ import { Client as QStashClient } from "@upstash/qstash";
 import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { getEspnScoreboard, getEspnMatchEvents, ESPN_LEAGUE_SLUG } from "@/lib/espn/client";
-import { teamNamesMatch, matchPlayerByName, goalKey } from "@/lib/sync/name-match";
+import { findFixture, teamSideOf, matchPlayerByName, goalKey } from "@/lib/sync/name-match";
 import { sendPushBroadcastWithOverrides, sendPushToUserIdsWithOverrides, sendPushToUserIds } from "@/lib/push/server";
 import { SYSTEM_SENDER_NAME } from "@/lib/system-sender";
 import { loadPointConfig, processFinishedMatches, type ServiceClient } from "@/app/api/cron/process-scoring/route";
@@ -215,7 +215,15 @@ export async function GET(request: NextRequest) {
       continue;
     }
 
-    const espnMatch = dayEvents.find((e) => teamNamesMatch(e.homeTeam, home.name) && teamNamesMatch(e.awayTeam, away.name));
+    // findFixture plutôt qu'une égalité stricte des deux noms : une seule orthographe divergente
+    // ("PAE AEK" vs "AEK Athens") laissait sinon le match sans direct ni buteurs. Orientation
+    // inversée refusée : les scores ESPN seraient alors attribués à la mauvaise équipe.
+    const found = findFixture(dayEvents, { homeName: home.name, awayName: away.name, kickoffAt: match.kickoff_at }, (e) => ({
+      home: e.homeTeam,
+      away: e.awayTeam,
+      date: e.date,
+    }));
+    const espnMatch = found && !found.flipped ? found.fixture : null;
     if (!espnMatch || espnMatch.status === "scheduled") {
       pendingCount++; // Pas encore commencé (ou pas encore listé par ESPN) : à retenter.
       continue;
@@ -282,7 +290,7 @@ export async function GET(request: NextRequest) {
       // indépendamment des autres et finissait inséré plusieurs fois en base.
       const seenSubKeysThisTick = new Set(existingSubKeys);
       const newSubRows = substitutions.flatMap((s) => {
-        const teamId = teamNamesMatch(s.teamName, home.name) ? match.home_team_id : match.away_team_id;
+        const teamId = (teamSideOf(s.teamName, { home: espnMatch.homeTeam, away: espnMatch.awayTeam }, false) === "home" ? match.home_team_id : match.away_team_id);
         const candidates = teamId === match.home_team_id ? homePlayers : awayPlayers;
         const playerOut = matchPlayerByName(s.playerOutName, candidates);
         const playerIn = matchPlayerByName(s.playerInName, candidates);
@@ -302,7 +310,7 @@ export async function GET(request: NextRequest) {
       // l'intérieur du même batch fraîchement reçu).
       const seenGoalKeysThisTick = new Set(existingKeys);
       const newGoalRows = goals.flatMap((g) => {
-        const teamId = teamNamesMatch(g.teamName, home.name) ? match.home_team_id : match.away_team_id;
+        const teamId = (teamSideOf(g.teamName, { home: espnMatch.homeTeam, away: espnMatch.awayTeam }, false) === "home" ? match.home_team_id : match.away_team_id);
         const candidates = teamId === match.home_team_id ? homePlayers : awayPlayers;
         const scorer = matchPlayerByName(g.scorerName, candidates);
         const key = goalKey(scorer?.id ?? null, g.scorerName, g.minute);
@@ -389,7 +397,7 @@ export async function GET(request: NextRequest) {
       // écraser une valeur déjà enregistrée.
       const assistBackfills = goals.flatMap((g) => {
         if (!g.assistName) return [];
-        const teamId = teamNamesMatch(g.teamName, home.name) ? match.home_team_id : match.away_team_id;
+        const teamId = (teamSideOf(g.teamName, { home: espnMatch.homeTeam, away: espnMatch.awayTeam }, false) === "home" ? match.home_team_id : match.away_team_id);
         const candidates = teamId === match.home_team_id ? homePlayers : awayPlayers;
         const scorer = matchPlayerByName(g.scorerName, candidates);
         const key = goalKey(scorer?.id ?? null, g.scorerName, g.minute);
@@ -414,7 +422,7 @@ export async function GET(request: NextRequest) {
       if (fetchSucceeded) {
         const currentEspnGoalKeys = new Set(
           goals.map((g) => {
-            const teamId = teamNamesMatch(g.teamName, home.name) ? match.home_team_id : match.away_team_id;
+            const teamId = (teamSideOf(g.teamName, { home: espnMatch.homeTeam, away: espnMatch.awayTeam }, false) === "home" ? match.home_team_id : match.away_team_id);
             const candidates = teamId === match.home_team_id ? homePlayers : awayPlayers;
             const scorer = matchPlayerByName(g.scorerName, candidates);
             return goalKey(scorer?.id ?? null, g.scorerName, g.minute);

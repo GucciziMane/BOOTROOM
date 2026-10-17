@@ -18,6 +18,7 @@ const TOKEN_ALIASES: Record<string, string> = {
   lyon: "lyonnais", // Lyon -> Olympique Lyonnais
   munich: "munchen", // Bayern Munich -> Bayern München (accent déjà retiré par ce point-là)
   estac: "es", // Estac Troyes -> ES Troyes AC
+  praha: "prague", // SK Slavia Praha (football-data) -> Slavia Prague (ESPN)
 };
 
 /** Normalise un nom pour comparaison : minuscules, sans accents, sans ponctuation ni suffixes de club. */
@@ -27,7 +28,9 @@ export function normalizeName(raw: string): string {
     .replace(/[øæœßđłı]/g, (c) => SPECIAL_LETTERS[c])
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "") // accents (marques diacritiques combinantes après NFD)
-    .replace(/\b(fc|cf|sc|ac|as|rc|ol|om|psg|club|calcio|cd|ud|sd|uc)\b/g, "")
+    // fk/sk/pae : préfixes/suffixes juridiques d'Europe de l'Est/Grèce vus en Ligue des Champions
+    // (ex: "PAE AEK" côté football-data vs "AEK Athens" côté ESPN, "FK Shakhtar Donetsk").
+    .replace(/\b(fc|cf|sc|ac|as|rc|ol|om|psg|club|calcio|cd|ud|sd|uc|fk|sk|pae)\b/g, "")
     .replace(/[^a-z0-9]+/g, " ") // ponctuation (tirets, apostrophes...) -> espace, pour séparer les mots composés
     .trim()
     .split(" ")
@@ -64,6 +67,68 @@ export function teamNamesMatch(a: string, b: string): boolean {
     if (initials === shortRest[0]) return true;
   }
   return false;
+}
+
+/**
+ * Retrouve dans une liste de matchs d'une source externe (même compétition, même jour) celui qui
+ * correspond au nôtre. Les deux équipes doivent d'abord correspondre (dans un sens ou dans l'autre,
+ * Highlightly inverse parfois domicile/extérieur) ; à défaut, et seulement pour un match terminé
+ * dont on fournit le score final, on accepte un candidat UNIQUE dont une des deux équipes
+ * correspond, au score final identique et au coup d'envoi à moins de 3h du nôtre. Le score est
+ * indispensable : le rapprochement de noms tolère des sous-ensembles ("Paris FC" ⊂ "Paris
+ * Saint-Germain"), donc une seule équipe reconnue ne suffit pas à elle seule. Sans ce repli, une seule
+ * orthographe divergente ("PAE AEK" vs "AEK Athens", vu en prod le 17/10/2026) laissait le match
+ * sans buteurs pour toujours, retenté à chaque passage du cron et brûlant le quota Highlightly.
+ *
+ * `flipped` : vrai si le domicile de la source est NOTRE extérieur — à utiliser avec teamSideOf.
+ */
+export function findFixture<E>(
+  candidates: E[],
+  ours: { homeName: string; awayName: string; kickoffAt: string; homeScore?: number | null; awayScore?: number | null },
+  get: (e: E) => { home: string; away: string; date?: string | null; homeScore?: number | null; awayScore?: number | null }
+): { fixture: E; flipped: boolean } | null {
+  const sides = (e: E) => {
+    const { home, away } = get(e);
+    return {
+      straight: teamNamesMatch(home, ours.homeName) || teamNamesMatch(away, ours.awayName),
+      straightBoth: teamNamesMatch(home, ours.homeName) && teamNamesMatch(away, ours.awayName),
+      flipped: teamNamesMatch(home, ours.awayName) || teamNamesMatch(away, ours.homeName),
+      flippedBoth: teamNamesMatch(home, ours.awayName) && teamNamesMatch(away, ours.homeName),
+    };
+  };
+
+  for (const e of candidates) {
+    const s = sides(e);
+    if (s.straightBoth) return { fixture: e, flipped: false };
+    if (s.flippedBoth) return { fixture: e, flipped: true };
+  }
+
+  if (ours.homeScore == null || ours.awayScore == null) return null;
+  const ourKickoff = new Date(ours.kickoffAt).getTime();
+  const partial = candidates.filter((e) => {
+    const s = sides(e);
+    // Un seul sens possible, sinon on ne sait pas orienter les buts : on préfère ne rien deviner.
+    if (s.straight === s.flipped) return false;
+    const { date, homeScore, awayScore } = get(e);
+    if (!date || Math.abs(new Date(date).getTime() - ourKickoff) > 3 * 60 * 60 * 1000) return false;
+    const [h, a] = s.flipped ? [awayScore, homeScore] : [homeScore, awayScore];
+    return h === ours.homeScore && a === ours.awayScore;
+  });
+  if (partial.length !== 1) return null;
+  return { fixture: partial[0], flipped: sides(partial[0]).flipped };
+}
+
+/**
+ * Côté (domicile/extérieur, de NOTRE point de vue) d'un évènement (but, carton, remplacement) en
+ * comparant l'équipe de l'évènement à celles du match DANS LA MÊME SOURCE — même orthographe des
+ * deux côtés, donc fiable même quand nos noms divergent de ceux de la source (ce qui, avant,
+ * envoyait silencieusement tous les buts de "AEK Athens" à l'équipe adverse, faute de matcher
+ * "PAE AEK").
+ */
+export function teamSideOf(eventTeam: string, source: { home: string; away: string }, flipped: boolean): "home" | "away" {
+  const isSourceHome =
+    eventTeam === source.home || (eventTeam !== source.away && teamNamesMatch(eventTeam, source.home));
+  return isSourceHome !== flipped ? "home" : "away";
 }
 
 // Certains joueurs (surtout brésiliens/lusophones) sont connus sous un diminutif qui ne partage
