@@ -140,7 +140,77 @@ export function teamSideOf(eventTeam: string, source: { home: string; away: stri
 // TOKEN_ALIASES pour les noms d'équipe. Clé et valeur : formes déjà normalisées (voir normalizeName).
 const FULL_NAME_NICKNAME_ALIASES: Record<string, string> = {
   "raphael dias belloli": "raphinha",
+  "samu aghehowa": "samu omorodion", // FC Porto — ESPN utilise son nom de naissance
+  // Joueurs enregistrés sous un seul prénom-surnom : jamais déductible sans risque (un "Isaac" de
+  // l'effectif n'est pas "Isaac Romero" de l'équipe adverse), donc listés un par un.
+  "vinicius lopes": "vinicius", // CD Santa Clara
+  "johnny cardoso": "johnny", // Atlético de Madrid
 };
+
+function editDistance(a: string, b: string): number {
+  const row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = row[0];
+    row[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = tmp;
+    }
+  }
+  return row[b.length];
+}
+
+/**
+ * Replis pour un nom qu'aucune règle principale ne relie (audit du 17/10/2026 : 19 buts/passes
+ * perdus pour des variantes d'orthographe d'un joueur pourtant bien dans l'effectif). Appliqués
+ * dans l'ordre, du plus sûr au plus permissif, et seulement s'ils désignent un candidat UNIQUE :
+ * 1. mêmes lettres une fois les espaces retirés, dans n'importe quel ordre de mots ("Jay Da
+ *    Silva"/"Jay Dasilva", "Hwang Hee-Chan"/"Hwang Heechan", "Lee Kang-In"/"Kang-in Lee") ;
+ * 2. un nom inclus dans l'autre, mot pour mot, avec au moins deux mots en commun ("Pau Víctor"/
+ *    "Pau Victor Delgado") — jamais un prénom seul : vu en simulation, "Isaac Romero" (adversaire)
+ *    serait sinon devenu "Isaac" de l'effectif, et "Carlos Augusto" le "Carlos" d'à côté ;
+ * 3. même prénom (ou initiale) et nom de famille à une lettre près ("Djoló"/"Djaló",
+ *    "De Amorim"/"De Amorin", "Yarmoliuk"/"Yarmolyuk").
+ */
+function fuzzyFallback<P extends { id: number; name: string }>(tokens: string[], candidates: P[]): P | null {
+  const unique = (list: P[]) => (list.length === 1 ? list[0] : null);
+  const sortedCompact = (t: string[]) => [...t].sort().join("");
+  const targetCompact = sortedCompact(tokens);
+  const candTokens = candidates.map((c) => ({ c, t: normalizeName(c.name).split(" ").filter(Boolean) }));
+
+  const byCompact = unique(
+    candTokens.filter(({ t }) => sortedCompact(t) === targetCompact || t.join("") === tokens.join("")).map(({ c }) => c)
+  );
+  if (byCompact) return byCompact;
+
+  const significant = (t: string[]) => t.filter((x) => x.length >= 3);
+  const ts = significant(tokens);
+  const bySubset = unique(
+    candTokens
+      .filter(({ t }) => {
+        const cs = significant(t);
+        if (Math.min(cs.length, ts.length) < 2) return false;
+        return cs.every((x) => ts.includes(x)) || ts.every((x) => cs.includes(x));
+      })
+      .map(({ c }) => c)
+  );
+  if (bySubset) return bySubset;
+
+  if (tokens.length < 2) return null;
+  const last = tokens[tokens.length - 1];
+  const first = tokens[0];
+  return unique(
+    candTokens
+      .filter(({ t }) => {
+        if (t.length < 2) return false;
+        const cLast = t[t.length - 1];
+        const sameFirst = first.length === 1 || t[0].length === 1 ? t[0][0] === first[0] : editDistance(t[0], first) <= 1;
+        return sameFirst && last.length >= 5 && editDistance(cLast, last) <= 1;
+      })
+      .map(({ c }) => c)
+  );
+}
 
 /**
  * Retrouve, parmi une liste de joueurs (déjà filtrée sur la bonne équipe), celui dont le nom
@@ -205,6 +275,8 @@ export function matchPlayerByName<P extends { id: number; name: string; position
     const byRole = matches.filter((c) => c.position != null && isDefensive(c) === (roleHint === "defensive"));
     if (byRole.length === 1) return byRole[0];
   }
+
+  if (matches.length === 0) return fuzzyFallback(tokens, candidates);
 
   return matches.length === 1 ? matches[0] : null;
 }
