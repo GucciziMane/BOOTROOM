@@ -176,7 +176,28 @@ export function matchPlayerByName<P extends { id: number; name: string; position
   // (même garde-fou que ci-dessus), donc aucun nouveau risque d'ambiguïté introduit — un token de
   // liaison ("de", "la"...) ne matchera simplement jamais aucun candidat.
   if (matches.length !== 1 && tokens.length >= 3) {
-    matches = byLastToken(tokens[tokens.length - 2]);
+    const retry = byLastToken(tokens[tokens.length - 2]);
+    // Ne remplace un résultat ambigu que par un résultat unique : sinon on perdrait les candidats
+    // que le départage par prénom ci-dessous sait justement trancher.
+    if (retry.length === 1 || matches.length === 0) matches = retry;
+  }
+
+  // Coéquipiers au même nom de famille (Nico/Iñaki Williams, Lautaro/Josep Martínez, Pio/Sebastiano
+  // Esposito...) : le dernier token seul ne suffit pas — constaté en audit le 17/10/2026, 19 buts/
+  // passes jamais reliés à un joueur pour cette seule raison, donc jamais payés. On départage par
+  // nom complet identique, sinon par prénom (ou initiale, "L. Martinez"), et seulement si ça
+  // désigne un candidat unique.
+  if (matches.length > 1) {
+    const exact = matches.filter((c) => normalizeName(c.name) === tokens.join(" "));
+    if (exact.length === 1) return exact[0];
+    const first = tokens[0];
+    if (tokens.length >= 2) {
+      const byFirst = matches.filter((c) => {
+        const candidateFirst = normalizeName(c.name).split(" ")[0];
+        return first.length === 1 ? candidateFirst.startsWith(first) : candidateFirst === first;
+      });
+      if (byFirst.length === 1) return byFirst[0];
+    }
   }
 
   if (matches.length > 1 && roleHint) {
