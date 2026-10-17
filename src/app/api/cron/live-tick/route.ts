@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { randomUUID } from "node:crypto";
+import { LIVE_TICK_LEASE_KEY, RELEASED_LEASE_VALUE, setLiveTickLease } from "@/lib/live-tick-lease";
 import { Client as QStashClient } from "@upstash/qstash";
 import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
@@ -116,7 +117,10 @@ const TICK_MARGIN_MS = 25_000;
 // invocation détient le bail (app_settings.live_tick_lease = "<échéance ISO>|<jeton>") ; la
 // suivante de la même chaîne reçoit le jeton dans son URL, toute autre (chaîne parallèle, retry,
 // réveil superflu) trouve le bail pris et s'arrête sans rien re-planifier.
-const LEASE_KEY = "live_tick_lease";
+const LEASE_KEY = LIVE_TICK_LEASE_KEY;
+// Pas de tick "d'attente" avant un coup d'envoi : la chaîne dort (ou passe le relais avec un
+// message retardé) jusqu'à cette marge avant le coup d'envoi du prochain match pronostiqué.
+const PRE_KICKOFF_WAKE_MS = 60_000;
 // Le bail survit à un passage de relais (délai du message + démarrage), mais expire assez vite pour
 // qu'une chaîne morte soit reprise au réveil suivant de sync-fixtures.
 const LEASE_GRACE_MS = 90_000;
@@ -124,7 +128,7 @@ const LEASE_GRACE_MS = 90_000;
 async function claimLease(supabase: ServiceClient, handoffToken: string | null): Promise<string | null> {
   await supabase
     .from("app_settings")
-    .upsert({ key: LEASE_KEY, value: `1970-01-01T00:00:00.000Z|none` }, { onConflict: "key", ignoreDuplicates: true });
+    .upsert({ key: LEASE_KEY, value: RELEASED_LEASE_VALUE }, { onConflict: "key", ignoreDuplicates: true });
   const myToken = randomUUID();
   const value = `${new Date(Date.now() + CHAIN_SLICE_BUDGET_MS + LEASE_GRACE_MS).toISOString()}|${myToken}`;
   // Relais de la même chaîne : le jeton transmis n'est valable qu'une fois (remplacé aussitôt par
@@ -147,9 +151,7 @@ async function claimLease(supabase: ServiceClient, handoffToken: string | null):
   return data && data.length > 0 ? myToken : null;
 }
 
-async function setLease(supabase: ServiceClient, untilMs: number, token: string): Promise<void> {
-  await supabase.from("app_settings").update({ value: `${new Date(untilMs).toISOString()}|${token}` }).eq("key", LEASE_KEY);
-}
+const setLease = setLiveTickLease;
 
 async function scheduleNextTick(delaySeconds: number, handoffToken: string): Promise<void> {
   const token = process.env.QSTASH_TOKEN;
@@ -176,24 +178,32 @@ async function runChainSlice(supabase: ServiceClient, leaseToken: string): Promi
   for (;;) {
     let pendingCount = 0;
     let liveCount = 0;
+    let startedPendingCount = 0;
+    let nextKickoffMs: number | null = null;
     try {
-      ({ pendingCount, liveCount } = await runTick(supabase));
+      ({ pendingCount, liveCount, startedPendingCount, nextKickoffMs } = await runTick(supabase));
     } catch (err) {
       // Un tick en échec ne doit pas tuer la chaîne : on retente au prochain, comme avant.
       console.error("[live-tick] tick en échec", err);
       pendingCount = 1;
+      startedPendingCount = 1;
     }
     if (pendingCount === 0) {
       // Plus rien à suivre : la chaîne s'arrête et libère le bail (seulement s'il est encore le
       // sien) pour que le prochain réveil de sync-fixtures puisse repartir aussitôt.
       await supabase
         .from("app_settings")
-        .update({ value: `1970-01-01T00:00:00.000Z|none` })
+        .update({ value: RELEASED_LEASE_VALUE })
         .eq("key", LEASE_KEY)
         .like("value", `%|${leaseToken}`);
       return;
     }
-    const delayMs = (liveCount > 0 ? LIVE_TICK_DELAY_SECONDS : WARMUP_TICK_DELAY_SECONDS) * 1000;
+    let delayMs = (liveCount > 0 ? LIVE_TICK_DELAY_SECONDS : WARMUP_TICK_DELAY_SECONDS) * 1000;
+    // Aucun match pronostiqué en cours, seulement des coups d'envoi à venir : pas de tick d'attente
+    // (ni le message QStash qui va avec) — on dort jusqu'à juste avant le prochain coup d'envoi.
+    if (liveCount === 0 && startedPendingCount === 0 && nextKickoffMs != null) {
+      delayMs = Math.max(delayMs, nextKickoffMs - PRE_KICKOFF_WAKE_MS - Date.now());
+    }
     if (Date.now() - sliceStart + delayMs + TICK_MARGIN_MS > CHAIN_SLICE_BUDGET_MS) {
       const handoffToken = randomUUID();
       await setLease(supabase, Date.now() + delayMs + LEASE_GRACE_MS, handoffToken);
@@ -223,7 +233,9 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ started: true });
 }
 
-async function runTick(supabase: ServiceClient): Promise<{ pendingCount: number; liveCount: number }> {
+async function runTick(
+  supabase: ServiceClient
+): Promise<{ pendingCount: number; liveCount: number; startedPendingCount: number; nextKickoffMs: number | null }> {
   const now = new Date();
   const windowStart = new Date(now.getTime() - LIVE_WINDOW_MS).toISOString();
   const windowEnd = new Date(now.getTime() + LIVE_TICK_LOOKAHEAD_MS).toISOString();
@@ -258,7 +270,7 @@ async function runTick(supabase: ServiceClient): Promise<{ pendingCount: number;
   // Rien à faire (et rien à re-planifier, voir scheduleNextTick plus bas) : sortir avant le moindre
   // appel ESPN.
   if (inWindowMatches.length === 0) {
-    return { pendingCount: 0, liveCount: 0 };
+    return { pendingCount: 0, liveCount: 0, startedPendingCount: 0, nextKickoffMs: null };
   }
 
   // Battement de la chaîne d'auto-réveil (voir LIVE_TICK_HEARTBEAT_STALE_MS) : seulement quand il
@@ -299,6 +311,20 @@ async function runTick(supabase: ServiceClient): Promise<{ pendingCount: number;
   let espnFetchAttempted = 0;
   let espnFetchFailed = 0;
 
+  // Distingue un match à suivre déjà commencé (ou sur le point de l'être) d'un coup d'envoi encore
+  // à venir : seul le premier justifie un tick, voir runChainSlice.
+  let startedPendingCount = 0;
+  let nextKickoffMs: number | null = null;
+  const markPending = (kickoffAt: string) => {
+    pendingCount++;
+    const kickoffMs = new Date(kickoffAt).getTime();
+    if (kickoffMs > Date.now() + PRE_KICKOFF_WAKE_MS) {
+      nextKickoffMs = nextKickoffMs == null ? kickoffMs : Math.min(nextKickoffMs, kickoffMs);
+    } else {
+      startedPendingCount++;
+    }
+  };
+
   for (const match of inWindowMatches) {
     const slug = slugByLeague.get(match.league_id);
     const home = teamById.get(match.home_team_id);
@@ -319,7 +345,7 @@ async function runTick(supabase: ServiceClient): Promise<{ pendingCount: number;
       scoreboardCache.set(cacheKey, dayEvents);
     }
     if (!dayEvents) {
-      pendingCount++; // ESPN indisponible ce tick-ci : à retenter, pas une fin de suivi.
+      markPending(match.kickoff_at); // ESPN indisponible ce tick-ci : à retenter, pas une fin de suivi.
       continue;
     }
 
@@ -333,13 +359,14 @@ async function runTick(supabase: ServiceClient): Promise<{ pendingCount: number;
     }));
     const espnMatch = found && !found.flipped ? found.fixture : null;
     if (!espnMatch || espnMatch.status === "scheduled") {
-      pendingCount++; // Pas encore commencé (ou pas encore listé par ESPN) : à retenter.
+      markPending(match.kickoff_at); // Pas encore commencé (ou pas encore listé par ESPN) : à retenter.
       continue;
     }
 
     if (espnMatch.status === "live") {
       liveCount++;
       pendingCount++;
+      startedPendingCount++;
     }
     const justFinished = match.status !== "finished" && espnMatch.status === "finished";
 
@@ -603,7 +630,7 @@ async function runTick(supabase: ServiceClient): Promise<{ pendingCount: number;
     espnFetchAttempted,
     espnFetchFailed,
   }));
-  return { pendingCount, liveCount };
+  return { pendingCount, liveCount, startedPendingCount, nextKickoffMs };
 }
 
 interface NewGoal {

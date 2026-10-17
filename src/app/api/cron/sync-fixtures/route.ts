@@ -11,6 +11,8 @@ import { computeMatchOdds } from "@/lib/scoring/match-odds";
 import { LIVE_TICK_LOOKAHEAD_MS, LIVE_TICK_HEARTBEAT_STALE_MS } from "@/lib/live-tick-window";
 import { awardLateScorerAssistPoints } from "@/app/api/cron/process-scoring/route";
 import { pingDeadMansSwitch } from "@/lib/monitoring/dead-mans-switch";
+import { isLiveTickLeaseHeld, setLiveTickLease } from "@/lib/live-tick-lease";
+import { randomUUID } from "node:crypto";
 import { sendPushToUserIds } from "@/lib/push/server";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -57,18 +59,39 @@ async function wakeLiveTickIfNeeded(supabase: ReturnType<typeof createServiceRol
   if (!token || !cronSecret) return true;
 
   const now = Date.now();
-  const { count } = await supabase
+  // Seuls les matchs PRONOSTIQUÉS d'un championnat ACTIF justifient un réveil : live-tick ignore
+  // tous les autres (voir son filtre), donc les compter ici publiait un message QStash pour rien à
+  // chaque passage de ce cron (toutes les 15-30 min) tant qu'un tel match restait dans la fenêtre.
+  const { data: activeLeagues } = await supabase.from("leagues").select("id").eq("active", true);
+  const { data: windowMatches } = await supabase
     .from("matches")
-    .select("id", { count: "exact", head: true })
+    .select("id, kickoff_at")
     .in("status", ["scheduled", "live"])
+    .in(
+      "league_id",
+      (activeLeagues ?? []).map((l) => l.id)
+    )
     .gt("kickoff_at", new Date(now - LIVE_TICK_WAKEUP_TRAILING_MS).toISOString())
     .lte("kickoff_at", new Date(now + LIVE_TICK_LOOKAHEAD_MS).toISOString());
-  if (!count || count === 0) return true;
+  if (!windowMatches || windowMatches.length === 0) return true;
+  const { data: predicted } = await supabase
+    .from("match_predictions")
+    .select("match_id")
+    .in(
+      "match_id",
+      windowMatches.map((m) => m.id)
+    );
+  const predictedIds = new Set((predicted ?? []).map((p) => p.match_id));
+  const kickoffs = windowMatches.filter((m) => predictedIds.has(m.id)).map((m) => new Date(m.kickoff_at).getTime());
+  if (kickoffs.length === 0) return true;
 
   // Ne réveille que si aucune chaîne d'auto-réveil ne tourne déjà (voir LIVE_TICK_HEARTBEAT_STALE_MS
   // pour l'incident que ça corrige) : sans ce garde-fou, ce réveil partait à chaque passage de ce
   // cron (30 min) tant qu'un match restait dans la fenêtre, empilant une chaîne parallèle de plus
-  // à chaque fois plutôt que de laisser la chaîne déjà active se poursuivre seule.
+  // à chaque fois plutôt que de laisser la chaîne déjà active se poursuivre seule. Le bail couvre
+  // aussi une chaîne qui dort jusqu'au prochain coup d'envoi (aucun battement pendant ce temps) et
+  // un réveil déjà programmé par un passage précédent de ce cron.
+  if (await isLiveTickLeaseHeld(supabase)) return true;
   const { data: heartbeat } = await supabase
     .from("app_settings")
     .select("value")
@@ -76,12 +99,21 @@ async function wakeLiveTickIfNeeded(supabase: ReturnType<typeof createServiceRol
     .maybeSingle();
   if (heartbeat && now - new Date(heartbeat.value).getTime() < LIVE_TICK_HEARTBEAT_STALE_MS) return true;
 
+  // Réveil programmé une minute avant le coup d'envoi (pas 35 min avant, ce qui coûtait une série
+  // de ticks d'attente) — immédiat si un match pronostiqué est déjà commencé.
+  const delaySeconds = Math.max(0, Math.round((Math.min(...kickoffs) - 60_000 - now) / 1000));
+  const wakeToken = randomUUID();
+  // Bail réservé AVANT de publier (sinon un réveil immédiat pourrait le prendre avant qu'on l'ait
+  // posé) jusqu'au réveil + marge : les passages suivants de ce cron ne republient rien.
+  await setLiveTickLease(supabase, now + delaySeconds * 1000 + 90_000, wakeToken);
+
   try {
     const client = new QStashClient({ token });
     await client.publish({
-      url: `${APP_URL}/api/cron/live-tick`,
+      url: `${APP_URL}/api/cron/live-tick?lease=${wakeToken}`,
       method: "GET",
       headers: { Authorization: `Bearer ${cronSecret}` },
+      delay: delaySeconds,
     });
     return true;
   } catch {
