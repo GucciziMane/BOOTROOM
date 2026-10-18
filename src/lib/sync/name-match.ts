@@ -7,6 +7,7 @@ const SPECIAL_LETTERS: Record<string, string> = {
   đ: "d",
   ł: "l",
   ı: "i",
+  ə: "a", // azéri (Sabah FK : "Xayal Əliyev")
 };
 
 // Formes courtes/anglicisées qu'utilise parfois Highlightly et qui ne partagent aucun token avec
@@ -19,13 +20,14 @@ const TOKEN_ALIASES: Record<string, string> = {
   munich: "munchen", // Bayern Munich -> Bayern München (accent déjà retiré par ce point-là)
   estac: "es", // Estac Troyes -> ES Troyes AC
   praha: "prague", // SK Slavia Praha (football-data) -> Slavia Prague (ESPN)
+  brestois: "brest", // Stade Brestois 29 (football-data) -> Brest (ESPN)
 };
 
 /** Normalise un nom pour comparaison : minuscules, sans accents, sans ponctuation ni suffixes de club. */
 export function normalizeName(raw: string): string {
   return raw
     .toLowerCase()
-    .replace(/[øæœßđłı]/g, (c) => SPECIAL_LETTERS[c])
+    .replace(/[øæœßđłıə]/g, (c) => SPECIAL_LETTERS[c])
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "") // accents (marques diacritiques combinantes après NFD)
     // fk/sk/pae : préfixes/suffixes juridiques d'Europe de l'Est/Grèce vus en Ligue des Champions

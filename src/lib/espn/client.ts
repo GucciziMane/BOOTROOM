@@ -266,3 +266,35 @@ export async function getEspnMatchEvents(
 
   return { goals, substitutions, cards };
 }
+
+export interface EspnTeam {
+  id: string;
+  displayName: string;
+  name?: string;
+  shortDisplayName?: string;
+}
+
+/** Clubs d'une compétition ESPN — sert à retrouver l'id ESPN d'un club pour son effectif. */
+export async function getEspnTeams(leagueSlug: string): Promise<EspnTeam[]> {
+  const data = await espnFetch<{ sports?: Array<{ leagues?: Array<{ teams?: Array<{ team: EspnTeam }> }> }> }>(
+    `/${leagueSlug}/teams`
+  );
+  return (data.sports?.[0]?.leagues?.[0]?.teams ?? []).map((t) => t.team);
+}
+
+export interface EspnRosterPlayer {
+  displayName: string;
+  fullName?: string;
+  /** "Goalkeeper" | "Defender" | "Midfielder" | "Forward" côté ESPN. */
+  position?: string;
+}
+
+/** Effectif d'un club tel qu'ESPN le publie (inclut les jeunes déjà alignés en équipe première). */
+export async function getEspnRoster(leagueSlug: string, espnTeamId: string): Promise<EspnRosterPlayer[]> {
+  const data = await espnFetch<{ athletes?: Array<{ displayName?: string; fullName?: string; position?: { name?: string } }> }>(
+    `/${leagueSlug}/teams/${espnTeamId}/roster`
+  );
+  return (data.athletes ?? [])
+    .filter((a) => a.displayName)
+    .map((a) => ({ displayName: a.displayName!, fullName: a.fullName, position: a.position?.name }));
+}

@@ -3,6 +3,8 @@ import { requireCronSecret } from "@/lib/cron/auth";
 import { createServiceRoleClient } from "@/lib/supabase/server";
 import { footballData, normalizePosition, type FdSquadPlayer } from "@/lib/football-data/client";
 import { normalizeName } from "@/lib/sync/name-match";
+import { supplementSquadsFromEspn } from "@/lib/sync/espn-squad";
+import { ESPN_LEAGUE_SLUG } from "@/lib/espn/client";
 
 // Sans ce plafond explicite, une invocation s'est fait couper (constaté en préparant l'arrivée de
 // la Ligue des Champions) avant la fin des ~13 appels espacés de FOOTBALL_DATA_RATE_LIMIT_DELAY_MS
@@ -105,7 +107,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: leaguesError?.message ?? "leagues introuvables" }, { status: 500 });
   }
 
-  const summary: Array<{ league: string; teams: number; players: number; error?: string }> = [];
+  const summary: Array<{
+    league: string;
+    teams: number;
+    players: number;
+    espnSupplement?: { added: number; reactivated: number; skippedLookalikes: number };
+    error?: string;
+  }> = [];
 
   for (const league of leagues) {
     try {
@@ -311,10 +319,24 @@ export async function GET(request: NextRequest) {
           .not("name", "in", `(${escapedNames || '"-"'})`);
       }
 
+      // Après le marquage "parti" ci-dessus (qui touche aussi les joueurs ajoutés depuis ESPN au
+      // passage précédent) : voir supplementSquadsFromEspn. Un échec ESPN ne fait jamais échouer
+      // la synchro football-data de la compétition.
+      let espnSupplement: { added: number; reactivated: number; skippedLookalikes: number } | undefined;
+      const espnSlug = ESPN_LEAGUE_SLUG[league.football_data_code];
+      if (espnSlug) {
+        try {
+          const r = await supplementSquadsFromEspn(supabase, league.id, espnSlug);
+          espnSupplement = { added: r.added.length, reactivated: r.reactivated.length, skippedLookalikes: r.skippedLookalikes.length };
+        } catch {
+          // ESPN indisponible : effectifs football-data seuls jusqu'au prochain passage.
+        }
+      }
+
       await sleep(FOOTBALL_DATA_RATE_LIMIT_DELAY_MS);
       await updatePriorSeasonStrength(supabase, league.football_data_code, year, teamIdByFdId);
 
-      summary.push({ league: league.football_data_code, teams: upsertedTeams.length, players: playerRows.length });
+      summary.push({ league: league.football_data_code, teams: upsertedTeams.length, players: playerRows.length, espnSupplement });
       await sleep(FOOTBALL_DATA_RATE_LIMIT_DELAY_MS);
     } catch (err) {
       summary.push({
