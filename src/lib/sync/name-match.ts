@@ -147,6 +147,7 @@ const FULL_NAME_NICKNAME_ALIASES: Record<string, string> = {
   // l'effectif n'est pas "Isaac Romero" de l'équipe adverse), donc listés un par un.
   "vinicius lopes": "vinicius", // CD Santa Clara
   "johnny cardoso": "johnny", // Atlético de Madrid
+  "bil nsongo": "nsongo tonfack", // Deportivo La Coruña — ESPN dit "Bil Nsongo", football-data "Nsongo Tonfack"
 };
 
 function editDistance(a: string, b: string): number {
