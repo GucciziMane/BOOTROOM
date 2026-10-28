@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import type { NomineeOption } from "./BallonDorRunner";
+import { BALLON_DOR_RANK_POINTS } from "@/lib/scoring/ballon-dor";
 
 export interface SubmittedEntry {
   userId: string;
@@ -10,11 +11,15 @@ export interface SubmittedEntry {
   avatarUrl: string | null;
   picks: Record<string, number>;
   isMe: boolean;
+  /** null tant que les points de l'édition ne sont pas payés. */
+  totalPoints: number | null;
 }
 
 interface Props {
   nominees: NomineeOption[];
   submitted: SubmittedEntry[];
+  /** Résultat officiel rang -> nominee_id, null avant paiement des points (voir page.tsx). */
+  actual: Record<number, number | null> | null;
 }
 
 const RANKS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -22,7 +27,7 @@ const RANKS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 /** Affiché une fois qu'on a soi-même validé son pronostic (ou que l'édition est verrouillée) —
  * voir page.tsx et migration 0061 (RLS : pronostics des autres visibles seulement à cette
  * condition). Accordéon simple : un tap développe le classement complet de ce joueur. */
-export function BallonDorSubmittedList({ nominees, submitted }: Props) {
+export function BallonDorSubmittedList({ nominees, submitted, actual }: Props) {
   const [openUserId, setOpenUserId] = useState<string | null>(null);
   const nomineeById = new Map(nominees.map((n) => [n.id, n]));
 
@@ -52,6 +57,14 @@ export function BallonDorSubmittedList({ nominees, submitted }: Props) {
                 {entry.username}
                 {entry.isMe ? " (toi)" : ""}
               </span>
+              {entry.totalPoints != null && (
+                <span
+                  className="shrink-0 rounded-full px-2.5 py-1 text-sm font-bold text-paper"
+                  style={{ backgroundColor: entry.totalPoints > 0 ? "var(--color-good)" : "var(--color-mute)" }}
+                >
+                  {entry.totalPoints} pts
+                </span>
+              )}
               <span className="shrink-0 text-mute">{isOpen ? "▲" : "▼"}</span>
             </button>
 
@@ -60,8 +73,13 @@ export function BallonDorSubmittedList({ nominees, submitted }: Props) {
                 {RANKS.map((rank) => {
                   const nomineeId = entry.picks[String(rank)];
                   const nominee = nomineeId != null ? nomineeById.get(nomineeId) : null;
+                  const hit = actual != null && nomineeId != null && actual[rank] === nomineeId;
                   return (
-                    <div key={rank} className="flex items-center gap-3 rounded-xl px-2 py-1.5">
+                    <div
+                      key={rank}
+                      className="flex items-center gap-3 rounded-xl px-2 py-1.5"
+                      style={hit ? { backgroundColor: "color-mix(in srgb, var(--color-good) 16%, transparent)" } : undefined}
+                    >
                       <span
                         className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-paper"
                         style={{ backgroundColor: "var(--color-reward)" }}
@@ -85,6 +103,14 @@ export function BallonDorSubmittedList({ nominees, submitted }: Props) {
                           )}
                           <span className="min-w-0 flex-1 truncate text-sm font-bold">{nominee.name}</span>
                           <span className="shrink-0 truncate text-xs text-mute">{nominee.club_name}</span>
+                          {actual != null && (
+                            <span
+                              className="w-11 shrink-0 text-right text-sm font-bold"
+                              style={{ color: hit ? "var(--color-good)" : "var(--color-mute)" }}
+                            >
+                              {hit ? `+${BALLON_DOR_RANK_POINTS[rank]}` : "0"}
+                            </span>
+                          )}
                         </>
                       ) : (
                         <span className="flex-1 text-sm text-mute">— ? —</span>
