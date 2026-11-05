@@ -247,7 +247,7 @@ export function MatchPredictionForm({
       </div>
 
       {state.error && <p className="text-sm text-bad">{state.error}</p>}
-      {state.success && <p className="text-sm text-good">Pronostic enregistré.</p>}
+      {state.success && <p className="text-sm text-good">{state.notice ?? "Pronostic enregistré."}</p>}
 
       <button type="submit" disabled={isPending} className={buttonPrimary}>
         {isPending ? "Enregistrement..." : "Enregistrer mon pronostic"}

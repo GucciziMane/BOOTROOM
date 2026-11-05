@@ -443,6 +443,7 @@ export function MatchPredictionCard({
         </button>
       )}
       {state.error && <p className="relative mt-1 text-center text-xs text-bad">{state.error}</p>}
+      {state.notice && <p className="relative mt-1 text-center text-xs font-bold text-reward">{state.notice}</p>}
     </form>
   );
 }
