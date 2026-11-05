@@ -20,7 +20,8 @@ export type PointsSourceType =
   | "quiz_season_bonus"
   | "midseason_bonus_gift"
   | "weekly_outsider_bonus"
-  | "ballon_dor";
+  | "ballon_dor"
+  | "weekly_winner_bonus";
 
 export interface Database {
   public: {
@@ -434,6 +435,25 @@ export interface Database {
           week_start: string;
         };
         Update: Partial<Database["public"]["Tables"]["weekly_outsider_bonuses"]["Row"]>;
+        Relationships: [];
+      };
+      weekly_winner_bonuses: {
+        Row: {
+          id: number;
+          week_start: string;
+          iso_year: number;
+          iso_week: number;
+          user_id: string | null;
+          week_points: number;
+          points: number;
+          granted_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["weekly_winner_bonuses"]["Row"]> & {
+          week_start: string;
+          iso_year: number;
+          iso_week: number;
+        };
+        Update: Partial<Database["public"]["Tables"]["weekly_winner_bonuses"]["Row"]>;
         Relationships: [];
       };
       chat_messages: {

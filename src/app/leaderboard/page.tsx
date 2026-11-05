@@ -4,6 +4,7 @@ import { BackLink } from "@/app/BackLink";
 import { PRIVATE_RANKING_USERNAMES } from "@/lib/leaderboard-reset";
 import { LEAGUE_FLAG } from "@/lib/country-flags";
 import { fetchLeaderboardTotals } from "@/lib/leaderboard-totals";
+import { fetchWeekLedger, formatWeekRange, leaderboardWeekOf, WEEKLY_WINNER_BONUS_POINTS } from "@/lib/leaderboard-week";
 import { LeaderboardFilter, type LeaderboardRow } from "./LeaderboardFilter";
 import { MidseasonBonusCard } from "./MidseasonBonusCard";
 
@@ -20,7 +21,7 @@ export default async function LeaderboardPage() {
     { data: predictions },
     { data: finishedMatches },
     { data: bonuses },
-    { data: latestOutsiderBonus },
+    { data: weeklyWinners },
   ] = await Promise.all([
     supabase.auth.getSession(),
     supabase.from("profiles").select("id, username, avatar_url, favorite_team_id").order("username"),
@@ -34,15 +35,15 @@ export default async function LeaderboardPage() {
     // Trophées mi-saison (toutes années confondues) : permanents, indépendants de la remise à
     // zéro et du classement actuel — voir MEDAL_ROW/le badge dans LeaderboardFilter.
     supabase.from("midseason_bonuses").select("id, user_id, rank, season_year, amount, kind, used_at, expires_at, target_user_id"),
-    // Prime à l'outsider (voir api/cron/weekly-outsider-bonus) : contrairement au trophée
-    // mi-saison, PAS permanente — seule la gagnante/le gagnant de la semaine EN COURS garde le
-    // badge, remplacé la semaine suivante (limit 1 sur le plus récent user_id non nul).
+    // Gagnant(s) de la semaine (voir api/cron/weekly-winner-bonus) : contrairement au trophée
+    // mi-saison, PAS permanent — seuls les gagnants de la DERNIÈRE semaine distribuée gardent le
+    // badge (plusieurs en cas d'égalité, d'où la marge du limit, filtrée sur week_start plus bas).
     supabase
-      .from("weekly_outsider_bonuses")
-      .select("user_id, week_start")
+      .from("weekly_winner_bonuses")
+      .select("user_id, week_start, iso_week")
       .not("user_id", "is", null)
       .order("week_start", { ascending: false })
-      .limit(1),
+      .limit(10),
   ]);
   const user = session?.user ?? null;
 
@@ -53,70 +54,84 @@ export default async function LeaderboardPage() {
     .in("id", favoriteTeamIds.length > 0 ? favoriteTeamIds : [-1]);
   const teamLogoById = new Map((favoriteTeams ?? []).map((t) => [t.id, t.logo_url]));
   const activeLeagueIds = new Set((leagues ?? []).map((l) => l.id));
-  const { ledger, ledgerAllTime, totalByUser, resetAt } = await fetchLeaderboardTotals(supabase, activeLeagueIds);
+  const { ledger, ledgerAllTime, resetAt } = await fetchLeaderboardTotals(supabase, activeLeagueIds);
 
-  const pointsByUserByLeague = new Map<string, Map<number, number>>();
-  for (const row of ledger) {
-    if (!pointsByUserByLeague.has(row.user_id)) pointsByUserByLeague.set(row.user_id, new Map());
-    const perLeague = pointsByUserByLeague.get(row.user_id)!;
-    if (row.league_id) perLeague.set(row.league_id, (perLeague.get(row.league_id) ?? 0) + row.points);
-  }
+  const week = leaderboardWeekOf();
+  const { rows: weekLedger } = await fetchWeekLedger(supabase, week, activeLeagueIds);
+  const weekStartIso = week.startUtc.toISOString();
+  const weekEndIso = week.endUtc.toISOString();
+
+  const finishedById = new Map((finishedMatches ?? []).map((m) => [m.id, m]));
+  const general = buildStats(ledger, (kickoffAt) => !resetAt || kickoffAt >= resetAt);
+  const weekly = buildStats(weekLedger, (kickoffAt) => kickoffAt >= weekStartIso && kickoffAt < weekEndIso);
 
   // Bons pronos (résultat trouvé, score exact inclus) / scores exacts, par joueur ET par
   // championnat (pour le filtre) — comparé directement au score réel du match plutôt que relu
   // depuis points_ledger, qui ne distingue plus les deux depuis la refonte du barème (une seule
-  // ligne "match_score" par match).
-  const finishedById = new Map((finishedMatches ?? []).map((m) => [m.id, m]));
-  const goodTotalByUser = new Map<string, number>();
-  const exactTotalByUser = new Map<string, number>();
-  const goodByUserByLeague = new Map<string, Map<number, number>>();
-  const exactByUserByLeague = new Map<string, Map<number, number>>();
-  for (const pred of predictions ?? []) {
-    if (pred.league_id != null && !activeLeagueIds.has(pred.league_id)) continue;
-    const match = finishedById.get(pred.match_id);
-    if (!match || match.home_score == null || match.away_score == null) continue;
-    if (resetAt && match.kickoff_at < resetAt) continue;
+  // ligne "match_score" par match). `inScope` choisit les matchs comptés (saison ou semaine).
+  function buildStats(ledgerRows: Array<{ user_id: string; league_id: number | null; points: number }>, inScope: (kickoffAt: string) => boolean) {
+    const totalByUserScoped = new Map<string, number>();
+    const pointsByUserByLeague = new Map<string, Map<number, number>>();
+    for (const row of ledgerRows) {
+      totalByUserScoped.set(row.user_id, (totalByUserScoped.get(row.user_id) ?? 0) + row.points);
+      if (!pointsByUserByLeague.has(row.user_id)) pointsByUserByLeague.set(row.user_id, new Map());
+      const perLeague = pointsByUserByLeague.get(row.user_id)!;
+      if (row.league_id) perLeague.set(row.league_id, (perLeague.get(row.league_id) ?? 0) + row.points);
+    }
 
-    const exact = pred.predicted_home_score === match.home_score && pred.predicted_away_score === match.away_score;
-    const predictedDiff = Math.sign(pred.predicted_home_score - pred.predicted_away_score);
-    const actualDiff = Math.sign(match.home_score - match.away_score);
-    const good = exact || predictedDiff === actualDiff;
+    const goodTotalByUser = new Map<string, number>();
+    const exactTotalByUser = new Map<string, number>();
+    const goodByUserByLeague = new Map<string, Map<number, number>>();
+    const exactByUserByLeague = new Map<string, Map<number, number>>();
+    for (const pred of predictions ?? []) {
+      if (pred.league_id != null && !activeLeagueIds.has(pred.league_id)) continue;
+      const match = finishedById.get(pred.match_id);
+      if (!match || match.home_score == null || match.away_score == null) continue;
+      if (!inScope(match.kickoff_at)) continue;
 
-    if (good) goodTotalByUser.set(pred.user_id, (goodTotalByUser.get(pred.user_id) ?? 0) + 1);
-    if (exact) exactTotalByUser.set(pred.user_id, (exactTotalByUser.get(pred.user_id) ?? 0) + 1);
-    if (pred.league_id != null) {
-      if (good) {
-        if (!goodByUserByLeague.has(pred.user_id)) goodByUserByLeague.set(pred.user_id, new Map());
-        const m = goodByUserByLeague.get(pred.user_id)!;
-        m.set(pred.league_id, (m.get(pred.league_id) ?? 0) + 1);
-      }
-      if (exact) {
-        if (!exactByUserByLeague.has(pred.user_id)) exactByUserByLeague.set(pred.user_id, new Map());
-        const m = exactByUserByLeague.get(pred.user_id)!;
-        m.set(pred.league_id, (m.get(pred.league_id) ?? 0) + 1);
+      const exact = pred.predicted_home_score === match.home_score && pred.predicted_away_score === match.away_score;
+      const predictedDiff = Math.sign(pred.predicted_home_score - pred.predicted_away_score);
+      const actualDiff = Math.sign(match.home_score - match.away_score);
+      const good = exact || predictedDiff === actualDiff;
+
+      if (good) goodTotalByUser.set(pred.user_id, (goodTotalByUser.get(pred.user_id) ?? 0) + 1);
+      if (exact) exactTotalByUser.set(pred.user_id, (exactTotalByUser.get(pred.user_id) ?? 0) + 1);
+      if (pred.league_id != null) {
+        if (good) {
+          if (!goodByUserByLeague.has(pred.user_id)) goodByUserByLeague.set(pred.user_id, new Map());
+          const m = goodByUserByLeague.get(pred.user_id)!;
+          m.set(pred.league_id, (m.get(pred.league_id) ?? 0) + 1);
+        }
+        if (exact) {
+          if (!exactByUserByLeague.has(pred.user_id)) exactByUserByLeague.set(pred.user_id, new Map());
+          const m = exactByUserByLeague.get(pred.user_id)!;
+          m.set(pred.league_id, (m.get(pred.league_id) ?? 0) + 1);
+        }
       }
     }
-  }
 
-  const rows: LeaderboardRow[] = (profiles ?? []).map((p) => ({
-    id: p.id,
-    username: p.username,
-    avatarUrl: p.avatar_url,
-    favoriteTeamLogoUrl: p.favorite_team_id ? (teamLogoById.get(p.favorite_team_id) ?? null) : null,
-    total: totalByUser.get(p.id) ?? 0,
-    good: goodTotalByUser.get(p.id) ?? 0,
-    exact: exactTotalByUser.get(p.id) ?? 0,
-    byLeague: Object.fromEntries(
-      (leagues ?? []).map((l) => [
-        l.id,
-        {
-          points: pointsByUserByLeague.get(p.id)?.get(l.id) ?? 0,
-          good: goodByUserByLeague.get(p.id)?.get(l.id) ?? 0,
-          exact: exactByUserByLeague.get(p.id)?.get(l.id) ?? 0,
-        },
-      ])
-    ),
-  }));
+    return (profiles ?? []).map(
+      (p): LeaderboardRow => ({
+        id: p.id,
+        username: p.username,
+        avatarUrl: p.avatar_url,
+        favoriteTeamLogoUrl: p.favorite_team_id ? (teamLogoById.get(p.favorite_team_id) ?? null) : null,
+        total: totalByUserScoped.get(p.id) ?? 0,
+        good: goodTotalByUser.get(p.id) ?? 0,
+        exact: exactTotalByUser.get(p.id) ?? 0,
+        byLeague: Object.fromEntries(
+          (leagues ?? []).map((l) => [
+            l.id,
+            {
+              points: pointsByUserByLeague.get(p.id)?.get(l.id) ?? 0,
+              good: goodByUserByLeague.get(p.id)?.get(l.id) ?? 0,
+              exact: exactByUserByLeague.get(p.id)?.get(l.id) ?? 0,
+            },
+          ])
+        ),
+      })
+    );
+  }
 
   const privateProfiles = (profiles ?? []).filter((p) => PRIVATE_RANKING_USERNAMES.includes(p.username));
   const showPrivateRanking = privateProfiles.some((p) => p.id === user?.id);
@@ -139,12 +154,14 @@ export default async function LeaderboardPage() {
     if (!existing || b.season_year > existing.seasonYear) trophies.set(b.user_id, { rank: b.rank, seasonYear: b.season_year });
   }
 
-  // Badge "prime à l'outsider" (voir api/cron/weekly-outsider-bonus) : un seul à la fois, jamais
-  // cumulatif comme le trophée mi-saison — juste la gagnante/le gagnant de la semaine la plus
-  // récente où la prime a été distribuée (limit 1 côté requête).
-  const outsiderBonusWinner = latestOutsiderBonus?.[0]
-    ? { userId: latestOutsiderBonus[0].user_id as string, weekStart: latestOutsiderBonus[0].week_start }
-    : null;
+  // Badge 👑 (voir api/cron/weekly-winner-bonus) : jamais cumulatif comme le trophée mi-saison —
+  // seulement le ou les gagnants (ex aequo) de la semaine la plus récente distribuée.
+  const latestWinnerWeek = weeklyWinners?.[0]?.week_start ?? null;
+  const weekWinners = new Map(
+    (weeklyWinners ?? [])
+      .filter((w) => w.week_start === latestWinnerWeek)
+      .map((w) => [w.user_id as string, w.iso_week])
+  );
 
   // Bonus actif de l'utilisateur connecté (non utilisé, pas encore expiré) : seul cas où on lui
   // montre le sélecteur de cible sur cette page.
@@ -155,7 +172,7 @@ export default async function LeaderboardPage() {
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 p-6">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Classement général</h1>
+        <h1 className="text-3xl font-bold">Classement</h1>
         <BackLink href="/" />
       </div>
 
@@ -192,10 +209,13 @@ export default async function LeaderboardPage() {
       </p>
 
       <LeaderboardFilter
-        rows={rows}
+        weekRows={weekly}
+        generalRows={general}
+        weekLabel={`Semaine ${week.isoWeek}`}
+        weekInfo={`${formatWeekRange(week)} · le n°1 de la semaine gagne +${WEEKLY_WINNER_BONUS_POINTS} pts au général`}
         leagues={(leagues ?? []).map((l) => ({ id: l.id, name: l.name, flag: LEAGUE_FLAG[l.football_data_code] ?? "🏆" }))}
         trophies={trophies}
-        outsiderBonusWinner={outsiderBonusWinner}
+        weekWinners={weekWinners}
       />
     </main>
   );

@@ -78,21 +78,32 @@ const MEDAL_ROW: Record<number, { gradient: string; border: string; text: string
  * uniquement en mémoire (les données de chaque championnat sont déjà toutes chargées côté
  * serveur), pas de rechargement de page au clic. */
 export function LeaderboardFilter({
-  rows,
+  weekRows,
+  generalRows,
+  weekLabel,
+  weekInfo,
   leagues,
   trophies,
-  outsiderBonusWinner,
+  weekWinners,
 }: {
-  rows: LeaderboardRow[];
+  /** Classement de la semaine en cours (lundi -> lundi, Paris), points de pronos uniquement —
+   * voir lib/leaderboard-week. Affiché par défaut. */
+  weekRows: LeaderboardRow[];
+  /** Classement général, tous les points (bonus compris) depuis la remise à zéro. */
+  generalRows: LeaderboardRow[];
+  weekLabel: string;
+  weekInfo: string;
   leagues: LeagueOption[];
   /** Trophée mi-saison (voir migration 0049) : permanent, indépendant du classement actuel — donc
    * séparé du style or/argent/bronze ci-dessus (les deux peuvent coexister sur une même ligne). */
   trophies: Map<string, { rank: number; seasonYear: number }>;
-  /** Prime à l'outsider (voir api/cron/weekly-outsider-bonus) : contrairement au trophée
-   * mi-saison, pas cumulatif — juste la gagnante/le gagnant de la semaine la plus récente. */
-  outsiderBonusWinner: { userId: string; weekStart: string } | null;
+  /** Gagnant(s) de la dernière semaine distribuée (voir api/cron/weekly-winner-bonus) -> numéro
+   * de semaine ISO. Pas cumulatif, contrairement au trophée mi-saison. */
+  weekWinners: Map<string, number>;
 }) {
+  const [period, setPeriod] = useState<"week" | "general">("week");
   const [selected, setSelected] = useState<number | "all">("all");
+  const rows = period === "week" ? weekRows : generalRows;
 
   const sorted = useMemo(() => {
     if (selected === "all") return [...rows].sort((a, b) => b.total - a.total);
@@ -103,6 +114,14 @@ export function LeaderboardFilter({
 
   return (
     <div>
+      <div className="mb-3 grid grid-cols-2 gap-1 rounded-full border border-line bg-surface p-1">
+        <PeriodTab label={`📅 ${weekLabel}`} active={period === "week"} onClick={() => setPeriod("week")} />
+        <PeriodTab label="🏆 Général" active={period === "general"} onClick={() => setPeriod("general")} />
+      </div>
+      <p className="mb-4 text-sm text-mute">
+        {period === "week" ? `${weekInfo}. Remise à zéro chaque lundi.` : "Tous les points depuis le début de la saison, bonus compris."}
+      </p>
+
       {/* Bord à bord (-mx-6, compensé par px-6) : les puces débordent visuellement jusqu'au bord de
           l'écran comme une barre de filtre d'appli native, tout en restant dans un conteneur qui
           scrolle horizontalement pour lui seul (jamais toute la page) si elles ne tiennent pas. */}
@@ -128,7 +147,8 @@ export function LeaderboardFilter({
       <ul className={`mb-8 ${listCard}`}>
         {sorted.map((p, i) => {
           const stat = selected === "all" ? { points: p.total, good: p.good, exact: p.exact } : p.byLeague[selected];
-          const medal = MEDAL_ROW[i];
+          // Pas de médaille sans points (ex. lundi matin, semaine encore vierge : tout le monde à 0).
+          const medal = stat.points > 0 ? MEDAL_ROW[i] : undefined;
           const trophy = trophies.get(p.id);
           return (
             <li key={p.id}>
@@ -185,12 +205,9 @@ export function LeaderboardFilter({
                       🏆
                     </span>
                   )}
-                  {outsiderBonusWinner?.userId === p.id && (
-                    <span
-                      className="shrink-0 text-base"
-                      title={`Prime à l'outsider — semaine du ${new Date(`${outsiderBonusWinner.weekStart}T00:00:00Z`).toLocaleDateString("fr-FR", { timeZone: "UTC", day: "numeric", month: "long" })}`}
-                    >
-                      🏹
+                  {weekWinners.has(p.id) && (
+                    <span className="shrink-0 text-base" title={`Gagnant de la semaine ${weekWinners.get(p.id)}`}>
+                      👑
                     </span>
                   )}
                 </span>
@@ -217,6 +234,21 @@ export function LeaderboardFilter({
         {sorted.length === 0 && <li className="p-4 text-mute">Personne n&apos;a encore de points.</li>}
       </ul>
     </div>
+  );
+}
+
+function PeriodTab({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`rounded-full px-3 py-2 text-sm font-bold transition-colors ${
+        active ? "bg-accent text-white shadow-sm" : "text-mute hover:text-accent"
+      }`}
+    >
+      {label}
+    </button>
   );
 }
 
